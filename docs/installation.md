@@ -8,7 +8,16 @@
 - [ArgoCD](https://argo-cd.readthedocs.io/) only if you want the Helm charts dashboard (charts are
   discovered from ArgoCD `Application` objects).
 
-kube-tower runs as a single, small, stateless pod (requests: 50m CPU, 128Mi memory).
+kube-tower runs as a single stateless pod (requests: 50m CPU, 256Mi memory; 1536Mi memory limit).
+The vulnerability scans with Trivy (on by default) also need:
+
+- an outbound access to the Trivy database registries (`mirror.gcr.io`, `ghcr.io`) and to the
+  registries of the scanned images;
+- up to 3 GiB of ephemeral storage for the database (`trivy.cacheSizeLimit`), unless you use the
+  [Trivy server](#vulnerability-scanning-trivy) of the chart;
+- nodes able to pull `ghcr.io/aquasecurity/trivy` (amd64 or arm64).
+
+See [vulnerability scanning](#vulnerability-scanning-trivy) to change or disable this.
 
 ## With Helm
 
@@ -59,6 +68,60 @@ grafanaDashboard:
 kube-tower has no authentication of its own: put it behind your ingress authentication
 (oauth2-proxy, Authentik, Traefik forward auth…) if the UI must not be public. It only reads
 data and never shows secret values.
+
+### Vulnerability scanning (Trivy)
+
+kube-tower lists the vulnerabilities of every image: it reads the reports of Trivy Operator when it
+runs in a cluster, and scans the other images with the Trivy CLI (see
+[Vulnerabilities](vulnerabilities.md)). The Trivy CLI is not in the kube-tower image: the chart adds
+an init container that copies it from `trivy.image` at pod start. Choose one of these setups:
+
+**Standalone (default)**: kube-tower downloads the vulnerability database (~1.6 GB) into an
+`emptyDir` and scans the images itself. Nothing to set; size the pod if needed:
+
+```yaml
+trivy:
+  cacheSizeLimit: 3Gi            # emptyDir of the database
+resources:
+  limits:
+    memory: 1536Mi               # raise it, or lower config.vulnerabilities.trivy.concurrency, if OOMKilled
+```
+
+**Client/server**: the chart deploys a Trivy server that holds and refreshes the database;
+kube-tower scans in client mode and its pod stays small. `config.vulnerabilities.trivy.serverUrl` is
+set automatically.
+
+```yaml
+trivy:
+  server:
+    enabled: true
+    resources:
+      limits:
+        memory: 1Gi
+    nodeSelector:
+      kubernetes.io/arch: amd64
+```
+
+To use a Trivy server you already run, keep `trivy.server.enabled: false` and set
+`config.vulnerabilities.trivy.serverUrl: http://trivy.trivy-system:4954`.
+
+**Trivy Operator only**: no Trivy in kube-tower, only the operator's reports are shown (images
+only cached on nodes are not scanned):
+
+```yaml
+trivy:
+  enabled: false                 # no init container
+```
+
+**No vulnerabilities at all**: `config.vulnerabilities.enabled: false`.
+
+On `linux/arm/v7` nodes (no official Trivy image), use the Trivy Operator setup, a Trivy server on
+other nodes, or `trivy.image` pointing to an image of yours holding `/usr/local/bin/trivy`. A
+private `trivy.image` is pulled with `imagePullSecrets` (kube-tower pod and Trivy server). Upgrade Trivy by changing
+`trivy.image.tag`, without a new kube-tower release.
+
+Scan settings (`concurrency`, `rescanInterval`, `ignoreUnfixed`, `javaDb`, `ignore`…) are in
+`config.vulnerabilities`, see [configuration](configuration.md#vulnerabilities-trivy).
 
 ## With ArgoCD
 
@@ -240,11 +303,18 @@ To follow the development version, point `source` at the git repository instead:
 | `serviceMonitor.labels` / `.metricRelabelings` | `{}` / `[]` | Extra labels (e.g. `release: kube-prometheus-stack`) and relabelings |
 | `grafanaDashboard.enabled` | `false` | ConfigMap holding the [Grafana dashboard](metrics.md#grafana-dashboard) |
 | `grafanaDashboard.namespace` / `.labels` / `.annotations` | release ns / `grafana_dashboard: "1"` / `{}` | Where and how the Grafana sidecar finds it |
-| `trivy.enabled` / `trivy.image` | `true` / `ghcr.io/aquasecurity/trivy:0.75.0` | Init container copying the Trivy CLI from this image (amd64, arm64; disable on arm/v7), see [vulnerabilities](vulnerabilities.md#where-the-trivy-cli-comes-from) |
-| `trivy.cacheSizeLimit` | `3Gi` | `emptyDir` holding the Trivy database (standalone mode), see [vulnerabilities](vulnerabilities.md) |
+| `trivy.enabled` | `true` | Init container copying the Trivy CLI into the pod, see [vulnerability scanning](#vulnerability-scanning-trivy) |
+| `trivy.image.repository` / `.tag` / `.pullPolicy` | `ghcr.io/aquasecurity/trivy` / `0.75.0` / `IfNotPresent` | Image the Trivy CLI is copied from (amd64, arm64) |
+| `trivy.cacheSizeLimit` | `3Gi` | `emptyDir` holding the Trivy database (standalone mode) |
 | `trivy.server.enabled` | `false` | Trivy server Deployment and Service; kube-tower then scans in client mode |
-| `trivy.server.image` / `.resources` / `.cacheSizeLimit` | `trivy.image` / 1Gi limit / `3Gi` | Trivy server settings (also `nodeSelector`, `tolerations`, `affinity`) |
-| `resources`, `nodeSelector`, `tolerations`, `affinity`, `podAnnotations` | | Usual pod settings |
+| `trivy.server.image` | `{}` (= `trivy.image`) | Image of the Trivy server, merged over `trivy.image` |
+| `trivy.server.port` | `4954` | Port of the Trivy server Service |
+| `trivy.server.cacheSizeLimit` | `3Gi` | `emptyDir` holding the database of the Trivy server |
+| `trivy.server.resources` | 100m CPU / 256Mi requests, 1Gi memory limit | Trivy server resources |
+| `trivy.server.nodeSelector` / `.tolerations` / `.affinity` | | Trivy server scheduling |
+| `config.vulnerabilities.*` | see [configuration](configuration.md#vulnerabilities-trivy) | Trivy Operator reports, scan settings, ignored images |
+| `resources` | 50m CPU / 256Mi requests, 1536Mi memory limit | kube-tower pod resources (Trivy scans in standalone mode need the memory) |
+| `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `imagePullSecrets` | | Usual pod settings |
 | `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
 
 ## Permissions
