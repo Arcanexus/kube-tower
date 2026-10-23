@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, page_title, severity_counts, tag %}
+{% block content %}
+{{ page_title("shield", "Vulnerabilities", "Known vulnerabilities (CVE) of every image, from Trivy Operator reports when the cluster has them, else scanned with Trivy. Click an image for the list.") }}
+<form class="filters" hx-get="vulnerabilities" hx-target="#results" hx-push-url="true"
+      hx-trigger="input changed delay:300ms from:input[name=q], change">
+  <input type="search" name="q" value="{{ q }}" placeholder="Filter…" aria-label="Filter">
+  <select name="status" aria-label="Severity">
+    <option value="">All images</option>
+    {% for s in Severity %}<option value="{{ s.value }}" {% if s.value == severity %}selected{% endif %}>with {{ s.value }}</option>{% endfor %}
+  </select>
+  <select name="cluster" aria-label="Cluster">
+    <option value="">All clusters</option>
+    {% for c in snapshot.clusters %}<option {% if c.name == cluster %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+  </select>
+</form>
+<div id="results">{{ self.results() }}</div>
+{% endblock %}
+{% block results %}
+{# Each counter is the number of images with at least one vulnerability of that severity. #}
+<div class="counters counters-5">
+  {% for s in Severity %}
+  <button type="button" class="counter" aria-pressed="{{ 'true' if s.value == severity else 'false' }}"
+          title="Show only images with {{ s.value }} vulnerabilities" onclick="ktFilterStatus('{{ s.value }}')"><span class="sev sev-{{ s.value }}">{{ s.value }}</span><strong>{{ affected[s] }}</strong></button>
+  {% endfor %}
+</div>
+<p><small>{{ rows | length }} image(s)
+  {% if scanning and not snapshot.vulnerabilities_finished_at %}· {{ icon("clock") }}vulnerability scan in progress{% endif %}</small></p>
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>Image</th><th>Tag</th><th>Vulnerabilities</th><th>Fixable</th><th>Source</th><th>Used by</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    {% set v = r.vulnerabilities %}
+    <tr class="clickable" tabindex="0" hx-get="vulnerabilities/detail?ref={{ r.image | string | urlencode }}" hx-target="#detail"
+        hx-trigger="click, keyup[key=='Enter']">
+      <td>{{ icon("box", "muted") }}<code>{{ r.image.name }}</code>
+        {% if v and v.os_eosl %}<br><small class="tag-latest">{{ icon("warning") }}{{ v.os }} is end of life</small>{% endif %}</td>
+      <td>{{ tag(r.image.tag) }}</td>
+      <td>{% if v is none %}<small>{{ "pending" if scanning else "not scanned" }}</small>
+        {% elif v.message %}<span class="badge badge-error">{{ icon("error") }}error</span><br><small>{{ v.message }}</small>
+        {% else %}{{ severity_counts(v) }}{% endif %}</td>
+      <td>{% if v and not v.message %}{{ v.fixable }}{% endif %}</td>
+      <td><small>{{ v.source if v else "" }}</small></td>
+      <td><small>{{ r.usages | length }} usage(s) · {{ r.clusters | join(", ") }}</small></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6">No image.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

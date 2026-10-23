@@ -22,6 +22,16 @@
 {{- $_ := set $clusters "secretNames" $secretNames }}
 {{- $_ := set $config "clusters" $clusters }}
 {{- end }}
+{{- /* The chart's Trivy server, unless another server is configured */ -}}
+{{- if .Values.trivy.server.enabled }}
+{{- $vulnerabilities := deepCopy ($config.vulnerabilities | default dict) }}
+{{- $trivy := deepCopy ($vulnerabilities.trivy | default dict) }}
+{{- if not $trivy.serverUrl }}
+{{- $_ := set $trivy "serverUrl" (printf "http://%s-trivy:%v" (include "kube-tower.fullname" .) .Values.trivy.server.port) }}
+{{- end }}
+{{- $_ := set $vulnerabilities "trivy" $trivy }}
+{{- $_ := set $config "vulnerabilities" $vulnerabilities }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

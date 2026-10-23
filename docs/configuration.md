@@ -32,6 +32,18 @@ helm:
   applicationNamespaces: [argocd]   # [] = all namespaces
   includePrerelease: false
   checkDependencies: true     # subcharts, and their own subcharts (3 levels)
+vulnerabilities:               # see vulnerabilities.md
+  enabled: true
+  trivyOperator: true          # read Trivy Operator VulnerabilityReports
+  trivy:
+    enabled: true              # scan the other images with the Trivy CLI
+    serverUrl: ""              # Trivy server (client/server mode)
+    timeout: 10m
+    concurrency: 2
+    rescanInterval: 24h
+    ignoreUnfixed: false
+    javaDb: false
+  ignore: []
 registries:
   dockerConfigPath: /etc/kube-tower/dockerconfig/config.json
   credentials:                 # per registry, override the docker config.json
@@ -47,6 +59,8 @@ git:
     gitlab.com: https://gitlab.com/{owner}/{repo}/-/raw/{ref}/{path}
   tokenEnv: GIT_TOKEN
 ```
+
+Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
 
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`.
 

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Vulnerabilities (CVE) of every image on a new Vulnerabilities page, in the image details and in the
+  Prometheus metrics: read from Trivy Operator `VulnerabilityReports` when present, else scanned with
+  the Trivy CLI now shipped in the image (standalone, or client/server with the optional Trivy server
+  of the chart, `trivy.server.enabled`). End of life OS releases are flagged.
+
 - Inventory of container images from Pods, Deployments, StatefulSets, DaemonSets, CronJobs and nodes.
 - Version check against the source registry (OCI distribution API), with tag shape matching and
   digest check for floating tags.

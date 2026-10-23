@@ -9,7 +9,19 @@ import pytest
 from kube_tower import scanner as scanner_module
 from kube_tower.clusters import Cluster
 from kube_tower.config import Settings
-from kube_tower.models import ChartDependency, ChartReport, ClusterStatus, ImageRef, ImageReport, Snapshot, Status, Usage
+from kube_tower.models import (
+    ChartDependency,
+    ChartReport,
+    ClusterStatus,
+    ImageRef,
+    ImageReport,
+    Severity,
+    Snapshot,
+    Status,
+    Usage,
+    Vulnerability,
+    VulnerabilityReport,
+)
 from kube_tower.scanner import Scanner
 
 
@@ -44,8 +56,10 @@ def fakes(monkeypatch):
 
     monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
     monkeypatch.setattr(scanner_module, "collect_charts", collect_charts)
+    monkeypatch.setattr(scanner_module, "collect_operator_reports", lambda cluster: ([], []))
     monkeypatch.setattr(scanner_module.ImageChecker, "check_all", check_images)
     monkeypatch.setattr(scanner_module.ChartChecker, "check_all", check_charts)
+    monkeypatch.setattr(scanner_module.TrivyScanner, "available", False)
     return scanned
 
 
@@ -153,6 +167,8 @@ async def test_one_thread_per_cluster(monkeypatch):
 
     monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
     monkeypatch.setattr(scanner_module, "collect_charts", lambda cluster, settings: ([], []))
+    monkeypatch.setattr(scanner_module, "collect_operator_reports", lambda cluster: ([], []))
+    monkeypatch.setattr(scanner_module.TrivyScanner, "available", False)
     monkeypatch.setattr(scanner_module.ImageChecker, "check_all", check_all)
     monkeypatch.setattr(scanner_module.ChartChecker, "check_all", check_all)
 
@@ -197,3 +213,49 @@ async def test_http_requests_logged_without_query(caplog):
     request = httpx.Request("GET", "https://ghcr.io/token?scope=repository:org/app:pull&service=ghcr.io")
     await scanner_module._log_response(httpx.Response(401, request=request))
     assert caplog.records[-1].getMessage() == "GET https://ghcr.io/token -> 401"
+
+
+async def test_vulnerabilities_from_operator_then_trivy(fakes, monkeypatch):
+    operator = VulnerabilityReport("trivy-operator", vulnerabilities=[Vulnerability("CVE-1", Severity.HIGH, "zlib", "1")])
+
+    def collect(self, cluster):
+        self.add("nginx:1.25", Usage(cluster.name, "Pod", "default", "web"))
+        self.add("redis:7", Usage(cluster.name, "Pod", "default", "cache"))
+        self.add("registry.k8s.io/pause:3.9", Usage(cluster.name, "Node", None, "n1"))
+        return []
+
+    scanned = []
+
+    async def scan_all(self, reports):
+        scanned.extend(str(r.image) for r in reports)
+        for r in reports:
+            r.vulnerabilities = VulnerabilityReport("trivy")
+        return ["trivy: 1 image scan(s) failed"]
+
+    monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
+    monkeypatch.setattr(
+        scanner_module, "collect_operator_reports", lambda c: ([(ImageRef("docker.io", "library/nginx", "1.25"), operator)], [])
+    )
+    monkeypatch.setattr(scanner_module.TrivyScanner, "available", True)
+    monkeypatch.setattr(scanner_module.TrivyScanner, "scan_all", scan_all)
+    settings = Settings()
+    settings.vulnerabilities.ignore = ["registry.k8s.io/pause*"]
+    snap = await Scanner(settings, FakeRegistry()).scan()
+    images = {str(r.image): r for r in snap.images}
+    assert images["docker.io/library/nginx:1.25"].vulnerabilities is operator
+    assert scanned == ["docker.io/library/redis:7"]  # no operator report, not ignored
+    assert images["registry.k8s.io/pause:3.9"].vulnerabilities is None
+    assert snap.vulnerabilities_finished_at >= snap.finished_at
+    assert "trivy: 1 image scan(s) failed" in snap.errors
+
+
+async def test_vulnerabilities_without_trivy_binary(fakes):
+    snap = await Scanner(Settings(), FakeRegistry()).scan()
+    assert snap.images[0].vulnerabilities.message == "trivy binary 'trivy' not found"
+
+
+async def test_vulnerabilities_disabled(fakes):
+    settings = Settings()
+    settings.vulnerabilities.enabled = False
+    snap = await Scanner(settings, FakeRegistry()).scan()
+    assert snap.images[0].vulnerabilities is None and snap.vulnerabilities_finished_at is None

@@ -6,7 +6,19 @@ from fastapi.testclient import TestClient
 from kube_tower import __version__
 from kube_tower.config import Settings
 from kube_tower.main import create_app
-from kube_tower.models import ChartDependency, ChartReport, ClusterStatus, ImageRef, ImageReport, Snapshot, Status, Usage
+from kube_tower.models import (
+    ChartDependency,
+    ChartReport,
+    ClusterStatus,
+    ImageRef,
+    ImageReport,
+    Severity,
+    Snapshot,
+    Status,
+    Usage,
+    Vulnerability,
+    VulnerabilityReport,
+)
 
 
 class FakeScanner:
@@ -26,11 +38,25 @@ class FakeScanner:
                     ],
                     status=Status.OUTDATED,
                     latest_tag="1.27",
+                    vulnerabilities=VulnerabilityReport(
+                        "trivy-operator",
+                        now,
+                        "sha256:run",
+                        "debian 11",
+                        True,
+                        [
+                            Vulnerability(
+                                "CVE-2024-1", Severity.CRITICAL, "zlib1g", "1.2", "1.3", "zlib overflow", "https://avd/cve-1", 9.8
+                            ),
+                            Vulnerability("CVE-2024-2", Severity.LOW, "curl", "7.0"),
+                        ],
+                    ),
                 ),
                 ImageReport(
                     ImageRef("ghcr.io", "org/app", "2.0"),
                     [Usage("c2", "Node", None, "n1"), Usage("c2", "Node", None, "n2")],
                     status=Status.UP_TO_DATE,
+                    vulnerabilities=VulnerabilityReport("trivy", now, message="registry denied"),
                 ),
                 ImageReport(
                     ImageRef("docker.io", "library/redis", "latest"),
@@ -69,6 +95,7 @@ class FakeScanner:
             ],
             started_at=now,
             finished_at=now,
+            vulnerabilities_finished_at=now,
         )
         self.triggered = 0
         self.scans_total = {"success": 3, "failure": 1}
@@ -88,7 +115,7 @@ def _client():
 
 def test_pages():
     client, _ = _client()
-    for path in ("/", "/images", "/charts", "/clusters", "/logs", "/settings", "/status"):
+    for path in ("/", "/images", "/charts", "/vulnerabilities", "/clusters", "/logs", "/settings", "/status"):
         resp = client.get(path)
         assert resp.status_code == 200, path
     assert "library/nginx" in client.get("/images").text
@@ -144,9 +171,20 @@ def test_metrics():
         'kube_tower_scans_total{result="success"} 3.0',
         'kube_tower_scans_total{result="failure"} 1.0',
         f'kube_tower_build_info{{version="{__version__}"}} 1.0',
+        'kube_tower_image_vulnerabilities{image="docker.io/library/nginx",'
+        'severity="critical",source="trivy-operator",tag="1.25"} 1.0',
+        'kube_tower_image_vulnerabilities{image="docker.io/library/nginx",'
+        'severity="high",source="trivy-operator",tag="1.25"} 0.0',
+        'kube_tower_image_vulnerabilities_fixable{image="docker.io/library/nginx",severity="critical",tag="1.25"} 1.0',
+        'kube_tower_image_vulnerabilities_fixable{image="docker.io/library/nginx",severity="low",tag="1.25"} 0.0',
+        'kube_tower_image_os_eosl{image="docker.io/library/nginx",os="debian 11",tag="1.25"} 1.0',
+        'kube_tower_image_vulnerability_scan_failed{image="ghcr.io/org/app",tag="2.0"} 1.0',
+        'kube_tower_image_vulnerability_scan_failed{image="docker.io/library/nginx",tag="1.25"} 0.0',
     ]
     for line in expected:
         assert line in lines, line
+    assert any(line.startswith("kube_tower_last_vulnerability_scan_timestamp_seconds ") for line in lines)
+    assert "library/redis" not in "".join(line for line in lines if "vulnerabilit" in line)  # not scanned
     # pods owned by the Deployment are not exported (pod names churn on every rollout)
     assert "web-7d9f-abcde" not in resp.text
     assert not any(line.startswith("kube_tower_image_workload_info") and 'kind="Node"' in line for line in lines)
@@ -206,6 +244,8 @@ def test_links_are_relative():
         "/logs/tail",
         "/images/detail?ref=docker.io/library/nginx:1.25",
         "/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis",
+        "/vulnerabilities",
+        "/vulnerabilities/detail?ref=docker.io/library/nginx:1.25",
     ):
         page = client.get(path, headers={"X-Forwarded-Proto": "https"}).text
         assert "http://" not in page, path
@@ -317,3 +357,33 @@ def test_version_comes_from_the_image(monkeypatch):
     assert importlib.reload(kube_tower).__version__ == "1.2.3"
     monkeypatch.delenv("KUBE_TOWER_VERSION")
     assert importlib.reload(kube_tower).__version__ == "dev"
+
+
+def test_vulnerabilities_page():
+    client, _ = _client()
+    page = client.get("/vulnerabilities").text
+    # most vulnerable first, then failed and not scanned images
+    assert page.index("library/nginx") < page.index("org/app") < page.index("library/redis")
+    assert "debian 11 is end of life" in page and "registry denied" in page and "not scanned" in page
+    assert re.search(r'sev-critical">critical</span><strong>1</strong>', page)
+    assert re.search(r'sev-high">high</span><strong>0</strong>', page)
+    assert 'href="vulnerabilities" aria-current="page"' in page
+    partial = client.get("/vulnerabilities?status=critical", headers={"HX-Request": "true", "HX-Target": "results"}).text
+    assert "library/nginx" in partial and "org/app" not in partial and "<html" not in partial
+    assert 'aria-pressed="true"' in partial
+    assert "library/nginx" not in client.get("/vulnerabilities?status=high").text.split("<tbody>")[1]
+    assert "org/app" in client.get("/vulnerabilities?cluster=c2&q=app").text
+
+
+def test_vulnerability_detail():
+    client, _ = _client()
+    detail = client.get("/vulnerabilities/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    assert 'role="dialog"' in detail and "Trivy Operator report" in detail
+    assert '<a href="https://avd/cve-1"' in detail and "zlib overflow" in detail and "no fix" in detail
+    assert "end of life" in detail and "1 / 2" in detail and "sha256:run" in detail
+    assert "registry denied" in client.get("/vulnerabilities/detail", params={"ref": "ghcr.io/org/app:2.0"}).text
+    assert "Not scanned yet" in client.get("/vulnerabilities/detail", params={"ref": "docker.io/library/redis:latest"}).text
+    assert client.get("/vulnerabilities/detail", params={"ref": "nope"}).status_code == 404
+    # the image detail links to its vulnerabilities
+    image = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    assert 'hx-get="vulnerabilities/detail?ref=docker.io/library/nginx%3A1.25"' in image

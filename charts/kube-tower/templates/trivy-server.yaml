@@ -1,0 +1,94 @@
+{{- if .Values.trivy.server.enabled }}
+{{- $name := printf "%s-trivy" (include "kube-tower.fullname" .) }}
+# Trivy server: downloads and refreshes the vulnerability database, kube-tower scans in client mode
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: trivy-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kube-tower.trivySelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kube-tower.trivySelectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: trivy
+          image: "{{ .Values.trivy.server.image.repository }}:{{ .Values.trivy.server.image.tag }}"
+          imagePullPolicy: {{ .Values.trivy.server.image.pullPolicy }}
+          args: ["server", "--listen", "0.0.0.0:{{ .Values.trivy.server.port }}", "--cache-dir", "/cache"]
+          env:
+            - name: HOME
+              value: /tmp
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: trivy
+              containerPort: {{ .Values.trivy.server.port }}
+          # The database is downloaded at startup before the server listens
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: trivy
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: trivy
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: trivy
+          resources:
+            {{- toYaml .Values.trivy.server.resources | nindent 12 }}
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: cache
+          emptyDir:
+            {{- with .Values.trivy.server.cacheSizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.trivy.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.trivy.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.trivy.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: trivy-server
+spec:
+  selector:
+    {{- include "kube-tower.trivySelectorLabels" . | nindent 4 }}
+  ports:
+    - name: trivy
+      port: {{ .Values.trivy.server.port }}
+      targetPort: trivy
+{{- end }}

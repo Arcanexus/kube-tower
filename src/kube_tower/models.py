@@ -52,6 +52,62 @@ class Usage:
     container: str | None = None
 
 
+class Severity(StrEnum):
+    """Trivy severities, most severe first."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def parse(cls, value: str | None) -> Severity:
+        try:
+            return cls((value or "").lower())
+        except ValueError:
+            return cls.UNKNOWN
+
+
+@dataclass
+class Vulnerability:
+    id: str  # CVE-2024-1234, GHSA-..., DLA-...
+    severity: Severity
+    package: str
+    installed_version: str
+    fixed_version: str = ""
+    title: str = ""
+    url: str = ""
+    score: float | None = None  # CVSS score, when known
+
+
+@dataclass
+class VulnerabilityReport:
+    """Vulnerabilities of one image, read from a Trivy Operator VulnerabilityReport or scanned with Trivy."""
+
+    source: str  # trivy-operator | trivy
+    scanned_at: datetime | None = None
+    digest: str | None = None  # digest of the scanned image, when known
+    os: str = ""  # e.g. "debian 12.5"
+    os_eosl: bool = False  # the OS release is end of life: no more security fixes
+    vulnerabilities: list[Vulnerability] = field(default_factory=list)
+    message: str | None = None  # scan error
+
+    def counts(self) -> dict[Severity, int]:
+        out = dict.fromkeys(Severity, 0)
+        for v in self.vulnerabilities:
+            out[v.severity] += 1
+        return out
+
+    @property
+    def fixable(self) -> int:
+        return sum(1 for v in self.vulnerabilities if v.fixed_version)
+
+    @property
+    def worst(self) -> Severity | None:
+        return min((v.severity for v in self.vulnerabilities), key=list(Severity).index, default=None)
+
+
 @dataclass
 class ImageReport:
     image: ImageRef
@@ -62,6 +118,7 @@ class ImageReport:
     latest_digest: str | None = None
     tag_digest: str | None = None  # digest published in the registry for the current tag
     message: str | None = None
+    vulnerabilities: VulnerabilityReport | None = None  # None until scanned
 
     @property
     def clusters(self) -> list[str]:
@@ -135,6 +192,8 @@ class Snapshot:
     clusters: list[ClusterStatus] = field(default_factory=list)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    # End of the vulnerability scan, which runs after the version checks
+    vulnerabilities_finished_at: datetime | None = None
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:

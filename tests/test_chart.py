@@ -183,3 +183,37 @@ def test_monitoring(tmp_path):
     assert dashboard["metadata"]["labels"]["grafana_dashboard"] == "1"
     assert dashboard["metadata"]["annotations"] == {"grafana_folder": "Kubernetes"}
     assert json.loads(dashboard["data"]["kube-tower.json"])["uid"] == "kube-tower"
+
+
+def test_vulnerabilities_standalone_by_default(tmp_path):
+    docs = render(tmp_path, {})
+    settings = app_settings(tmp_path, docs).vulnerabilities
+    assert settings.enabled and settings.trivy_operator and settings.trivy.server_url == ""
+    assert settings.trivy.timeout == 600 and settings.trivy.rescan_interval == 86400
+    assert volumes(docs)["trivy-cache"]["emptyDir"]["sizeLimit"] == "3Gi"
+    assert {"name": "trivy-cache", "mountPath": settings.trivy.cache_dir} in container(docs)["volumeMounts"]
+    assert not [k for k in docs if k[1] == "kt-kube-tower-trivy"]
+    rules = docs[("ClusterRole", "kt-kube-tower")]["rules"]
+    assert {"apiGroups": ["aquasecurity.github.io"], "resources": ["vulnerabilityreports"], "verbs": ["get", "list"]} in rules
+
+
+def test_trivy_server(tmp_path):
+    docs = render(tmp_path, {"trivy": {"server": {"enabled": True}}})
+    assert app_settings(tmp_path, docs).vulnerabilities.trivy.server_url == "http://kt-kube-tower-trivy:4954"
+    server = docs[("Deployment", "kt-kube-tower-trivy")]
+    service = docs[("Service", "kt-kube-tower-trivy")]
+    labels = server["spec"]["template"]["metadata"]["labels"]
+    assert server["spec"]["selector"]["matchLabels"] == labels == service["spec"]["selector"]
+    # kube-tower's own Service and Deployment must not select the Trivy server pods
+    kube_tower_selector = docs[("Service", "kt-kube-tower")]["spec"]["selector"]
+    assert not kube_tower_selector.items() <= labels.items()
+    assert docs[("Deployment", "kt-kube-tower")]["spec"]["selector"]["matchLabels"] == kube_tower_selector
+    trivy = server["spec"]["template"]["spec"]["containers"][0]
+    assert trivy["args"] == ["server", "--listen", "0.0.0.0:4954", "--cache-dir", "/cache"]
+    assert trivy["image"] == "aquasec/trivy:0.75.0" and trivy["securityContext"]["readOnlyRootFilesystem"]
+
+    docs = render(
+        tmp_path,
+        {"trivy": {"server": {"enabled": True}}, "config": {"vulnerabilities": {"trivy": {"serverUrl": "http://other:4954"}}}},
+    )
+    assert app_settings(tmp_path, docs).vulnerabilities.trivy.server_url == "http://other:4954"

@@ -240,13 +240,17 @@ To follow the development version, point `source` at the git repository instead:
 | `serviceMonitor.labels` / `.metricRelabelings` | `{}` / `[]` | Extra labels (e.g. `release: kube-prometheus-stack`) and relabelings |
 | `grafanaDashboard.enabled` | `false` | ConfigMap holding the [Grafana dashboard](metrics.md#grafana-dashboard) |
 | `grafanaDashboard.namespace` / `.labels` / `.annotations` | release ns / `grafana_dashboard: "1"` / `{}` | Where and how the Grafana sidecar finds it |
+| `trivy.cacheSizeLimit` | `3Gi` | `emptyDir` holding the Trivy database (standalone mode), see [vulnerabilities](vulnerabilities.md) |
+| `trivy.server.enabled` | `false` | Trivy server Deployment and Service; kube-tower then scans in client mode |
+| `trivy.server.image` / `.resources` / `.cacheSizeLimit` | `aquasec/trivy:0.75.0` / 1Gi limit / `3Gi` | Trivy server settings (also `nodeSelector`, `tolerations`, `affinity`) |
 | `resources`, `nodeSelector`, `tolerations`, `affinity`, `podAnnotations` | | Usual pod settings |
 | `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
 
 ## Permissions
 
 On the cluster it runs in, kube-tower gets a ClusterRole with `get`/`list` on pods, nodes,
-deployments, statefulsets, daemonsets, cronjobs and `applications.argoproj.io`, plus `list` on
+deployments, statefulsets, daemonsets, cronjobs, `applications.argoproj.io` and
+`vulnerabilityreports.aquasecurity.github.io` (Trivy Operator), plus `list` on
 Secrets **of its own namespace only** (cluster registration), plus `get` on the existing cluster
 Secrets named in `clusters[].existingSecret`. With
 `config.clusters.useArgocdSecrets: true` it can also list Secrets in the ArgoCD namespace.

@@ -7,7 +7,7 @@
   <script>
     // Links are relative so the UI works however it is exposed (http, https, port-forward, sub-path).
     // Under a sub-path without trailing slash (/kube-tower), add it so relative links resolve.
-    if (!location.pathname.endsWith("/") && !/\/(synthesis|images|charts|clusters|logs|settings)$/.test(location.pathname)) {
+    if (!location.pathname.endsWith("/") && !/\/(synthesis|images|charts|vulnerabilities|clusters|logs|settings)$/.test(location.pathname)) {
       location.replace(location.pathname + "/" + location.search + location.hash);
     }
     // Theme chosen with the sidebar button (light, dark, or auto = follow the system).
@@ -31,7 +31,7 @@
       <label for="menu-toggle" class="menu-button">{{ icon("menu") }}</label>
       <nav>
         <ul>
-          {% for key, label, ico in [("synthesis", "Synthesis", "synthesis"), ("images", "Images", "images"), ("charts", "Helm charts", "charts"), ("clusters", "Clusters", "clusters"), ("logs", "Logs", "logs"), ("settings", "Settings", "settings")] %}
+          {% for key, label, ico in [("synthesis", "Synthesis", "synthesis"), ("images", "Images", "images"), ("charts", "Helm charts", "charts"), ("vulnerabilities", "Vulnerabilities", "shield"), ("clusters", "Clusters", "clusters"), ("logs", "Logs", "logs"), ("settings", "Settings", "settings")] %}
           <li><a href="{{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ icon(ico) }}<span>{{ label }}</span></a></li>
           {% endfor %}
         </ul>
