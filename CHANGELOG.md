@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The format follows
 - Per registry credentials for container registries and Helm repositories.
 - Web UI (Images, Helm charts, Clusters, Settings), JSON API and Prometheus metrics.
 - Helm chart, multi-arch image (amd64, arm64, arm/v7), CI with coverage.
+- Documentation: complete ArgoCD `Application` example (OCI chart, ingress, ArgoCD clusters, registry credentials).
 
 ### Changed
 
