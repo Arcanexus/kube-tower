@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/docker-publish.yml"><img src="https://github.com/Arcanexus/kube-tower/actions/workflows/docker-publish.yml/badge.svg?branch=main" alt="Build"></a>
   <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml"><img src="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
-  <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Arcanexus/kube-tower/badges/coverage.json" alt="Coverage"></a>
+  <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Arcanexus/kube-tower/main/.github/badges/coverage.json" alt="Coverage"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Arcanexus/kube-tower" alt="License"></a>
   <a href="https://github.com/Arcanexus/kube-tower/pkgs/container/kube-tower"><img src="https://img.shields.io/badge/image-ghcr.io-blue?logo=docker&logoColor=white" alt="Image"></a>
 </p>
