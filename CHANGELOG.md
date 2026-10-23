@@ -25,6 +25,9 @@ All notable changes to this project are documented here. The format follows
   created by the chart from the values or taken from existing Secrets; existing cluster Secrets
   are referenced by name (`clusters[].existingSecret`, new `clusters.secretNames` setting).
 - Helm chart rendering tests.
+- UI: Logs page following the application and scanner logs; light/dark theme switch; status counters
+  filter the results; detail panels for images (digest comparison, registry links, usages) and charts;
+  subcharts shown as an expanded tree, with the subcharts of subcharts; `latest` tags highlighted in red.
 
 ### Fixed
 

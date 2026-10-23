@@ -14,13 +14,41 @@
 </hgroup>
 {%- endmacro %}
 
-{% macro counters(rows, status_of) -%}
+{% macro counters(rows, status_of, active) -%}
+{# Each counter toggles the status filter of the form above the results. #}
 <div class="counters">
   {% for s in Status %}
   {% set n = rows | selectattr(status_of, "equalto", s) | list | length %}
-  <article class="counter counter-{{ s.value }}">{{ badge(s) }}<strong>{{ n }}</strong></article>
+  <button type="button" class="counter counter-{{ s.value }}" aria-pressed="{{ 'true' if s.value == active else 'false' }}"
+          title="Show only {{ s.value }}" onclick="ktFilterStatus('{{ s.value }}')">{{ badge(s) }}<strong>{{ n }}</strong></button>
   {% endfor %}
 </div>
+{%- endmacro %}
+
+{% macro tag(value) -%}
+{% if value == "latest" -%}
+<span class="tag-latest" title="Avoid latest or untagged images: pin a version">{{ icon("warning") }}latest</span>
+{%- else %}{{ value or "" }}{% endif %}
+{%- endmacro %}
+
+{% macro digest(value, short=False) -%}
+{% if value %}<code class="digest" title="{{ value }}">{{ value[:19] ~ "…" if short else value }}</code>{% endif %}
+{%- endmacro %}
+
+{% macro drawer(title, subtitle="") -%}
+{# Detail panel, loaded by htmx into #detail (see base.html). #}
+<div class="drawer-backdrop" onclick="ktCloseDetail()"></div>
+<article class="drawer-panel" role="dialog" aria-label="{{ title }}">
+  <header>
+    <hgroup><h3>{{ title }}</h3>{% if subtitle %}<p>{{ subtitle }}</p>{% endif %}</hgroup>
+    <button type="button" class="close-detail outline secondary" onclick="ktCloseDetail()" aria-label="Close">{{ icon("x") }}</button>
+  </header>
+  {{ caller() }}
+</article>
+{%- endmacro %}
+
+{% macro links(items) -%}
+{% if items %}<p class="links">{% for label, url in items %}<a href="{{ url }}" target="_blank" rel="noopener">{{ icon("external-link") }}{{ label }}</a>{% endfor %}</p>{% endif %}
 {%- endmacro %}
 
 {% macro filters(path, q, status, cluster, snapshot) -%}

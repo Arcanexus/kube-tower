@@ -50,7 +50,15 @@ class FakeScanner:
                     status=Status.UP_TO_DATE,
                     latest_version="18.0.0",
                     dependencies=[
-                        ChartDependency("common", "2.0.0", "https://charts.bitnami.com/bitnami", Status.OUTDATED, "2.1.0")
+                        ChartDependency("common", "2.0.0", "https://charts.bitnami.com/bitnami", Status.OUTDATED, "2.1.0"),
+                        ChartDependency(
+                            "metrics",
+                            "1.0.0",
+                            "https://charts.example.com",
+                            Status.UP_TO_DATE,
+                            "1.0.0",
+                            dependencies=[ChartDependency("helpers", "0.1.0", "file://../helpers")],
+                        ),
                     ],
                 )
             ],
@@ -79,7 +87,7 @@ def _client():
 
 def test_pages():
     client, _ = _client()
-    for path in ("/", "/images", "/charts", "/clusters", "/settings", "/status"):
+    for path in ("/", "/images", "/charts", "/clusters", "/logs", "/settings", "/status"):
         resp = client.get(path)
         assert resp.status_code == 200, path
     assert "library/nginx" in client.get("/images").text
@@ -186,9 +194,92 @@ def test_links_are_relative():
     # Relative links work however the UI is exposed: http, https behind a TLS ingress
     # (no mixed content), port-forward or a sub-path.
     client, _ = _client()
-    for path in ("/", "/images", "/charts", "/clusters", "/settings", "/status"):
+    for path in (
+        "/",
+        "/images",
+        "/charts",
+        "/clusters",
+        "/logs",
+        "/settings",
+        "/status",
+        "/logs/tail",
+        "/images/detail?ref=docker.io/library/nginx:1.25",
+        "/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis",
+    ):
         page = client.get(path, headers={"X-Forwarded-Proto": "https"}).text
         assert "http://" not in page, path
         assert not re.search(r'(href|src|hx-get|hx-post)="/', page), path
     page = client.get("/").text
     assert 'href="static/pico.min.css"' in page and 'src="static/htmx.min.js"' in page
+
+
+def test_counters_toggle_the_status_filter():
+    client, _ = _client()
+    page = client.get("/images?status=outdated").text
+    # counters ignore the status filter (they set it) and show which one is active
+    assert re.search(r'counter-up-to-date" aria-pressed="false".*?<strong>1</strong>', page, re.S)
+    assert re.search(r'counter-outdated" aria-pressed="true".*?<strong>2</strong>', page, re.S)
+    assert "ktFilterStatus('error')" in page
+    assert "nothing is ever updated automatically" not in page
+
+
+def test_latest_tag_is_highlighted():
+    client, _ = _client()
+    page = client.get("/images").text
+    assert page.count('class="tag-latest"') == 1  # redis:latest only
+
+
+def test_image_detail():
+    client, _ = _client()
+    detail = client.get("/images/detail", params={"ref": "docker.io/library/redis:latest"}).text
+    assert "<html" not in detail and 'role="dialog"' in detail
+    assert "https://hub.docker.com/_/redis/tags" in detail
+    assert "sha256:new" in detail and "Pin a version" in detail
+    detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    assert "docker.io/library/nginx:1.27" in detail and "web-7d9f-abcde" in detail
+    assert client.get("/images/detail", params={"ref": "nope"}).status_code == 404
+
+
+def test_chart_tree_and_detail():
+    client, _ = _client()
+    page = client.get("/charts").text
+    assert "├─ " in page and "└─ " in page and "   └─ " in page  # helpers under metrics, the last subchart
+    assert "<details" not in page  # never collapsed
+    assert "redis" in client.get("/charts?status=outdated").text
+    detail = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
+    assert "helpers" in detail and "file://../helpers" in detail and "artifacthub.io" in detail
+    assert client.get("/charts/detail?cluster=c1&namespace=argocd&app=x&chart=redis").status_code == 404
+
+
+def test_logs_page_tails_the_log_buffer():
+    import logging
+
+    client, _ = _client()
+    log = logging.getLogger("kube_tower.test")
+    log.info("first line")
+    log.debug("hidden at INFO level")
+    page = client.get("/logs").text
+    assert "first line" in page and "hidden at INFO" not in page
+    after = int(re.search(r"logs/tail\?after=(\d+)", page)[1])
+    assert "first line" not in client.get(f"/logs/tail?after={after}").text
+    log.warning("second <line>")
+    tail = client.get(f"/logs/tail?after={after}").text
+    assert "second &lt;line&gt;" in tail and 'hx-swap-oob="beforeend:#log-lines"' in tail
+    assert "second" not in client.get(f"/logs/tail?after={after}&level=ERROR").text
+    assert "first line" not in client.get("/logs?q=second").text
+    try:
+        raise ValueError("boom")
+    except ValueError:
+        log.exception("scan failed")
+    assert "ValueError: boom" in client.get("/logs?level=ERROR").text
+
+
+def test_ui_helpers():
+    from kube_tower.web.ui import registry_links
+
+    assert registry_links(ImageRef("docker.io", "bitnami/redis", "7"))[0][1] == "https://hub.docker.com/r/bitnami/redis"
+    assert registry_links(ImageRef("ghcr.io", "arcanexus/kube-tower", "0.1.0")) == [
+        ("GitHub Packages", "https://ghcr.io/arcanexus/kube-tower")
+    ]
+    assert registry_links(ImageRef("quay.io", "prometheus/node-exporter", "1"))[0][0] == "Quay"
+    assert registry_links(ImageRef("registry.k8s.io", "pause", "3.9")) == []

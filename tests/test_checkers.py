@@ -21,7 +21,8 @@ class FakeOCI:
         return self.tags[repository]
 
     async def get_digest(self, registry, repository, tag):
-        return self.digests[repository]
+        digest = self.digests[repository]
+        return digest[tag] if isinstance(digest, dict) else digest
 
 
 def _img(repo, tag, digests=()):
@@ -51,6 +52,21 @@ async def test_image_checker():
     assert oci.calls == 2  # nginx tags fetched once for both reports
 
 
+async def test_image_checker_tag_digests():
+    oci = FakeOCI(
+        tags={"library/nginx": ["1.25.3", "1.26.0"], "library/redis": ["7.0.0"]},
+        digests={"library/nginx": {"1.25.3": "sha256:a", "1.26.0": "sha256:b"}},
+    )
+    outdated, broken = _img("library/nginx", "1.25.3", ["sha256:old"]), _img("library/redis", "7.0.0", ["sha256:r"])
+    await ImageChecker(oci, ImagesSettings()).check_all([outdated, broken])
+    assert (outdated.tag_digest, outdated.latest_digest) == ("sha256:a", "sha256:b")
+    assert broken.status == Status.UP_TO_DATE and broken.tag_digest is None  # digest errors do not change the status
+
+    disabled = _img("library/nginx", "1.25.3", ["sha256:old"])
+    await ImageChecker(oci, ImagesSettings(fetch_tag_digests=False)).check(disabled)
+    assert disabled.tag_digest is None and disabled.latest_digest is None
+
+
 def _chart_archive(chart: dict) -> bytes:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
@@ -71,6 +87,12 @@ class FakeHelm:
     versions = {
         ("https://charts.example.com", "app"): ["1.0.0", "1.1.0"],
         ("https://charts.bitnami.com/bitnami", "redis"): ["18.0.0", "19.0.0"],
+        ("https://charts.bitnami.com/bitnami", "common"): ["2.0.0", "2.1.0"],
+    }
+    dependencies = {
+        "app": [{"name": "redis", "version": "18.0.0", "repository": "https://charts.bitnami.com/bitnami"}],
+        "redis": [{"name": "common", "version": "2.0.0", "repository": "https://charts.bitnami.com/bitnami"}],
+        "common": [{"name": "common", "version": "2.0.0", "repository": "https://charts.bitnami.com/bitnami"}],  # endless
     }
 
     async def list_versions(self, repository, chart):
@@ -80,7 +102,7 @@ class FakeHelm:
         return {
             "name": chart,
             "version": version,
-            "dependencies": [{"name": "redis", "version": "18.0.0", "repository": "https://charts.bitnami.com/bitnami"}],
+            "dependencies": self.dependencies.get(chart, []),
         }
 
     async def git_chart_metadata(self, repository, ref, path):
@@ -103,6 +125,12 @@ async def test_chart_checker():
     app, app2, mon = reports
     assert (app.status, app.latest_version) == (Status.OUTDATED, "1.1.0")
     assert app.dependencies[0].status == Status.OUTDATED and app.dependencies[0].latest_version == "19.0.0"
+    # subcharts of subcharts, down to MAX_DEPENDENCY_DEPTH levels
+    assert [(depth, d.name, d.status) for depth, d in app.walk()] == [
+        (1, "redis", Status.OUTDATED),
+        (2, "common", Status.OUTDATED),
+        (3, "common", Status.OUTDATED),
+    ]
     assert app2.status == Status.UNKNOWN
     assert (mon.status, mon.version, mon.chart) == (Status.UP_TO_DATE, "0.3.0", "monitoring")
     assert mon.dependencies[0].status == Status.UNKNOWN
