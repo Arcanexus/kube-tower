@@ -1,0 +1,48 @@
+name: Tests
+
+# Called by docker-publish.yml on every push / PR, so the image is only built when tests pass.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            src/requirements.txt
+            tests/requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install -U pip
+          pip install -r src/requirements.txt -r tests/requirements.txt
+      - name: Lint
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+      - name: Run tests
+        run: pytest
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: |
+          helm lint charts/kube-tower
+          helm lint charts/kube-tower --set ingress.enabled=true --set serviceMonitor.enabled=true \
+            --set config.clusters.useArgocdSecrets=true --set registries.existingSecret=regcreds \
+            --set git.existingSecret=git --set 'clusters[0].name=prod' --set 'clusters[0].server=https://prod:6443'
+      - name: Render chart
+        run: helm template kube-tower charts/kube-tower --set ingress.enabled=true > /dev/null

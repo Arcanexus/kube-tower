@@ -1,0 +1,28 @@
+{% if partial %}{% block results %}{% endblock %}{% else %}<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kube-tower · {{ tab | default("") }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='pico.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='kube-tower.css') }}">
+  <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <ul><li><strong>kube-tower</strong></li></ul>
+      <ul>
+        {% for key, label in [("images", "Images"), ("charts", "Helm charts"), ("clusters", "Clusters"), ("settings", "Settings")] %}
+        <li><a href="/{{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}</a></li>
+        {% endfor %}
+      </ul>
+    </nav>
+    {% include "_status.html" %}
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="container"><small>kube-tower {{ version }} · read-only: nothing is ever updated automatically</small></footer>
+</body>
+</html>{% endif %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, filters %}
+{% block content %}
+<hgroup><h2>Helm charts</h2><p>Charts deployed by ArgoCD Applications, with their subcharts.</p></hgroup>
+{{ filters("/charts", q, status, cluster, snapshot) }}
+<div id="results">{{ self.results() }}</div>
+{% endblock %}
+{% block results %}
+<p><small>{{ rows | length }} chart(s)</small></p>
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>Application</th><th>Chart</th><th>Current</th><th>Latest</th><th>Status</th><th>Subcharts</th></tr></thead>
+  <tbody>
+  {% for c in rows %}
+    <tr>
+      <td>{{ c.application }}<br><small>{{ c.cluster }}{% if c.destination_namespace %} → {{ c.destination_namespace }}{% endif %}</small></td>
+      <td><code>{{ c.chart }}</code><br><small>{{ c.source_type }} · {{ c.repository }}</small></td>
+      <td>{{ c.version }}</td>
+      <td>{{ c.latest_version or "" }}</td>
+      <td>{{ badge(c.status) }}{% if c.message %}<br><small>{{ c.message }}</small>{% endif %}</td>
+      <td>
+        {% if c.dependencies %}
+        <details {% if c.worst_status == Status.OUTDATED and c.status != Status.OUTDATED %}open{% endif %}>
+          <summary>{{ c.dependencies | length }} subchart(s) {{ badge(c.worst_status) }}</summary>
+          <table>
+            {% for d in c.dependencies %}
+            <tr><td><code>{{ d.name }}</code></td><td>{{ d.version }}</td><td>{{ d.latest_version or "" }}</td>
+                <td>{{ badge(d.status) }}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</td></tr>
+            {% endfor %}
+          </table>
+        </details>
+        {% else %}<small>none</small>{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6">No chart.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

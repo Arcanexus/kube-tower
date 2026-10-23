@@ -1,0 +1,12 @@
+kube-tower is starting. The first scan runs at startup, then every {{ .Values.config.refreshInterval }}.
+
+{{- if .Values.ingress.enabled }}
+UI: http{{ if .Values.ingress.tls }}s{{ end }}://{{ (index .Values.ingress.hosts 0).host }}
+{{- else }}
+UI: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kube-tower.fullname" . }} 8080:{{ .Values.service.port }}
+    then open http://localhost:8080
+{{- end }}
+
+To register another cluster, create on it the read-only ServiceAccount from
+deploy/remote-cluster-rbac.yaml and add a Secret labelled
+kube-tower.arcanexus.com/secret-type=cluster in namespace {{ .Release.Namespace }}.

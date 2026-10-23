@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, filters %}
+{% block content %}
+<hgroup><h2>Container images</h2><p>Every image used by workloads (running or not) and cached on nodes.</p></hgroup>
+{{ filters("/images", q, status, cluster, snapshot) }}
+<div id="results">{{ self.results() }}</div>
+{% endblock %}
+{% block results %}
+<p><small>{{ rows | length }} image(s)</small></p>
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>Image</th><th>Current</th><th>Latest</th><th>Status</th><th>Used by</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><code>{{ r.image.name }}</code></td>
+      <td>{{ r.image.tag or "" }}{% if r.image.digest %}<br><small>{{ r.image.digest[:19] }}…</small>{% endif %}</td>
+      <td>{{ r.latest_tag or "" }}{% if r.latest_digest and r.status == Status.OUTDATED %}<br><small>{{ r.latest_digest[:19] }}…</small>{% endif %}</td>
+      <td>{{ badge(r.status) }}{% if r.message %}<br><small>{{ r.message }}</small>{% endif %}</td>
+      <td>
+        <details><summary>{{ r.usages | length }} usage(s) · {{ r.clusters | join(", ") }}</summary>
+          <ul>{% for u in r.usages %}<li><small>{{ u.cluster }} / {{ u.kind }} {% if u.namespace %}{{ u.namespace }}/{% endif %}{{ u.name }}{% if u.container %} ({{ u.container }}){% endif %}</small></li>{% endfor %}</ul>
+        </details>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No image.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

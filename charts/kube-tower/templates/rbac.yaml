@@ -1,0 +1,95 @@
+{{- if .Values.rbac.create }}
+# Read-only access needed to inventory the local cluster
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kube-tower.fullname" . }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    verbs: ["get", "list"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kube-tower.fullname" . }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kube-tower.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-tower.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# Read the cluster registration Secrets of the release namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-cluster-secrets
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-cluster-secrets
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-tower.fullname" . }}-cluster-secrets
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-tower.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.config.clusters.useArgocdSecrets }}
+---
+# Reuse ArgoCD cluster secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-argocd-clusters
+  namespace: {{ .Values.config.clusters.argocdNamespace }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-argocd-clusters
+  namespace: {{ .Values.config.clusters.argocdNamespace }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-tower.fullname" . }}-argocd-clusters
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-tower.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

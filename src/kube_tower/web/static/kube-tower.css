@@ -1,0 +1,12 @@
+:root { --pico-font-size: 95%; }
+.scan-status { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.scan-status button.small { padding: .2rem .6rem; font-size: .8rem; margin: 0; width: auto; }
+.scan-status .errors { margin: 0; }
+.filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .5rem; }
+@media (max-width: 600px) { .filters { grid-template-columns: 1fr; } }
+.badge { display: inline-block; padding: .1rem .5rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+.badge-up-to-date { background: #2e7d32; color: #fff; }
+.badge-outdated { background: #ef6c00; color: #fff; }
+.badge-unknown { background: #757575; color: #fff; }
+.badge-error { background: #c62828; color: #fff; }
+td details summary { font-size: .85rem; }

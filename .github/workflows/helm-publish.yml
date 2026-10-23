@@ -1,0 +1,29 @@
+name: Helm Publish
+
+# Publishes the chart as an OCI artifact: oci://ghcr.io/arcanexus/charts/kube-tower
+# The chart version and appVersion are taken from the git tag (v1.2.3 -> 1.2.3).
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: azure/setup-helm@v4
+      - name: Package and push
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          helm lint charts/kube-tower
+          helm package charts/kube-tower --version "$VERSION" --app-version "$VERSION" -d dist
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "dist/kube-tower-${VERSION}.tgz" "oci://ghcr.io/${OWNER,,}/charts"

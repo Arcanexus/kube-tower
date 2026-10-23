@@ -1,0 +1,23 @@
+[project]
+name = "kube-tower"
+version = "0.1.0"
+description = "Read-only dashboard of outdated container images and Helm charts across Kubernetes clusters"
+requires-python = ">=3.13"
+license = "GPL-3.0-only"
+
+[tool.pytest.ini_options]
+addopts = "-ra -v --cov=src --cov-report term"
+pythonpath = ["src"]
+asyncio_mode = "auto"
+required_plugins = ["pytest-cov", "pytest-asyncio"]
+
+[tool.coverage.paths]
+source = ["src/"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE"]

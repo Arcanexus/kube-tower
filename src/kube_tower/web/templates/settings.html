@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
+<hgroup><h2>Settings</h2><p>Effective configuration, read from the <code>kube-tower</code> ConfigMap and environment. Secrets are only referenced, never displayed.</p></hgroup>
+<pre><code>{{ settings_yaml }}</code></pre>
+{% endblock %}
