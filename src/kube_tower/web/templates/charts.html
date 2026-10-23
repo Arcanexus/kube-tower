@@ -1,11 +1,12 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, filters %}
+{% from "_macros.html" import badge, counters, filters, icon, page_title %}
 {% block content %}
-<hgroup><h2>Helm charts</h2><p>Charts deployed by ArgoCD Applications, with their subcharts.</p></hgroup>
+{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.") }}
 {{ filters("/charts", q, status, cluster, snapshot) }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
+{{ counters(rows, "worst_status") }}
 <p><small>{{ rows | length }} chart(s)</small></p>
 <div class="overflow-auto">
 <table class="striped">
@@ -14,7 +15,7 @@
   {% for c in rows %}
     <tr>
       <td>{{ c.application }}<br><small>{{ c.cluster }}{% if c.destination_namespace %} → {{ c.destination_namespace }}{% endif %}</small></td>
-      <td><code>{{ c.chart }}</code><br><small>{{ c.source_type }} · {{ c.repository }}</small></td>
+      <td><code>{{ c.chart }}</code><br><small>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }} · {{ c.repository }}</small></td>
       <td>{{ c.version }}</td>
       <td>{{ c.latest_version or "" }}</td>
       <td>{{ badge(c.status) }}{% if c.message %}<br><small>{{ c.message }}</small>{% endif %}</td>

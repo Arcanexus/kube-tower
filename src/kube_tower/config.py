@@ -10,7 +10,7 @@ import os
 import re
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any, get_type_hints
+from typing import Any, get_args, get_origin, get_type_hints
 
 import yaml
 
@@ -70,9 +70,27 @@ class HelmSettings:
 
 
 @dataclass
+class RegistryCredential:
+    """Credentials for one registry host (container registry or Helm repository).
+
+    Values are read from files (mounted Secrets) or env vars, never written in the ConfigMap.
+    A token-only registry (e.g. ghcr.io with a PAT) only needs `passwordFile`/`passwordEnv`.
+    """
+
+    registry: str
+    username: str = ""
+    username_file: str = ""
+    username_env: str = ""
+    password_file: str = ""
+    password_env: str = ""
+
+
+@dataclass
 class RegistriesSettings:
     # Path of a docker config.json (kubernetes.io/dockerconfigjson secret mounted as a file).
-    docker_config_path: str = "/etc/kube-tower/registries/config.json"
+    docker_config_path: str = "/etc/kube-tower/dockerconfig/config.json"
+    # Per registry credentials; they take precedence over the docker config.json.
+    credentials: list[RegistryCredential] = field(default_factory=list)
     # Registry host aliases, e.g. {"docker.io": "registry-1.docker.io"}.
     mirrors: dict[str, str] = field(default_factory=dict)
     concurrency: int = 8
@@ -118,6 +136,8 @@ def _build(cls: type, data: dict[str, Any]) -> Any:
         hint = hints[attr]
         if is_dataclass(hint):
             kwargs[attr] = _build(hint, value)
+        elif get_origin(hint) is list and get_args(hint) and is_dataclass(get_args(hint)[0]):
+            kwargs[attr] = [_build(get_args(hint)[0], item) for item in value or []]
         elif attr == "refresh_interval":
             kwargs[attr] = parse_duration(value)
         else:

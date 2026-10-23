@@ -55,8 +55,22 @@ clusters: []
 #        caData: "<base64 PEM>"
 
 registries:
-  # Name of an existing kubernetes.io/dockerconfigjson Secret with registry credentials
-  # (avoids Docker Hub rate limits, gives access to private registries).
+  # Per registry credentials, for private registries / Helm repositories and to avoid
+  # Docker Hub rate limits. Each entry references an existing Secret, mounted read-only.
+  # Applies to container registries, OCI Helm registries and HTTP Helm repositories (basic auth).
+  credentials: []
+  #  - registry: docker.io
+  #    existingSecret: dockerhub-credentials
+  #    usernameKey: username   # optional, omit for token-only registries
+  #    passwordKey: password   # password or access token
+  #  - registry: ghcr.io
+  #    existingSecret: ghcr-token
+  #    passwordKey: token
+  #  - registry: charts.example.com
+  #    existingSecret: helm-repo-credentials
+
+  # Alternatively (or in addition), an existing kubernetes.io/dockerconfigjson Secret
+  # holding credentials for several registries at once.
   existingSecret: ""
 
 git:

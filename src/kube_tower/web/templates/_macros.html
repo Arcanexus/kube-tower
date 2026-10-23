@@ -1,5 +1,26 @@
+{% macro icon(name, cls="") -%}
+<svg class="icon {{ cls }}" aria-hidden="true"><use href="/static/icons.svg#i-{{ name }}"></use></svg>
+{%- endmacro %}
+
 {% macro badge(status) -%}
-<span class="badge badge-{{ status.value }}">{{ status.value }}</span>
+{% set icons = {"up-to-date": "ok", "outdated": "outdated", "unknown": "unknown", "error": "error"} %}
+<span class="badge badge-{{ status.value }}">{{ icon(icons[status.value]) }}{{ status.value }}</span>
+{%- endmacro %}
+
+{% macro page_title(name, title, subtitle) -%}
+<hgroup class="page-title">
+  <h2>{{ icon(name) }}{{ title }}</h2>
+  <p>{{ subtitle }}</p>
+</hgroup>
+{%- endmacro %}
+
+{% macro counters(rows, status_of) -%}
+<div class="counters">
+  {% for s in Status %}
+  {% set n = rows | selectattr(status_of, "equalto", s) | list | length %}
+  <article class="counter counter-{{ s.value }}">{{ badge(s) }}<strong>{{ n }}</strong></article>
+  {% endfor %}
+</div>
 {%- endmacro %}
 
 {% macro filters(path, q, status, cluster, snapshot) -%}

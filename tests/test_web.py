@@ -91,3 +91,18 @@ def test_api_and_metrics():
     metrics = client.get("/metrics").text
     assert 'kube_tower_image_outdated{image="docker.io/library/nginx",latest="1.27",status="outdated",tag="1.25"} 1.0' in metrics
     assert 'kube_tower_cluster_reachable{cluster="c2"} 0.0' in metrics
+
+
+def test_settings_page_shows_credentials_without_secrets(monkeypatch):
+    from kube_tower.config import RegistryCredential
+
+    monkeypatch.setenv("DOCKERHUB_TOKEN", "super-secret-token")
+    settings = Settings()
+    settings.registries.credentials = [
+        RegistryCredential("docker.io", username="alex", password_env="DOCKERHUB_TOKEN"),
+        RegistryCredential("ghcr.io", password_file="/nonexistent"),
+    ]
+    page = TestClient(create_app(settings, FakeScanner(), background=False)).get("/settings").text
+    assert "docker.io" in page and "alex" in page and "loaded" in page and "invalid" in page
+    assert "super-secret-token" not in page
+    assert "passwordEnv: DOCKERHUB_TOKEN" in page  # camelCase like config.yaml

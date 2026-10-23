@@ -56,3 +56,34 @@ async def test_docker_hub_uses_api_host_and_digest():
     )
     async with httpx.AsyncClient() as http:
         assert await OCIClient(http).get_digest("docker.io", "library/nginx", "latest") == "sha256:123"
+
+
+@respx.mock
+async def test_registry_errors_and_basic_auth():
+    from kube_tower.registry.oci import RegistryError
+
+    respx.get("https://private.example.com/v2/app/tags/list?n=1000").mock(
+        side_effect=[
+            httpx.Response(401, headers={"www-authenticate": 'Basic realm="x"'}),
+            httpx.Response(200, json={"tags": None}),
+        ]
+    )
+    respx.get("https://denied.example.com/v2/app/tags/list?n=1000").respond(
+        401, headers={"www-authenticate": 'Bearer realm="https://denied.example.com/token",service="x"'}
+    )
+    respx.get("https://denied.example.com/token").respond(403)
+    respx.head("https://private.example.com/v2/app/manifests/missing").respond(404)
+    respx.get("https://private.example.com/v2/app/blobs/sha256:x").respond(404)
+    respx.get("https://private.example.com/v2/app/manifests/x").respond(404)
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http, {"private.example.com": ("u", "p")}, mirrors={"docker.io": "mirror.example.com"})
+        assert await oci.list_tags("private.example.com", "app") == []
+        assert oci._api_host("docker.io") == "mirror.example.com"
+        with pytest.raises(RegistryError, match="token request failed"):
+            await oci.list_tags("denied.example.com", "app")
+        with pytest.raises(RegistryError, match="manifest HEAD failed"):
+            await oci.get_digest("private.example.com", "app", "missing")
+        with pytest.raises(RegistryError, match="blob GET failed"):
+            await oci.get_blob("private.example.com", "app", "sha256:x")
+        with pytest.raises(RegistryError, match="manifest GET failed"):
+            await oci.get_manifest("private.example.com", "app", "x", "application/json")

@@ -1,13 +1,14 @@
 {% extends "base.html" %}
+{% from "_macros.html" import badge, icon, page_title %}
 {% block content %}
-<hgroup><h2>Clusters</h2><p>Clusters registered through Secrets (ArgoCD format) and the local cluster.</p></hgroup>
+{{ page_title("clusters", "Clusters", "Clusters registered through Secrets (ArgoCD format) and the local cluster.") }}
 <table class="striped">
   <thead><tr><th>Name</th><th>Server</th><th>Source</th><th>Version</th><th>Status</th></tr></thead>
   <tbody>
   {% for c in snapshot.clusters %}
     <tr>
-      <td>{{ c.name }}</td><td><code>{{ c.server }}</code></td><td>{{ c.source }}</td><td>{{ c.version or "" }}</td>
-      <td>{% if c.reachable %}<span class="badge badge-up-to-date">reachable</span>{% else %}<span class="badge badge-error">unreachable</span><br><small>{{ c.message }}</small>{% endif %}</td>
+      <td>{{ icon("clusters", "muted") }}{{ c.name }}</td><td><code>{{ c.server }}</code></td><td>{{ c.source }}</td><td>{{ c.version or "" }}</td>
+      <td>{% if c.reachable %}<span class="badge badge-up-to-date">{{ icon("ok") }}reachable</span>{% else %}<span class="badge badge-error">{{ icon("error") }}unreachable</span><br><small>{{ c.message }}</small>{% endif %}</td>
     </tr>
   {% else %}
     <tr><td colspan="5">No cluster discovered yet.</td></tr>

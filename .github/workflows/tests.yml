@@ -29,8 +29,25 @@ jobs:
         run: |
           ruff check src tests
           ruff format --check src tests
-      - name: Run tests
+      - name: Run tests with coverage
+        # Fails under the coverage threshold set in pyproject.toml ([tool.coverage.report] fail_under)
         run: pytest
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f .coverage ]; then
+            echo "## Test coverage" >> "$GITHUB_STEP_SUMMARY"
+            python -m coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: |
+            htmlcov/
+            coverage.xml
+          if-no-files-found: ignore
 
   helm:
     runs-on: ubuntu-latest
@@ -43,6 +60,15 @@ jobs:
           helm lint charts/kube-tower
           helm lint charts/kube-tower --set ingress.enabled=true --set serviceMonitor.enabled=true \
             --set config.clusters.useArgocdSecrets=true --set registries.existingSecret=regcreds \
-            --set git.existingSecret=git --set 'clusters[0].name=prod' --set 'clusters[0].server=https://prod:6443'
+            --set git.existingSecret=git --set 'clusters[0].name=prod' --set 'clusters[0].server=https://prod:6443' \
+            --set 'registries.credentials[0].registry=docker.io' --set 'registries.credentials[0].existingSecret=dockerhub' \
+            --set 'registries.credentials[0].usernameKey=username' \
+            --set 'registries.credentials[1].registry=ghcr.io' --set 'registries.credentials[1].existingSecret=ghcr'
       - name: Render chart
-        run: helm template kube-tower charts/kube-tower --set ingress.enabled=true > /dev/null
+        run: |
+          helm template kube-tower charts/kube-tower \
+            --set 'registries.credentials[0].registry=docker.io' --set 'registries.credentials[0].existingSecret=dockerhub' \
+            --set 'registries.credentials[0].usernameKey=username' > rendered.yaml
+          # The rendered config must reference the mounted secret files
+          grep -q 'passwordFile: /etc/kube-tower/registries/0/password' rendered.yaml
+          grep -q 'usernameFile: /etc/kube-tower/registries/0/username' rendered.yaml

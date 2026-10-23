@@ -13,6 +13,7 @@ import httpx
 import yaml
 
 from kube_tower.config import GitSettings
+from kube_tower.registry.auth import normalize_host
 from kube_tower.registry.oci import OCIClient, RegistryError
 
 log = logging.getLogger(__name__)
@@ -49,10 +50,14 @@ class HelmClient:
         self.git = git
         self._indexes: dict[str, dict] = {}
 
+    def _auth(self, url: str) -> tuple[str, str] | None:
+        """Basic auth for private HTTP Helm repositories, from the per registry credentials."""
+        return self.oci.credentials.get(normalize_host(url))
+
     async def _index(self, repository: str) -> dict:
         repository = repository.rstrip("/")
         if repository not in self._indexes:
-            resp = await self.http.get(f"{repository}/index.yaml", follow_redirects=True)
+            resp = await self.http.get(f"{repository}/index.yaml", auth=self._auth(repository), follow_redirects=True)
             if resp.status_code != 200:
                 raise RegistryError(f"index.yaml fetch failed ({resp.status_code}) for {repository}")
             self._indexes[repository] = yaml.safe_load(resp.text) or {}
@@ -81,7 +86,7 @@ class HelmClient:
         if entry is None:
             raise RegistryError(f"version {version} of {chart} not found in {repository}")
         url = urljoin(f"{repository.rstrip('/')}/", entry["urls"][0])
-        resp = await self.http.get(url, follow_redirects=True)
+        resp = await self.http.get(url, auth=self._auth(url), follow_redirects=True)
         if resp.status_code != 200:
             raise RegistryError(f"chart download failed ({resp.status_code}) for {url}")
         return chart_yaml_from_archive(resp.content)

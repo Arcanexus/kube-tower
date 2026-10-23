@@ -9,6 +9,8 @@ Renovate or jetstack version-checker, **without automatic updates**.
   ghcr.io, quay.io, any OCI registry). Floating tags (`latest`) are checked by digest.
 - **Helm charts**: charts deployed by ArgoCD Applications, from Helm repositories, OCI registries
   or git paths, with their subcharts.
+- **Registry authentication**: per registry credentials for private registries / Helm repos and
+  Docker Hub rate limits.
 - **Multi-cluster**: register clusters with Secrets in the ArgoCD format, or reuse ArgoCD's own.
 - **Stateless**: no database, the inventory is rebuilt periodically.
 - UI with Images / Helm charts / Clusters / Settings tabs, JSON API and Prometheus metrics.
@@ -38,7 +40,7 @@ See [docs/configuration.md](docs/configuration.md) and [docs/clusters.md](docs/c
 ```sh
 python -m venv .venv && . .venv/bin/activate
 pip install -r src/requirements.txt -r tests/requirements.txt
-pytest
+pytest            # runs tests with coverage (HTML report in htmlcov/, fails under 90%)
 ruff check src tests && ruff format src tests
 
 # Run against the cluster of your current kubeconfig

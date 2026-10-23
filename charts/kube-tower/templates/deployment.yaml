@@ -64,8 +64,13 @@ spec:
             - name: tmp
               mountPath: /tmp
             {{- if .Values.registries.existingSecret }}
-            - name: registries
-              mountPath: /etc/kube-tower/registries
+            - name: dockerconfig
+              mountPath: /etc/kube-tower/dockerconfig
+              readOnly: true
+            {{- end }}
+            {{- range $i, $c := .Values.registries.credentials }}
+            - name: registry-{{ $i }}
+              mountPath: /etc/kube-tower/registries/{{ $i }}
               readOnly: true
             {{- end }}
       volumes:
@@ -75,12 +80,17 @@ spec:
         - name: tmp
           emptyDir: {}
         {{- if .Values.registries.existingSecret }}
-        - name: registries
+        - name: dockerconfig
           secret:
             secretName: {{ .Values.registries.existingSecret }}
             items:
               - key: .dockerconfigjson
                 path: config.json
+        {{- end }}
+        {{- range $i, $c := .Values.registries.credentials }}
+        - name: registry-{{ $i }}
+          secret:
+            secretName: {{ required "registries.credentials[].existingSecret is required" $c.existingSecret }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

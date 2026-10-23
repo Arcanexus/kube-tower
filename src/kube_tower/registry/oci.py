@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 DOCKER_HUB = "docker.io"
 DOCKER_HUB_API = "registry-1.docker.io"
-_DOCKER_HUB_ALIASES = {"docker.io", "index.docker.io", "registry-1.docker.io", "registry.hub.docker.com"}
+DOCKER_HUB_ALIASES = {"docker.io", "index.docker.io", "registry-1.docker.io", "registry.hub.docker.com"}
 
 MANIFEST_ACCEPT = ", ".join(
     [
@@ -48,7 +48,7 @@ def parse_image_ref(image: str) -> ImageRef:
         registry, repository = parts
     else:
         registry, repository = DOCKER_HUB, image
-    if registry in _DOCKER_HUB_ALIASES:
+    if registry in DOCKER_HUB_ALIASES:
         registry = DOCKER_HUB
     if registry == DOCKER_HUB and "/" not in repository:
         repository = f"library/{repository}"
@@ -66,7 +66,7 @@ def load_docker_credentials(path: str) -> dict[str, tuple[str, str]]:
     creds: dict[str, tuple[str, str]] = {}
     for host, entry in (data.get("auths") or {}).items():
         host = re.sub(r"^https?://", "", host).split("/")[0]
-        if host in _DOCKER_HUB_ALIASES:
+        if host in DOCKER_HUB_ALIASES:
             host = DOCKER_HUB
         if entry.get("auth"):
             user, _, pwd = base64.b64decode(entry["auth"]).decode().partition(":")

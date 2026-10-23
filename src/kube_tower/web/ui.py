@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from pathlib import Path
 
 import yaml
@@ -13,11 +14,21 @@ from fastapi.templating import Jinja2Templates
 
 from kube_tower import __version__
 from kube_tower.models import Status
+from kube_tower.registry.auth import resolve_credentials
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["version"] = __version__
 templates.env.globals["Status"] = Status
+
+
+def _camel(data):
+    """Show settings with the camelCase keys used in config.yaml / Helm values."""
+    if isinstance(data, dict):
+        return {re.sub(r"_([a-z])", lambda m: m[1].upper(), k): _camel(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_camel(v) for v in data]
+    return data
 
 
 def _matches(text: str, query: str) -> bool:
@@ -71,8 +82,10 @@ def mount(app: FastAPI) -> None:
     @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
     async def settings(request: Request):
         # Settings only hold references to secrets (paths, env var names), never their values.
-        rendered = yaml.safe_dump(dataclasses.asdict(request.app.state.settings), sort_keys=False)
-        return render(request, "settings", tab="settings", settings_yaml=rendered)
+        settings = request.app.state.settings
+        rendered = yaml.safe_dump(_camel(dataclasses.asdict(settings)), sort_keys=False)
+        _, credentials = resolve_credentials(settings.registries)
+        return render(request, "settings", tab="settings", settings_yaml=rendered, credentials=credentials)
 
     @app.get("/status", response_class=HTMLResponse, include_in_schema=False)
     async def scan_status(request: Request):

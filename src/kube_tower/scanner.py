@@ -18,8 +18,9 @@ from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
 from kube_tower.config import Settings
 from kube_tower.models import Snapshot
+from kube_tower.registry.auth import resolve_credentials
 from kube_tower.registry.helm import HelmClient
-from kube_tower.registry.oci import OCIClient, load_docker_credentials
+from kube_tower.registry.oci import OCIClient
 
 log = logging.getLogger(__name__)
 
@@ -56,9 +57,8 @@ class Scanner:
 
             reg = self.settings.registries
             async with httpx.AsyncClient(timeout=reg.timeout, headers={"User-Agent": "kube-tower"}) as http:
-                oci = OCIClient(
-                    http, load_docker_credentials(reg.docker_config_path), reg.mirrors, self.settings.images.max_tag_pages
-                )
+                credentials, _ = resolve_credentials(reg)
+                oci = OCIClient(http, credentials, reg.mirrors, self.settings.images.max_tag_pages)
                 helm = HelmClient(http, oci, self.settings.git)
                 await asyncio.gather(
                     ImageChecker(oci, self.settings.images, reg.concurrency).check_all(snap.images),

@@ -1,11 +1,12 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, filters %}
+{% from "_macros.html" import badge, counters, filters, icon, page_title %}
 {% block content %}
-<hgroup><h2>Container images</h2><p>Every image used by workloads (running or not) and cached on nodes.</p></hgroup>
+{{ page_title("images", "Container images", "Every image used by workloads (running or not) and cached on nodes.") }}
 {{ filters("/images", q, status, cluster, snapshot) }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
+{{ counters(rows, "status") }}
 <p><small>{{ rows | length }} image(s)</small></p>
 <div class="overflow-auto">
 <table class="striped">
@@ -13,7 +14,7 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td><code>{{ r.image.name }}</code></td>
+      <td>{{ icon("box", "muted") }}<code>{{ r.image.name }}</code></td>
       <td>{{ r.image.tag or "" }}{% if r.image.digest %}<br><small>{{ r.image.digest[:19] }}…</small>{% endif %}</td>
       <td>{{ r.latest_tag or "" }}{% if r.latest_digest and r.status == Status.OUTDATED %}<br><small>{{ r.latest_digest[:19] }}…</small>{% endif %}</td>
       <td>{{ badge(r.status) }}{% if r.message %}<br><small>{{ r.message }}</small>{% endif %}</td>

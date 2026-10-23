@@ -56,3 +56,76 @@ def test_discover_skips_bad_secrets_and_duplicates():
     clusters, statuses = FakeRegistry([good, dup, bad]).discover()
     assert [c.name for c in clusters] == ["a"]
     assert [(s.name, s.reachable) for s in statuses] == [("c", False), ("a", True)]
+
+
+def test_argocd_config_tls_and_basic_auth():
+    import base64 as b64
+
+    from kube_tower.clusters import api_client_from_argocd_config
+
+    pem = b64.b64encode(b"-----BEGIN CERTIFICATE-----\n").decode()
+    api = api_client_from_argocd_config(
+        "https://x:6443",
+        {
+            "username": "u",
+            "password": "p",
+            "tlsClientConfig": {"caData": pem, "certData": pem, "keyData": pem, "serverName": "x"},
+        },
+    )
+    conf = api.configuration
+    assert conf.api_key["authorization"].startswith("Basic ")
+    assert conf.verify_ssl and conf.ssl_ca_cert and conf.cert_file and conf.key_file
+    assert conf.tls_server_name == "x"
+
+
+def test_exec_auth_is_rejected():
+    import pytest
+
+    from kube_tower.clusters import api_client_from_argocd_config
+
+    with pytest.raises(ValueError, match="not supported"):
+        api_client_from_argocd_config("https://x", {"execProviderConfig": {"command": "aws"}})
+
+
+def test_discover_in_cluster_and_argocd_secrets(monkeypatch):
+    from kube_tower import clusters as clusters_module
+    from kube_tower.models import ClusterStatus
+
+    calls = []
+
+    class Registry(ClusterRegistry):
+        def local_client(self):
+            return client.ApiClient(client.Configuration(host="https://local"))
+
+        def _list_secrets(self, namespace, selector):
+            calls.append((namespace, selector))
+            if "argocd" in selector:
+                # ArgoCD's own in-cluster secret must not duplicate the local cluster
+                return [_secret("argo-local", name="in", server="https://kubernetes.default.svc", config="{}")]
+            raise client.ApiException(status=403, reason="Forbidden")
+
+        def probe(self, cluster):
+            return ClusterStatus(cluster.name, cluster.server, cluster.source, reachable=True)
+
+    monkeypatch.setattr(clusters_module, "current_namespace", lambda: "kube-tower")
+    clusters, statuses = Registry(ClustersSettings(use_argocd_secrets=True)).discover()
+    assert [c.name for c in clusters] == ["in-cluster"]
+    assert calls[0][0] == "kube-tower" and calls[1][0] == "argocd"
+    assert statuses[0].message == "Forbidden"
+
+
+def test_probe_reports_errors(monkeypatch):
+    cluster = cluster_from_secret(_secret("s", name="p", server="https://127.0.0.1:1", config="{}"), "secret")
+    status = ClusterRegistry(ClustersSettings(request_timeout=1)).probe(cluster)
+    assert status.reachable is False and status.message
+
+
+def test_current_namespace(monkeypatch, tmp_path):
+    from kube_tower import clusters as clusters_module
+
+    monkeypatch.setattr(clusters_module, "SA_NAMESPACE_FILE", str(tmp_path / "missing"))
+    monkeypatch.setenv("POD_NAMESPACE", "tools")
+    assert clusters_module.current_namespace() == "tools"
+    (tmp_path / "ns").write_text("kube-tower\n")
+    monkeypatch.setattr(clusters_module, "SA_NAMESPACE_FILE", str(tmp_path / "ns"))
+    assert clusters_module.current_namespace() == "kube-tower"
