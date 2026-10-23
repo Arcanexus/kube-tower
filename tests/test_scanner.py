@@ -435,3 +435,81 @@ async def test_scan_remembers_the_reachable_clusters(fakes):
     scanner = Scanner(Settings(), FakeRegistry())
     await scanner.scan()
     assert list(scanner._clusters) == ["up"]
+
+
+async def test_retry_failed(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="kube_tower")
+    checked, scanned = [], []
+
+    async def check_images(self, reports):
+        for r in reports:
+            checked.append(str(r.image))
+            assert r.message is None  # starts from clean reports
+            r.status, r.latest_tag = Status.OUTDATED, "1.27"
+
+    async def check_charts(self, reports):
+        for r in reports:
+            checked.append(r.chart)
+            r.status, r.latest_version = Status.UP_TO_DATE, "1.0.0"
+
+    async def scan_many(self, reports):
+        scanned.extend(str(r.image) for r in reports)
+        for r in reports:
+            r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC))
+        return []
+
+    monkeypatch.setattr(scanner_module.ImageChecker, "check_all", check_images)
+    monkeypatch.setattr(scanner_module.ChartChecker, "check_all", check_charts)
+    monkeypatch.setattr(scanner_module.TrivyScanner, "available", True)
+    monkeypatch.setattr(scanner_module.TrivyScanner, "scan_many", scan_many)
+    scanner, image, chart = _snapshot_scanner()
+    ok = ImageReport(ImageRef("ghcr.io", "org/app", "1"), status=Status.UP_TO_DATE)
+    ok.vulnerabilities = VulnerabilityReport("trivy", message="registry denied")
+    scanner.snapshot.images.append(ok)
+    images, vulnerabilities, charts = scanner.failed_items()
+    assert (images, vulnerabilities, charts) == ([image], [ok], [chart])
+
+    assert scanner.retry_failed() is None
+    assert scanner.rescanning == {
+        scanner_module.RETRY_KEY,
+        ("image", "docker.io/library/nginx:1.25"),
+        ("image", "ghcr.io/org/app:1"),
+        ("chart", "up", "argocd", "app", "app"),
+    }
+    assert scanner.retry_failed() == "3 of these items are already being rescanned"
+    assert scanner.rescan_image(image).endswith("already being rescanned")
+    await _rescanned(scanner)
+    assert checked == ["docker.io/library/nginx:1.25", "app"]  # only what failed
+    assert scanned == ["ghcr.io/org/app:1"]
+    assert (image.status, image.latest_tag, chart.status, chart.message) == (Status.OUTDATED, "1.27", Status.UP_TO_DATE, None)
+    assert scanner.failed_items() == ([], [], [])
+    assert scanner.snapshot.errors == ["[up] cannot list StatefulSet: 403 Forbidden"]
+    assert "retry done: still failing 0 image version check(s), 0 vulnerability scan(s), 0 chart(s)" in caplog.text
+    assert scanner.retry_failed() == "nothing failed in the last scan"
+
+
+async def test_retry_failed_subchart_errors_and_no_trivy(monkeypatch, caplog):
+    async def check_all(self, reports):
+        return None
+
+    monkeypatch.setattr(scanner_module.ImageChecker, "check_all", check_all)
+    monkeypatch.setattr(scanner_module.ChartChecker, "check_all", check_all)
+    monkeypatch.setattr(scanner_module.TrivyScanner, "available", False)
+    scanner, image, chart = _snapshot_scanner()
+    chart.status = Status.UP_TO_DATE
+    chart.dependencies = [ChartDependency("common", "1.0.0", "https://x", Status.ERROR, message="404")]
+    image.vulnerabilities = VulnerabilityReport("trivy", message="boom")
+    assert scanner.failed_items() == ([image], [image], [chart])
+    assert scanner.retry_failed() is None
+    await _rescanned(scanner)
+    assert "vulnerability scans not retried: trivy binary 'trivy' not found" in caplog.text
+
+
+async def test_exclusive_blocks_scans_and_rescans():
+    scanner, image, _ = _snapshot_scanner()
+    async with scanner.exclusive("the Trivy database is being updated"):
+        assert scanner.locked and not scanner.running  # not shown as a scan
+        assert not scanner.trigger()
+        assert scanner.rescan_image(image) == "the Trivy database is being updated: try again when it is over"
+        assert scanner.retry_failed() == "the Trivy database is being updated: try again when it is over"
+    assert scanner.busy is None and not scanner.locked

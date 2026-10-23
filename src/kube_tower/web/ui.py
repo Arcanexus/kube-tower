@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from kube_tower import __version__
+from kube_tower.maintenance import unused_node_images
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.scanner import chart_key, image_key
@@ -233,6 +234,68 @@ def mount(app: FastAPI) -> None:
         rendered = yaml.safe_dump(_camel(dataclasses.asdict(settings)), sort_keys=False)
         _, credentials = resolve_credentials(settings.registries)
         return render(request, "settings", tab="settings", settings_yaml=rendered, credentials=credentials)
+
+    def render_maintenance(request: Request, notice: str = "", error: str = "", full: bool = False) -> HTMLResponse:
+        """The Maintenance page, or only its actions (`#maintenance`) for htmx. While an action runs the
+        actions poll themselves (`polling=1`); the poll that sees them all over reloads the page.
+        """
+        scanner, maintenance = request.app.state.scanner, request.app.state.maintenance
+        images, vulnerabilities, charts = scanner.failed_items()
+        busy = bool(scanner.locked or scanner.rescanning or maintenance.running)
+        response = templates.TemplateResponse(
+            request,
+            "maintenance.html" if full else "_maintenance.html",
+            {
+                "tab": "maintenance",
+                "snapshot": scanner.snapshot,
+                "scanning": scanner.running,
+                "partial": False,
+                "scanner": scanner,
+                "m": maintenance,
+                "busy": busy,
+                "failed": {"images": images, "vulnerabilities": vulnerabilities, "charts": charts},
+                "unused": unused_node_images(scanner.snapshot),
+                "trivy_settings": request.app.state.settings.vulnerabilities,
+                "notice": notice,
+                "error": error,
+            },
+        )
+        if request.query_params.get("polling") and not busy:
+            response.headers["HX-Refresh"] = "true"
+        return response
+
+    @app.get("/maintenance", response_class=HTMLResponse, include_in_schema=False)
+    async def maintenance(request: Request):
+        m, trivy = request.app.state.maintenance, request.app.state.settings.vulnerabilities
+        if m.trivy_status is None and trivy.enabled and trivy.trivy.enabled:
+            await m.refresh_trivy_status()
+        fragment = request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "maintenance"
+        return render_maintenance(request, full=not fragment)
+
+    @app.post("/maintenance/{action}", response_class=HTMLResponse, include_in_schema=False)
+    async def maintenance_action(request: Request, action: str):
+        scanner, m = request.app.state.scanner, request.app.state.maintenance
+        notice = error = None
+        if action == "scan":
+            error = None if scanner.trigger() else "a scan or a maintenance action is already running"
+            notice = "Full scan started."
+        elif action == "retry-failed":
+            error, notice = scanner.retry_failed(), "Retry of the failed items started."
+        elif action == "trivy-db":
+            error, notice = m.update_trivy_db(), "Trivy database update started."
+        elif action == "trivy-status":
+            await m.refresh_trivy_status()
+            notice = "Trivy status read again."
+        elif action in ("trivy-cache", "trivy-cache-scan"):
+            notice = f"Trivy results cache cleared ({m.clear_trivy_cache()} image(s))."
+            if action == "trivy-cache-scan":
+                started = scanner.trigger()
+                notice += " Full scan started." if started else " A scan is already running: the next one scans every image."
+        elif action == "connectivity":
+            error, notice = m.test_connectivity(), "Connectivity test started."
+        else:
+            return Response(status_code=404)
+        return render_maintenance(request, "" if error else notice, error or "")
 
     @app.get("/status", response_class=HTMLResponse, include_in_schema=False)
     async def scan_status(request: Request):

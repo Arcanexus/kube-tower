@@ -102,10 +102,28 @@ class Scanner:
         self.rescanning: set[tuple] = set()
         self._rescans: set[asyncio.Task] = set()  # keeps the background rescans referenced
         self._clusters: dict[str, Cluster] = {}  # reachable clusters of the last scan, by name
+        # Set while a maintenance action holds the scan lock (e.g. Trivy database update): why scans must wait.
+        self.busy: str | None = None
 
     @property
     def running(self) -> bool:
+        """A scan is running (not a maintenance action holding the scan lock)."""
+        return self._lock.locked() and self.busy is None
+
+    @property
+    def locked(self) -> bool:
+        """A scan or a maintenance action holds the scan lock."""
         return self._lock.locked()
+
+    @contextlib.asynccontextmanager
+    async def exclusive(self, reason: str) -> AsyncIterator[None]:
+        """Hold the scan lock for a maintenance action: no scan nor rescan starts meanwhile."""
+        async with self._lock:
+            self.busy = reason
+            try:
+                yield
+            finally:
+                self.busy = None
 
     async def scan(self) -> Snapshot:
         async with self._lock:
@@ -226,9 +244,77 @@ class Scanner:
             chart_key(report), f"chart {report.chart} of application {report.application}", partial(self._rescan_chart, report)
         )
 
+    def failed_items(self) -> tuple[list[ImageReport], list[ImageReport], list[ChartReport]]:
+        """What failed in the current snapshot: image version checks, vulnerability scans, charts (or subcharts)."""
+        snap = self.snapshot
+        images = [r for r in snap.images if r.status == Status.ERROR]
+        vulnerabilities = [
+            r for r in snap.images if r.vulnerabilities and r.vulnerabilities.message and self.can_rescan_vulnerabilities(r)
+        ]
+        charts = [c for c in snap.charts if c.status == Status.ERROR or any(d.status == Status.ERROR for _, d in c.walk())]
+        return images, vulnerabilities, charts
+
+    def retry_failed(self) -> str | None:
+        """Check again, in the background, everything that failed. Returns why it cannot start, None when started."""
+        images, vulnerabilities, charts = self.failed_items()
+        if not (images or vulnerabilities or charts):
+            return "nothing failed in the last scan"
+        keys = {image_key(r) for r in images + vulnerabilities} | {chart_key(c) for c in charts}
+        if busy := keys & self.rescanning:
+            return f"{len(busy)} of these items are already being rescanned"
+        error = self._start_rescan(
+            RETRY_KEY, "the failed items", partial(self._retry_failed, images, vulnerabilities, charts, keys)
+        )
+        if error is None:
+            self.rescanning |= keys  # their detail panels show the rescan
+        return error
+
+    async def _retry_failed(
+        self, images: list[ImageReport], vulnerabilities: list[ImageReport], charts: list[ChartReport], keys: set[tuple]
+    ) -> None:
+        """Run in a worker thread's event loop, like a scan but only for the failed items."""
+        try:
+            snap = self.snapshot
+            before = check_errors(snap)
+            log.info(
+                "retrying what failed: %d image version check(s), %d vulnerability scan(s), %d chart(s)",
+                len(images),
+                len(vulnerabilities),
+                len(charts),
+            )
+            fresh_images = [_fresh_image(r) for r in images]
+            fresh_charts = [_fresh_chart(c) for c in charts]
+            async with self._clients() as (oci, helm, _):
+                concurrency = self.settings.registries.concurrency
+                await asyncio.gather(
+                    ImageChecker(oci, self.settings.images, concurrency).check_all(fresh_images),
+                    ChartChecker(helm, self.settings.helm, concurrency).check_all(fresh_charts),
+                )
+            for report, fresh in zip(images, fresh_images, strict=True):
+                _apply_image(report, fresh)
+            for report, fresh in zip(charts, fresh_charts, strict=True):
+                _apply_chart(report, fresh)
+            if vulnerabilities:
+                if self.trivy.available:
+                    await self.trivy.scan_many(vulnerabilities)  # failed scans are never cached
+                else:
+                    log.warning("vulnerability scans not retried: trivy binary %r not found", self.trivy.settings.binary)
+            refresh_check_errors(snap, before)
+            images_left, vulnerabilities_left, charts_left = self.failed_items()
+            log.info(
+                "retry done: still failing %d image version check(s), %d vulnerability scan(s), %d chart(s)",
+                len(images_left),
+                len(vulnerabilities_left),
+                len(charts_left),
+            )
+        finally:
+            self.rescanning -= keys
+
     def _start_rescan(self, key: tuple, name: str, work: Callable[[], Coroutine]) -> str | None:
         if self.running:
             return "a scan is running, it checks everything again"
+        if self.busy:
+            return f"{self.busy}: try again when it is over"
         if key in self.rescanning:
             return f"{name} is already being rescanned"
         self.rescanning.add(key)
@@ -251,13 +337,10 @@ class Scanner:
         before = check_errors(snap)
         if versions:
             log.info("rescan of image %s: checking its version", report.image)
-            fresh = dataclasses.replace(
-                report, status=Status.UNKNOWN, latest_tag=None, latest_digest=None, tag_digest=None, message=None
-            )
+            fresh = _fresh_image(report)
             async with self._clients() as (oci, _, _):
                 await ImageChecker(oci, self.settings.images, self.settings.registries.concurrency).check(fresh)
-            report.status, report.message = fresh.status, fresh.message
-            report.latest_tag, report.latest_digest, report.tag_digest = fresh.latest_tag, fresh.latest_digest, fresh.tag_digest
+            _apply_image(report, fresh)
             log.info(
                 "rescan of image %s: %s%s",
                 report.image,
@@ -313,12 +396,10 @@ class Scanner:
         snap = self.snapshot
         before = check_errors(snap)
         log.info("[%s] rescan of chart %s of application %s", report.cluster, report.chart, report.application)
-        fresh = dataclasses.replace(report, status=Status.UNKNOWN, latest_version=None, message=None, dependencies=[])
+        fresh = _fresh_chart(report)
         async with self._clients() as (_, helm, _):
             await ChartChecker(helm, self.settings.helm, self.settings.registries.concurrency).check(fresh)
-        # `chart` is kept: it identifies the chart in the UI.
-        report.version, report.status, report.latest_version = fresh.version, fresh.status, fresh.latest_version
-        report.message, report.dependencies = fresh.message, fresh.dependencies
+        _apply_chart(report, fresh)
         log.info(
             "[%s] rescan of chart %s of application %s: %s%s",
             report.cluster,
@@ -330,8 +411,8 @@ class Scanner:
         refresh_check_errors(snap, before)
 
     def trigger(self) -> bool:
-        """Start a scan in the background unless one is already running."""
-        if self.running:
+        """Start a scan in the background unless one is already running (or a maintenance action holds the lock)."""
+        if self.locked:
             return False
         self._task = asyncio.create_task(self._safe_scan())
         return True
@@ -348,6 +429,29 @@ class Scanner:
         while True:
             await self._safe_scan()
             await asyncio.sleep(self.settings.refresh_interval)
+
+
+RETRY_KEY = ("retry-failed",)
+
+
+def _fresh_image(report: ImageReport) -> ImageReport:
+    """A copy of the report to check again apart (the current results stay shown meanwhile)."""
+    return dataclasses.replace(report, status=Status.UNKNOWN, latest_tag=None, latest_digest=None, tag_digest=None, message=None)
+
+
+def _apply_image(report: ImageReport, fresh: ImageReport) -> None:
+    report.status, report.message = fresh.status, fresh.message
+    report.latest_tag, report.latest_digest, report.tag_digest = fresh.latest_tag, fresh.latest_digest, fresh.tag_digest
+
+
+def _fresh_chart(report: ChartReport) -> ChartReport:
+    return dataclasses.replace(report, status=Status.UNKNOWN, latest_version=None, message=None, dependencies=[])
+
+
+def _apply_chart(report: ChartReport, fresh: ChartReport) -> None:
+    # `chart` is kept: it identifies the chart in the UI.
+    report.version, report.status, report.latest_version = fresh.version, fresh.status, fresh.latest_version
+    report.message, report.dependencies = fresh.message, fresh.dependencies
 
 
 def image_key(report: ImageReport) -> tuple:

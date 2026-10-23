@@ -38,6 +38,7 @@ never updates anything, you stay in control of your GitOps workflow.
 | 🌐 **Multi-cluster** | Register clusters ArgoCD-style with a Secret, or reuse the cluster Secrets ArgoCD already has. |
 | 🛡️ **Vulnerabilities (CVE)** | Read from Trivy Operator reports when the cluster has them, else scanned with the bundled Trivy (standalone or client/server). |
 | 🔐 **Registry authentication** | Per registry credentials for private registries, private Helm repositories and Docker Hub rate limits. |
+| 🧰 **Maintenance** | Rescan one item or what failed, update the Trivy database, test the connectivity to clusters and registries, list unused node images. Read-only: nothing is ever changed in the clusters. |
 | 🪶 **Stateless** | No database. One small pod, rebuilt inventory every few hours or on demand. |
 | 📈 **Observable** | JSON API and Prometheus metrics, ready for Grafana dashboards and alerts. |
 

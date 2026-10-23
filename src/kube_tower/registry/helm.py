@@ -80,6 +80,17 @@ class HelmClient:
         )
         return index or {}
 
+    async def ping(self, repository: str) -> str:
+        """Check that an HTTP Helm repository serves its index.yaml (without downloading it).
+        Returns what was checked, raises RegistryError when it fails.
+        """
+        url = f"{repository.rstrip('/')}/index.yaml"
+        auth = self._auth(repository)
+        async with self.http.stream("GET", url, auth=auth, follow_redirects=True) as resp:
+            if resp.status_code != 200:
+                raise RegistryError(http_error_message(f"cannot read the index.yaml of the Helm repository {repository}", resp))
+        return f"index.yaml served {'with credentials' if auth else 'anonymously'}"
+
     async def list_versions(self, repository: str, chart: str) -> list[str]:
         if is_oci(repository):
             registry, path = split_oci(repository, chart)
