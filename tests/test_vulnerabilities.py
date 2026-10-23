@@ -9,7 +9,7 @@ from kube_tower.clusters import Cluster
 from kube_tower.collectors import vulnerabilities as operator
 from kube_tower.config import TrivySettings
 from kube_tower.models import ImageRef, ImageReport, Severity, Vulnerability, VulnerabilityReport
-from kube_tower.trivy import TrivyScanner, _error_message, parse_trivy_output, scan_target
+from kube_tower.trivy import TrivyScanner, _error_message, parse_trivy_output, parse_trivy_version, scan_target
 
 OPERATOR_REPORT = {
     "metadata": {"name": "replicaset-web-nginx", "namespace": "default"},
@@ -266,3 +266,42 @@ def test_vulnerability_report_counts():
     assert report.counts() == {Severity.CRITICAL: 0, Severity.HIGH: 0, Severity.MEDIUM: 0, Severity.LOW: 1, Severity.UNKNOWN: 0}
     assert VulnerabilityReport("trivy").worst is None
     assert Severity.parse(None) == Severity.UNKNOWN and Severity.parse("High") == Severity.HIGH
+
+
+def test_parse_trivy_version():
+    status = parse_trivy_version(
+        {
+            "Version": "0.75.0",
+            "VulnerabilityDB": {
+                "Version": 2,
+                "NextUpdate": "2026-10-24T19:15:43.73441704Z",
+                "UpdatedAt": "2026-10-23T19:15:43.7344174Z",
+                "DownloadedAt": "2026-10-23T22:22:40.971226632Z",
+            },
+        }
+    )
+    assert status.version == "0.75.0" and status.java_db is None and status.message is None
+    assert status.db.version == 2 and status.db.downloaded_at == datetime(2026, 10, 23, 22, 22, 40, 971226, tzinfo=UTC)
+    assert status.db.next_update.day == 24
+    assert parse_trivy_version({"Version": "0.75.0"}).db is None  # never downloaded
+    assert parse_trivy_version({"VulnerabilityDB": {"UpdatedAt": "bad"}}).db.updated_at is None
+
+
+async def test_trivy_status(tmp_path, monkeypatch):
+    script = tmp_path / "trivy"
+    script.write_text(
+        "#!/bin/sh\n"
+        'if [ "$FAIL" ]; then printf "x\\tFATAL\\tboom\\n" >&2; exit 1; fi\n'
+        'if [ "$GARBAGE" ]; then echo "nope"; exit 0; fi\n'
+        """echo '{"Version":"0.75.0","JavaDB":{"Version":1}}'\n"""
+    )
+    script.chmod(0o755)
+    scanner = TrivyScanner(TrivySettings(binary=str(script)), {})
+    status = await scanner.status()
+    assert status.version == "0.75.0" and status.java_db.version == 1
+    monkeypatch.setenv("GARBAGE", "1")
+    assert (await scanner.status()).message.startswith("unreadable trivy version output")
+    monkeypatch.setenv("FAIL", "1")
+    assert (await scanner.status()).message == "trivy version failed: boom"
+    missing = await TrivyScanner(TrivySettings(binary=str(tmp_path / "none")), {}).status()
+    assert missing.message.endswith("not found")

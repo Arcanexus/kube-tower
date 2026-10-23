@@ -16,6 +16,10 @@ All notable changes to this project are documented here. The format follows
   (`trivy.enabled`, `trivy.image`).
 - Rescan of one image (version and/or vulnerabilities) or one Helm chart from its detail panel, or
   with `POST /api/rescan/image` and `POST /api/rescan/chart`, without waiting for the next scan.
+- Maintenance page: full scan, retry of what failed in the last scan, Trivy database status and
+  update, Trivy results cache clearing, connectivity test of the clusters, registries, Helm
+  repositories and Trivy server, and the list of unused node images with their `crictl rmi`
+  command (kube-tower stays read-only). Also in the API under `/api/maintenance/…`.
 - Vulnerabilities on the Synthesis page (critical CVEs tile and per cluster, images by worst severity,
   most vulnerable images) and a Vulnerabilities row in the Grafana dashboard.
 

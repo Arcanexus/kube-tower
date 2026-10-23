@@ -1,0 +1,147 @@
+{% from "_macros.html" import icon %}
+{% macro action(name, label, ico="refresh", disabled=False, why="", confirm="", cls="outline") -%}
+<button type="button" class="{{ cls }} small" hx-post="maintenance/{{ name }}" hx-target="#maintenance" hx-swap="outerHTML"
+        {% if confirm %}hx-confirm="{{ confirm }}"{% endif %}
+        {% if disabled %}disabled title="{{ why }}"{% endif %}>{{ icon(ico) }}{{ label }}</button>
+{%- endmacro %}
+{% macro date(value) -%}{{ value.strftime("%Y-%m-%d %H:%M UTC") if value else "" }}{%- endmacro %}
+{% set locked = scanning or scanner.busy %}
+<div id="maintenance" class="maintenance"
+     {% if busy %}hx-get="maintenance?polling=1" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML"{% endif %}>
+  {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
+  {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
+
+  <article>
+    <h3>{{ icon("refresh") }}Scans</h3>
+    <div class="maintenance-row">
+      <div>
+        <strong>Full scan</strong>
+        <p><small>Collects every cluster again and checks every image, chart and vulnerability report.
+          {% if scanning %}<span aria-busy="true">Scan in progress…</span>{% elif scanner.busy %}{{ scanner.busy }}…{% endif %}</small></p>
+      </div>
+      {{ action("scan", "Scan everything", disabled=locked, why="A scan or a maintenance action is running") }}
+    </div>
+    <div class="maintenance-row">
+      <div>
+        <strong>Retry what failed</strong>
+        <p><small>
+          {% if failed.images or failed.vulnerabilities or failed.charts %}
+          Failed in the last scan: {{ failed.images | length }} image version check(s), {{ failed.vulnerabilities | length }} vulnerability scan(s),
+          {{ failed.charts | length }} chart(s) (with their subcharts). Only these are checked again.
+          {% else %}Nothing failed in the last scan.{% endif %}
+          {% if scanner.rescanning %}<span aria-busy="true">{{ scanner.rescanning | length }} rescan(s) in progress…</span>{% endif %}
+        </small></p>
+      </div>
+      {{ action("retry-failed", "Retry what failed", disabled=locked or ("retry-failed",) in scanner.rescanning or not (failed.images or failed.vulnerabilities or failed.charts),
+                why="Nothing failed, or a scan is running") }}
+    </div>
+    <div class="maintenance-row">
+      <div>
+        <strong>One image or chart</strong>
+        <p><small>Open it on the <a href="images">Images</a>, <a href="charts">Helm charts</a> or <a href="vulnerabilities">Vulnerabilities</a>
+          page and use the rescan buttons of its detail panel.</small></p>
+      </div>
+    </div>
+  </article>
+
+  <article>
+    <h3>{{ icon("database") }}Trivy</h3>
+    {% set t = trivy_settings.trivy %}
+    {% if not trivy_settings.enabled or not t.enabled %}
+    <p><small>Trivy scans are disabled (vulnerabilities.enabled / vulnerabilities.trivy.enabled).</small></p>
+    {% else %}
+    {% set s = m.trivy_status %}
+    <table class="striped compact">
+      <tbody>
+        <tr><th>Mode</th><td>{% if t.server_url %}client of the Trivy server <code>{{ t.server_url }}</code>{% else %}standalone, databases in <code>{{ t.cache_dir }}</code>{% endif %}</td></tr>
+        {% if s and s.message %}<tr><th>Status</th><td><span class="badge badge-error">{{ icon("error") }}error</span> <small>{{ s.message }}</small></td></tr>{% endif %}
+        {% if s and s.version %}<tr><th>Trivy</th><td>{{ s.version }}</td></tr>{% endif %}
+        {% for label, db in [("Vulnerability DB", s.db if s else None), ("Java DB", s.java_db if s else None)] %}
+          {% if db %}
+          <tr><th>{{ label }}</th><td>
+            v{{ db.version }} · built {{ date(db.updated_at) }}{% if db.downloaded_at %} · downloaded {{ date(db.downloaded_at) }}{% endif %}
+            {% if db.next_update %}<br><small>A newer one is published after {{ date(db.next_update) }}.</small>{% endif %}
+          </td></tr>
+          {% elif label == "Vulnerability DB" and t.server_url %}
+          <tr><th>Databases</th><td><small>Held and updated by the Trivy server.</small></td></tr>
+          {% elif label == "Vulnerability DB" and s and not s.message %}
+          <tr><th>{{ label }}</th><td><small>Not downloaded yet: the first scan (or the button below) downloads it (~1.6 GB unpacked).</small></td></tr>
+          {% endif %}
+        {% endfor %}
+        {% if s %}<tr><th>Checked</th><td><small>{{ date(s.checked_at) }}</small></td></tr>{% endif %}
+        {% if m.trivy_message %}<tr><th>Last update</th><td><small>{{ m.trivy_message }}</small></td></tr>{% endif %}
+      </tbody>
+    </table>
+    <p class="actions">
+      {% if not t.server_url %}
+      {% if "trivy-db" in m.running %}<span aria-busy="true">Updating the database…</span>
+      {% else %}{{ action("trivy-db", "Update the database", "database", disabled=locked or scanner.rescanning, why="Wait for the scan or the rescans to finish") }}{% endif %}
+      {% endif %}
+      {{ action("trivy-status", "Read the status again", cls="outline secondary") }}
+    </p>
+    <div class="maintenance-row">
+      <div>
+        <strong>Results cache</strong>
+        <p><small>{{ scanner.trivy.cache | length }} image(s) cached: they are not scanned again before {{ (t.rescan_interval / 3600) | round(1) }} h
+          (vulnerabilities.trivy.rescanInterval). Clearing it makes the next scan scan every image again.</small></p>
+      </div>
+      <p class="actions">
+        {{ action("trivy-cache", "Clear", "trash", cls="outline secondary", confirm="Forget the Trivy results? The next scan scans every image again.") }}
+        {{ action("trivy-cache-scan", "Clear and scan now", "trash", disabled=locked, why="A scan or a maintenance action is running",
+                  confirm="Forget the Trivy results and scan everything now?") }}
+      </p>
+    </div>
+    {% endif %}
+  </article>
+
+  <article>
+    <h3>{{ icon("plug") }}Connectivity</h3>
+    <div class="maintenance-row">
+      <p><small>Tests every cluster (its Kubernetes API), every container registry and Helm repository of the last scan, with kube-tower's credentials{% if trivy_settings.trivy.server_url %}, and the Trivy server{% endif %}.</small></p>
+      {% if "connectivity" in m.running %}<span aria-busy="true">Testing…</span>
+      {% else %}{{ action("connectivity", "Test the connectivity", "plug") }}{% endif %}
+    </div>
+    {% set c = m.connectivity %}
+    {% if c and c.checks %}
+    <p><small>{% if c.finished_at %}{{ date(c.finished_at) }}: {{ c.checks | length - c.failed }}/{{ c.checks | length }} OK{% else %}Started {{ date(c.started_at) }}{% endif %}</small></p>
+    <table class="striped">
+      <thead><tr><th>Type</th><th>Target</th><th>Result</th><th>Time</th></tr></thead>
+      <tbody>
+      {% for check in c.checks | sort(attribute="ok") %}
+        <tr>
+          <td>{{ check.kind }}</td><td><code>{{ check.target }}</code></td>
+          <td>{% if check.ok %}<span class="badge badge-up-to-date">{{ icon("ok") }}OK</span>{% else %}<span class="badge badge-error">{{ icon("error") }}failed</span>{% endif %}
+            <br><small>{{ check.detail }}</small></td>
+          <td><small>{{ "%.2fs" | format(check.duration) if check.duration else "" }}</small></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </article>
+
+  <article>
+    <h3>{{ icon("trash") }}Unused node images</h3>
+    <p><small>Images cached on nodes that no workload of their cluster uses (Pods, Deployments, StatefulSets, DaemonSets, CronJobs),
+      from the last scan. kube-tower does not remove them: the kubelet deletes unused images by itself when the disk of a node goes over
+      <code>imageGCHighThresholdPercent</code> (85 % by default). To remove one now, run on the node: <code>crictl rmi &lt;image&gt;</code>,
+      or <code>crictl rmi --prune</code> to remove every image not used by a container of this node.</small></p>
+    {% if not unused %}
+    <p><small>{% if snapshot.finished_at %}No unused image found (images.includeNodeImages must be enabled).{% else %}No scan yet.{% endif %}</small></p>
+    {% else %}
+    {% for cluster, rows in unused | groupby("cluster") %}
+    <details>
+      <summary>{{ icon("clusters", "muted") }}{{ cluster }}: {{ rows | length }} unused image(s)</summary>
+      <table class="striped">
+        <thead><tr><th>Image</th><th>Nodes</th><th>Command</th></tr></thead>
+        <tbody>
+        {% for u in rows %}
+          <tr><td><code>{{ u.image }}</code></td><td><small>{{ u.nodes | join(", ") }}</small></td><td><code>crictl rmi {{ u.image }}</code></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endfor %}
+    {% endif %}
+  </article>
+</div>

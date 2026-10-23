@@ -2,7 +2,7 @@
 
 ## The dashboards
 
-The left sidebar gives access to seven pages, and its bottom button switches the theme between
+The left sidebar gives access to eight pages, and its bottom button switches the theme between
 auto (follows the system), light and dark; the choice is remembered by the browser. The bar at the
 top shows when the last scan finished, a **Refresh now** button that starts a scan immediately,
 and the errors of the last scan, if any: collection errors (e.g. a missing permission on a
@@ -113,6 +113,19 @@ scan.
 | `WARNING` | Non fatal problems: an unreachable cluster, an invalid cluster secret, a resource that cannot be listed (e.g. 403), an image, chart or subchart that cannot be checked, ignored credentials |
 | `ERROR` | A scan that failed as a whole (with the stack trace); the previous results are kept |
 
+### Maintenance
+
+![Maintenance](images/maintenance.png)
+
+Maintenance actions, run in the background (the page follows them and reloads when they are over):
+
+| Section | Actions |
+| --- | --- |
+| Scans | **Scan everything** (same as *Refresh now*); **Retry what failed**: checks again only the image version checks, vulnerability scans and charts (or subcharts) in error in the last scan, e.g. after fixing credentials or a rate limit. One image or chart is rescanned from its detail panel (see above) |
+| Trivy | Trivy version and vulnerability database (version, build date, next update, download date). **Update the database** downloads it when a newer one is published (standalone mode; with `trivy.server.enabled` the Trivy server updates its own). Scans wait for the update. **Clear** forgets the cached scan results (kept `vulnerabilities.trivy.rescanInterval`), so the next scan scans every image again; **Clear and scan now** also starts it |
+| Connectivity | **Test the connectivity** of every cluster (Kubernetes API `/version`, cluster Secrets read again), every container registry of the last scan and every registry with credentials (`/v2/`, and a pull token for one of its repositories), every HTTP Helm repository (`index.yaml`) and the Trivy server (`/healthz`), with kube-tower's credentials. Failures say why (proxy, DNS, TLS, 401/403…) |
+| Unused node images | Images cached on nodes that no workload of their cluster uses, per cluster, with the `crictl rmi` command to run on the node. kube-tower stays read-only and does not remove them: the kubelet garbage collects unused images when a node's disk goes over `imageGCHighThresholdPercent` (85 % by default). Needs `images.includeNodeImages` |
+
 ### Settings
 
 ![Settings](images/settings.png)
@@ -138,6 +151,11 @@ credentials come from, the username and whether they could be read.
 | `POST /api/refresh` | Start a scan now (`{"started": false}` if one is already running) |
 | `POST /api/rescan/image?ref=…` | Check one image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`); `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
 | `POST /api/rescan/chart?cluster=…&namespace=…&app=…&chart=…` | Check one Helm chart and its subcharts again (`namespace` is the Application's namespace) |
+| `POST /api/maintenance/retry-failed` | Check again everything that failed in the last scan (202, or 409 with a `reason`) |
+| `POST /api/maintenance/trivy-db` | Update the Trivy databases when a newer one is published (standalone mode) |
+| `DELETE /api/maintenance/trivy-cache` | Forget the cached Trivy results (`{"cleared": n}`) |
+| `POST /api/maintenance/connectivity` | Start a connectivity test; results with `GET /api/maintenance/connectivity` |
+| `GET /api/maintenance/unused-images` | Images cached on nodes that no workload of their cluster uses |
 | `GET /healthz` | Liveness |
 | `GET /readyz` | 200 once the first scan has finished |
 | `GET /api/docs` | Interactive OpenAPI documentation |

@@ -111,9 +111,16 @@ class OCIClient:
         if scheme.lower() != "bearer":
             return None
         fields = dict(_CHALLENGE_RE.findall(params))
-        query = {"service": fields.get("service", ""), "scope": fields.get("scope", scope)}
+        query = {"service": fields.get("service", "")}
+        if scope := fields.get("scope", scope):
+            query["scope"] = scope
         auth = self.credentials.get(registry)
-        log.debug("requesting an %s token for %s (%s)", "authenticated" if auth else "anonymous", registry, query["scope"])
+        log.debug(
+            "requesting an %s token for %s (%s)",
+            "authenticated" if auth else "anonymous",
+            registry,
+            query.get("scope", "no scope"),
+        )
         resp = await self.http.get(fields["realm"], params=query, auth=auth)
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot get a pull token for {registry}", resp))
@@ -150,6 +157,31 @@ class OCIClient:
             url = str(resp.url.join(resp.headers["location"]))
             log.debug("%s redirected to %s", resp.request.url.copy_with(query=None), httpx.URL(url).copy_with(query=None))
         raise RegistryError(f"too many redirects for {registry}/{repository} (more than {MAX_REDIRECTS})")
+
+    async def ping(self, registry: str, repository: str | None = None) -> str:
+        """Check that the registry answers and accepts kube-tower's credentials (or anonymous access).
+        With a repository, the token asked for is a pull token for it (some registries, like ghcr.io,
+        refuse anonymous tokens without scope). Returns what was checked, raises RegistryError when it fails.
+        """
+        scope = f"repository:{repository}:pull" if repository else ""
+        host = self._api_host(registry)
+        url = f"https://{host}/v2/"
+        auth = "with credentials" if registry in self.credentials else "anonymously"
+        resp = await self.http.get(url)
+        if resp.status_code == 401 and "www-authenticate" in resp.headers:
+            challenge = resp.headers["www-authenticate"]
+            if challenge.lower().startswith("basic"):
+                if registry not in self.credentials:
+                    raise RegistryError(f"{registry} requires credentials and none are configured (registries.credentials)")
+                resp = await self.http.get(url, auth=self.credentials[registry])
+            else:
+                # Getting a token proves that the credentials (if any) are accepted.
+                self._tokens.pop((host, scope), None)
+                if await self._token(registry, host, challenge, scope):
+                    return f"pull token for {repository} obtained {auth}" if repository else f"token obtained {auth}"
+        if resp.status_code != 200:
+            raise RegistryError(http_error_message(f"{registry} refused the connection test", resp))
+        return f"answers {auth}"
 
     async def list_tags(self, registry: str, repository: str) -> list[str]:
         host = self._api_host(registry)

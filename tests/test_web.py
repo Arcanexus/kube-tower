@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from kube_tower import __version__
-from kube_tower.config import Settings
+from kube_tower.config import Settings, TrivySettings
 from kube_tower.main import create_app
+from kube_tower.maintenance import Check, ConnectivityReport
 from kube_tower.models import (
     ChartDependency,
     ChartReport,
@@ -19,10 +20,13 @@ from kube_tower.models import (
     Vulnerability,
     VulnerabilityReport,
 )
+from kube_tower.trivy import TrivyDatabase, TrivyScanner, TrivyStatus
 
 
 class FakeScanner:
     running = False
+    locked = False
+    busy = None
 
     def __init__(self):
         now = datetime.now(UTC)
@@ -102,6 +106,16 @@ class FakeScanner:
         self.rescanning = set()
         self.rescans = []
         self.rescan_error = None
+        self.trivy = TrivyScanner(TrivySettings(binary="/nonexistent/trivy"), {})
+        self.retried = 0
+
+    def failed_items(self):
+        failed = [r for r in self.snapshot.images if r.vulnerabilities and r.vulnerabilities.message]
+        return [], failed, []
+
+    def retry_failed(self):
+        self.retried += 1
+        return self.rescan_error
 
     def can_rescan_vulnerabilities(self, report):
         return report.image.repository != "library/redis"
@@ -129,7 +143,7 @@ def _client():
 
 def test_pages():
     client, _ = _client()
-    for path in ("/", "/images", "/charts", "/vulnerabilities", "/clusters", "/logs", "/settings", "/status"):
+    for path in ("/", "/images", "/charts", "/vulnerabilities", "/clusters", "/logs", "/maintenance", "/settings", "/status"):
         resp = client.get(path)
         assert resp.status_code == 200, path
     assert "library/nginx" in client.get("/images").text
@@ -465,3 +479,76 @@ def test_rescan_buttons_and_polling():
     resp = client.get("/images/detail", params={**ref, "polling": "1"})
     assert resp.headers["HX-Trigger"] == "kt-rescanned" and "Rescanning" not in resp.text
     assert "HX-Trigger" not in client.get("/images/detail", params=ref).headers
+
+
+def test_maintenance_page():
+    client, scanner = _client()
+    page = " ".join(client.get("/maintenance").text.split())
+    assert 'aria-current="page"' in page and "Maintenance" in page
+    assert "Failed in the last scan: 0 image version check(s), 1 vulnerability scan(s), 0 chart(s)" in page
+    assert "/nonexistent/trivy&#39; not found" in page  # status read at the first visit
+    # unused node images: ghcr.io/org/app in c2, redis in c1
+    assert "c1: 1 unused image(s)" in page and "crictl rmi docker.io/library/redis:latest" in page
+    assert "c2: 1 unused image(s)" in page
+    assert 'hx-get="maintenance?polling=1"' not in page  # nothing running
+    m = client.app.state.maintenance
+    m.trivy_status = TrivyStatus(
+        datetime.now(UTC), "0.75.0", TrivyDatabase(2, datetime(2026, 10, 23, tzinfo=UTC), datetime(2026, 10, 24, tzinfo=UTC))
+    )
+    m.connectivity = ConnectivityReport(
+        datetime.now(UTC), datetime.now(UTC), [Check("registry", "ghcr.io", False, "HTTP 403", 0.5), Check("cluster", "c1", True)]
+    )
+    fragment = " ".join(client.get("/maintenance", headers={"HX-Request": "true", "HX-Target": "maintenance"}).text.split())
+    assert "<html" not in fragment and 'id="maintenance"' in fragment
+    assert "v2 · built 2026-10-23 00:00 UTC" in fragment and "after 2026-10-24 00:00 UTC" in fragment
+    assert "1/2 OK" in fragment and "HTTP 403" in fragment and "0.50s" in fragment
+    # while something runs, the actions poll themselves; the poll that sees the end reloads the page
+    scanner.rescanning = {("retry-failed",)}
+    assert 'hx-get="maintenance?polling=1"' in client.get("/maintenance").text
+    scanner.rescanning = set()
+    assert client.get("/maintenance?polling=1").headers["HX-Refresh"] == "true"
+
+
+def test_maintenance_actions(monkeypatch):
+    client, scanner = _client()
+    m = client.app.state.maintenance
+    assert "Full scan started." in client.post("/maintenance/scan").text and scanner.triggered == 1
+    assert "Retry of the failed items started." in client.post("/maintenance/retry-failed").text and scanner.retried == 1
+    scanner.rescan_error = "nothing failed in the last scan"
+    assert "nothing failed in the last scan" in client.post("/maintenance/retry-failed").text
+    assert "Trivy is disabled or its binary" in client.post("/maintenance/trivy-db").text
+    assert "Trivy status read again." in client.post("/maintenance/trivy-status").text
+    scanner.trivy.cache = {"a": None}
+    resp = client.post("/maintenance/trivy-cache-scan").text
+    assert "Trivy results cache cleared (1 image(s)). Full scan started." in resp and scanner.triggered == 2
+    started = []
+    monkeypatch.setattr(m, "test_connectivity", lambda: started.append(1))
+    assert "Connectivity test started." in client.post("/maintenance/connectivity").text and started
+    assert client.post("/maintenance/nope").status_code == 404
+    monkeypatch.setattr(scanner, "trigger", lambda: False)
+    assert "already running" in client.post("/maintenance/scan").text
+
+
+def test_maintenance_api(monkeypatch):
+    client, scanner = _client()
+    m = client.app.state.maintenance
+    assert client.post("/api/maintenance/retry-failed").json() == {"started": True}
+    resp = client.post("/api/maintenance/trivy-db")
+    assert resp.status_code == 409 and "not found" in resp.json()["reason"]
+    scanner.trivy.cache = {"a": None}
+    assert client.delete("/api/maintenance/trivy-cache").json() == {"cleared": 1}
+    assert client.get("/api/maintenance/connectivity").json() == {
+        "running": False,
+        "startedAt": None,
+        "finishedAt": None,
+        "checks": [],
+    }
+    monkeypatch.setattr(m, "test_connectivity", lambda: None)
+    assert client.post("/api/maintenance/connectivity").status_code == 202
+    m.connectivity = ConnectivityReport(datetime(2026, 10, 23, tzinfo=UTC), checks=[Check("cluster", "c1", True, "v1.30.0")])
+    data = client.get("/api/maintenance/connectivity").json()
+    assert data["startedAt"] == "2026-10-23T00:00:00+00:00" and data["checks"][0]["detail"] == "v1.30.0"
+    assert client.get("/api/maintenance/unused-images").json() == [
+        {"cluster": "c1", "image": "docker.io/library/redis:latest", "nodes": ["n1"]},
+        {"cluster": "c2", "image": "ghcr.io/org/app:2.0", "nodes": ["n1", "n2"]},
+    ]

@@ -131,3 +131,15 @@ async def test_index_fetched_once_for_concurrent_charts_and_v_prefix():
     assert results == [["1.1.0", "1.0.0"]] * 5
     assert index.call_count == 1
     assert meta["version"] == "1.1.0"
+
+
+@respx.mock
+async def test_ping_helm_repository():
+    index = respx.get("https://charts.example.com/index.yaml").respond(200, text="apiVersion: v1\n")
+    respx.get("https://private.example.com/index.yaml").respond(401)
+    async with httpx.AsyncClient() as http:
+        helm = HelmClient(http, OCIClient(http, {"charts.example.com": ("u", "p")}), GitSettings())
+        assert await helm.ping("https://charts.example.com/") == "index.yaml served with credentials"
+        assert index.calls[-1].request.headers["authorization"].startswith("Basic ")
+        with pytest.raises(RegistryError, match="HTTP 401"):
+            await helm.ping("https://private.example.com")

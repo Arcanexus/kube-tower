@@ -60,8 +60,6 @@ async def test_docker_hub_uses_api_host_and_digest():
 
 @respx.mock
 async def test_registry_errors_and_basic_auth():
-    from kube_tower.registry.oci import RegistryError
-
     respx.get("https://private.example.com/v2/app/tags/list?n=1000").mock(
         side_effect=[
             httpx.Response(401, headers={"www-authenticate": 'Basic realm="x"'}),
@@ -124,3 +122,29 @@ async def test_too_many_redirects():
     async with httpx.AsyncClient() as http:
         with pytest.raises(RegistryError, match="too many redirects"):
             await OCIClient(http).list_tags("loop.example.com", "app")
+
+
+@respx.mock
+async def test_ping():
+    respx.get("https://open.example.com/v2/").respond(200)
+    challenge = 'Bearer realm="https://auth.example.com/token",service="bearer.example.com"'
+    respx.get("https://bearer.example.com/v2/").respond(401, headers={"www-authenticate": challenge})
+    token = respx.get("https://auth.example.com/token").respond(200, json={"token": "t"})
+    basic = respx.get("https://basic.example.com/v2/")
+    basic.side_effect = lambda request: httpx.Response(
+        200 if "authorization" in request.headers else 401, headers={"www-authenticate": 'Basic realm="r"'}
+    )
+    respx.get("https://down.example.com/v2/").respond(503)
+    async with httpx.AsyncClient() as http:
+        client = OCIClient(http, {"bearer.example.com": ("u", "p"), "basic.example.com": ("u", "p")})
+        assert await client.ping("open.example.com") == "answers anonymously"
+        assert await client.ping("bearer.example.com") == "token obtained with credentials"
+        assert "scope" not in token.calls[-1].request.url.params
+        assert token.calls[-1].request.headers["authorization"].startswith("Basic ")
+        assert await client.ping("bearer.example.com", "org/app") == "pull token for org/app obtained with credentials"
+        assert token.calls[-1].request.url.params["scope"] == "repository:org/app:pull"
+        assert await client.ping("basic.example.com") == "answers with credentials"
+        with pytest.raises(RegistryError, match="requires credentials and none are configured"):
+            await OCIClient(http).ping("basic.example.com")
+        with pytest.raises(RegistryError, match="down.example.com refused the connection test: HTTP 503"):
+            await client.ping("down.example.com")

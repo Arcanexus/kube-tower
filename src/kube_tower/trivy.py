@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import shutil
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from kube_tower.collectors.vulnerabilities import dedupe_vulnerabilities
@@ -88,6 +89,50 @@ def _error_message(stderr: bytes) -> str:
     return message if len(message) <= MESSAGE_LIMIT else "…" + message[-MESSAGE_LIMIT:]
 
 
+@dataclass
+class TrivyDatabase:
+    """A Trivy database, as `trivy version` describes it."""
+
+    version: int | None = None
+    updated_at: datetime | None = None  # built by Aqua
+    next_update: datetime | None = None  # a newer one is published after this date
+    downloaded_at: datetime | None = None
+
+
+@dataclass
+class TrivyStatus:
+    """The Trivy CLI and its local databases (none in client/server mode: the server holds them)."""
+
+    checked_at: datetime
+    version: str = ""
+    db: TrivyDatabase | None = None
+    java_db: TrivyDatabase | None = None
+    message: str | None = None  # why the status could not be read
+
+
+def _date(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def parse_trivy_version(data: dict) -> TrivyStatus:
+    """TrivyStatus from the JSON of `trivy version --format json` (databases absent when never downloaded)."""
+
+    def database(key: str) -> TrivyDatabase | None:
+        db = data.get(key)
+        if not db:
+            return None
+        return TrivyDatabase(
+            db.get("Version"), _date(db.get("UpdatedAt")), _date(db.get("NextUpdate")), _date(db.get("DownloadedAt"))
+        )
+
+    return TrivyStatus(datetime.now(UTC), data.get("Version", ""), database("VulnerabilityDB"), database("JavaDB"))
+
+
 class TrivyScanner:
     def __init__(self, settings: TrivySettings, credentials: dict[str, tuple[str, str]]):
         self.settings = settings
@@ -139,6 +184,18 @@ class TrivyScanner:
             return f"cannot download the Trivy database: {_error_message(stderr)}"
         return None
 
+    async def status(self) -> TrivyStatus:
+        """Version of Trivy and of its databases."""
+        if not self.available:
+            return TrivyStatus(datetime.now(UTC), message=f"trivy binary {self.settings.binary!r} not found")
+        code, stdout, stderr = await self._run(["version", "--format", "json", "--cache-dir", self.settings.cache_dir])
+        if code != 0:
+            return TrivyStatus(datetime.now(UTC), message=f"trivy version failed: {_error_message(stderr)}")
+        try:
+            return parse_trivy_version(json.loads(stdout or b"{}"))
+        except (ValueError, AttributeError) as exc:
+            return TrivyStatus(datetime.now(UTC), message=f"unreadable trivy version output: {exc}")
+
     def _env(self, registry: str) -> dict[str, str]:
         if pair := self.credentials.get(registry):
             return {"TRIVY_USERNAME": pair[0], "TRIVY_PASSWORD": pair[1]}
@@ -167,9 +224,13 @@ class TrivyScanner:
         return cached if age < self.settings.rescan_interval else None
 
     async def scan_all(self, reports: list[ImageReport]) -> list[str]:
-        """Scan the images (setting report.vulnerabilities as each scan ends). Returns error messages."""
+        """Scan the images of a full scan: the cache forgets the images gone. Returns error messages."""
         targets = {scan_target(r)[0] for r in reports}
         self.cache = {t: v for t, v in self.cache.items() if t in targets}  # forget images gone
+        return await self.scan_many(reports)
+
+    async def scan_many(self, reports: list[ImageReport]) -> list[str]:
+        """Scan the images not cached (setting report.vulnerabilities as each scan ends). Returns error messages."""
         todo = []
         for r in reports:
             if cached := self._cached(scan_target(r)[0]):
