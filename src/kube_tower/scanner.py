@@ -2,7 +2,8 @@
 
 kube-tower is stateless: the latest Snapshot only lives in memory and is rebuilt
 periodically and at startup. Scans run in a dedicated worker thread with its own event
-loop, so the web server (UI, API, /healthz) stays responsive while a scan is running.
+loop and each cluster is collected in its own thread, so the web server (UI, API,
+/healthz) stays responsive while a scan is running.
 """
 
 from __future__ import annotations
@@ -11,21 +12,51 @@ import asyncio
 import contextlib
 import logging
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import partial
 
 import httpx
 
 from kube_tower.checkers import ChartChecker, ImageChecker
-from kube_tower.clusters import ClusterRegistry
+from kube_tower.clusters import Cluster, ClusterRegistry
 from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
 from kube_tower.config import Settings
-from kube_tower.models import Snapshot
+from kube_tower.models import ChartReport, Snapshot
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.registry.helm import HelmClient
 from kube_tower.registry.oci import OCIClient
 
 log = logging.getLogger(__name__)
+
+
+async def run_in_thread[T](name: str, fn: Callable[[], T]) -> T:
+    """Run `fn` in a new daemon thread and await its result from the calling event loop.
+
+    Unlike `asyncio.to_thread`, a daemon thread never delays the process shutdown.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[T] = loop.create_future()
+
+    def settle(result: T | None, error: BaseException | None) -> None:
+        if future.done():  # cancelled meanwhile (shutdown)
+            return
+        if error is not None:
+            future.set_exception(error)
+        else:
+            future.set_result(result)
+
+    def work() -> None:
+        try:
+            result, error = fn(), None
+        except BaseException as exc:  # noqa: BLE001 - handed over to the awaiting loop
+            result, error = None, exc
+        with contextlib.suppress(RuntimeError):  # awaiting loop already closed
+            loop.call_soon_threadsafe(settle, result, error)
+
+    threading.Thread(target=work, name=name, daemon=True).start()
+    return await future
 
 
 class Scanner:
@@ -42,34 +73,9 @@ class Scanner:
 
     async def scan(self) -> Snapshot:
         async with self._lock:
-            snap = await self._in_worker()
+            snap = await run_in_thread("scanner", lambda: asyncio.run(self._scan()))
             self.snapshot = snap
             return snap
-
-    async def _in_worker(self) -> Snapshot:
-        """Run `_scan` in a daemon thread with its own event loop: a scan never blocks the web
-        server's loop, and a scan in progress does not delay the process shutdown."""
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[Snapshot] = loop.create_future()
-
-        def settle(result: Snapshot | None, error: BaseException | None) -> None:
-            if future.done():  # cancelled meanwhile (shutdown)
-                return
-            if error is not None:
-                future.set_exception(error)
-            else:
-                future.set_result(result)
-
-        def work() -> None:
-            try:
-                result, error = asyncio.run(self._scan()), None
-            except BaseException as exc:  # noqa: BLE001 - handed over to the web server's loop
-                result, error = None, exc
-            with contextlib.suppress(RuntimeError):  # web server loop already closed
-                loop.call_soon_threadsafe(settle, result, error)
-
-        threading.Thread(target=work, name="scanner", daemon=True).start()
-        return await future
 
     async def _scan(self) -> Snapshot:
         """The scan itself, run in the worker thread's event loop."""
@@ -80,13 +86,21 @@ class Scanner:
         clusters = [c for c in clusters if c.name in reachable]
 
         inventory = ImageInventory(self.settings.images)
-        for cluster in clusters:
+
+        def collect(cluster: Cluster) -> tuple[list[ChartReport], list[str]]:
+            charts, errors = [], []
             if self.settings.images.enabled:
-                snap.errors += await asyncio.to_thread(inventory.collect, cluster)
+                errors += inventory.collect(cluster)
             if self.settings.helm.enabled:
-                charts, errors = await asyncio.to_thread(collect_charts, cluster, self.settings.helm)
-                snap.charts += charts
-                snap.errors += errors
+                charts, chart_errors = collect_charts(cluster, self.settings.helm)
+                errors += chart_errors
+            return charts, errors
+
+        # One thread per cluster: a slow or large cluster does not hold back the others.
+        results = await asyncio.gather(*(run_in_thread(f"scan-{c.name}", partial(collect, c)) for c in clusters))
+        for charts, errors in results:
+            snap.charts += charts
+            snap.errors += errors
         snap.images = sorted(inventory.reports.values(), key=lambda r: str(r.image))
 
         reg = self.settings.registries

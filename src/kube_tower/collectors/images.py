@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import threading
 from collections.abc import Iterable
 
 from kubernetes import client
@@ -39,6 +40,7 @@ class ImageInventory:
     def __init__(self, settings: ImagesSettings):
         self.settings = settings
         self.reports: dict[str, ImageReport] = {}
+        self._lock = threading.Lock()  # clusters are collected in parallel threads
 
     def ignored(self, ref: ImageRef) -> bool:
         return any(fnmatch.fnmatch(ref.name, pattern) or fnmatch.fnmatch(str(ref), pattern) for pattern in self.settings.ignore)
@@ -48,13 +50,14 @@ class ImageInventory:
         if self.ignored(ref):
             return
         key_ref = ImageRef(ref.registry, ref.repository, ref.tag, None if ref.tag else ref.digest)
-        report = self.reports.setdefault(str(key_ref), ImageReport(image=key_ref))
-        if usage not in report.usages:
-            report.usages.append(usage)
-        if running_digest:
-            report.running_digests.add(running_digest)
-        elif ref.digest:
-            report.running_digests.add(ref.digest)
+        with self._lock:
+            report = self.reports.setdefault(str(key_ref), ImageReport(image=key_ref))
+            if usage not in report.usages:
+                report.usages.append(usage)
+            if running_digest:
+                report.running_digests.add(running_digest)
+            elif ref.digest:
+                report.running_digests.add(ref.digest)
 
     def collect(self, cluster: Cluster) -> list[str]:
         """Read every image of a cluster. Returns non fatal error messages."""
