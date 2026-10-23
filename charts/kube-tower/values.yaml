@@ -1,0 +1,124 @@
+image:
+  repository: ghcr.io/arcanexus/kube-tower
+  # Defaults to the chart appVersion
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# kube-tower is stateless and keeps its inventory in memory: keep a single replica.
+replicaCount: 1
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  # ClusterRole with read-only access to workloads, nodes and ArgoCD Applications
+  create: true
+
+# Application settings, rendered into the kube-tower ConfigMap (config.yaml).
+# See docs/configuration.md for every option.
+config:
+  refreshInterval: 6h
+  logs:
+    level: INFO
+    format: json
+  clusters:
+    inCluster: true
+    inClusterName: in-cluster
+    secretLabelSelector: kube-tower.arcanexus.com/secret-type=cluster
+    # Reuse ArgoCD cluster secrets (needs read access to secrets in argocdNamespace)
+    useArgocdSecrets: false
+    argocdNamespace: argocd
+  images:
+    includeNodeImages: true
+    includePrerelease: false
+    checkFloatingDigests: true
+    ignore: []
+  helm:
+    applicationNamespaces:
+      - argocd
+    includePrerelease: false
+    checkDependencies: true
+
+# Remote clusters to register. Each entry creates a Secret in the ArgoCD cluster format.
+# Prefer creating these Secrets yourself (e.g. with ExternalSecrets) to keep tokens out of git:
+# any Secret labelled kube-tower.arcanexus.com/secret-type=cluster in the release namespace is used.
+clusters: []
+#  - name: prod
+#    server: https://prod.example.com:6443
+#    config:
+#      bearerToken: "<token>"
+#      tlsClientConfig:
+#        caData: "<base64 PEM>"
+
+registries:
+  # Per registry credentials, for private registries / Helm repositories and to avoid
+  # Docker Hub rate limits. Each entry references an existing Secret, mounted read-only.
+  # Applies to container registries, OCI Helm registries and HTTP Helm repositories (basic auth).
+  credentials: []
+  #  - registry: docker.io
+  #    existingSecret: dockerhub-credentials
+  #    usernameKey: username   # optional, omit for token-only registries
+  #    passwordKey: password   # password or access token
+  #  - registry: ghcr.io
+  #    existingSecret: ghcr-token
+  #    passwordKey: token
+  #  - registry: charts.example.com
+  #    existingSecret: helm-repo-credentials
+
+  # Alternatively (or in addition), an existing kubernetes.io/dockerconfigjson Secret
+  # holding credentials for several registries at once.
+  existingSecret: ""
+
+git:
+  # Name of an existing Secret holding a token for private git repositories (raw Chart.yaml reads)
+  existingSecret: ""
+  secretKey: token
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: kube-tower.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+serviceMonitor:
+  # Requires the Prometheus operator CRDs
+  enabled: false
+  interval: 5m
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

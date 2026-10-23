@@ -1,0 +1,108 @@
+from datetime import UTC, datetime
+
+from fastapi.testclient import TestClient
+
+from kube_tower.config import Settings
+from kube_tower.main import create_app
+from kube_tower.models import ChartDependency, ChartReport, ClusterStatus, ImageRef, ImageReport, Snapshot, Status, Usage
+
+
+class FakeScanner:
+    running = False
+
+    def __init__(self):
+        now = datetime.now(UTC)
+        self.snapshot = Snapshot(
+            images=[
+                ImageReport(
+                    ImageRef("docker.io", "library/nginx", "1.25"),
+                    [Usage("c1", "Pod", "default", "web")],
+                    status=Status.OUTDATED,
+                    latest_tag="1.27",
+                ),
+                ImageReport(ImageRef("ghcr.io", "org/app", "2.0"), [Usage("c2", "Node", None, "n1")], status=Status.UP_TO_DATE),
+            ],
+            charts=[
+                ChartReport(
+                    "c1",
+                    "redis",
+                    "argocd",
+                    "redis",
+                    "https://charts.bitnami.com/bitnami",
+                    "18.0.0",
+                    "helm",
+                    status=Status.UP_TO_DATE,
+                    latest_version="18.0.0",
+                    dependencies=[
+                        ChartDependency("common", "2.0.0", "https://charts.bitnami.com/bitnami", Status.OUTDATED, "2.1.0")
+                    ],
+                )
+            ],
+            clusters=[
+                ClusterStatus("c1", "https://c1", "in-cluster", True, "v1.30.0"),
+                ClusterStatus("c2", "https://c2", "secret", False, message="timeout"),
+            ],
+            started_at=now,
+            finished_at=now,
+        )
+        self.triggered = 0
+
+    def trigger(self):
+        self.triggered += 1
+        return True
+
+    async def run_forever(self):
+        pass
+
+
+def _client():
+    scanner = FakeScanner()
+    return TestClient(create_app(Settings(), scanner, background=False)), scanner
+
+
+def test_pages():
+    client, _ = _client()
+    for path in ("/", "/images", "/charts", "/clusters", "/settings", "/status"):
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+    assert "library/nginx" in client.get("/images").text
+    assert "common" in client.get("/charts").text
+    assert "timeout" in client.get("/clusters").text
+
+
+def test_filters_and_partial():
+    client, _ = _client()
+    resp = client.get("/images?status=outdated", headers={"HX-Request": "true", "HX-Target": "results"})
+    assert "library/nginx" in resp.text and "org/app" not in resp.text
+    assert "<html" not in resp.text
+    assert "org/app" in client.get("/images?cluster=c2").text
+    assert "library/nginx" not in client.get("/images?q=org").text
+    assert "redis" in client.get("/charts?status=outdated").text  # worst status includes subcharts
+
+
+def test_api_and_metrics():
+    client, scanner = _client()
+    data = client.get("/api/snapshot").json()
+    assert data["images"][0]["image"]["ref"] == "docker.io/library/nginx:1.25"
+    assert data["images"][0]["status"] == "outdated"
+    assert client.post("/api/refresh").json() == {"started": True} and scanner.triggered == 1
+    assert client.get("/healthz").status_code == 200
+    assert client.get("/readyz").status_code == 200
+    metrics = client.get("/metrics").text
+    assert 'kube_tower_image_outdated{image="docker.io/library/nginx",latest="1.27",status="outdated",tag="1.25"} 1.0' in metrics
+    assert 'kube_tower_cluster_reachable{cluster="c2"} 0.0' in metrics
+
+
+def test_settings_page_shows_credentials_without_secrets(monkeypatch):
+    from kube_tower.config import RegistryCredential
+
+    monkeypatch.setenv("DOCKERHUB_TOKEN", "super-secret-token")
+    settings = Settings()
+    settings.registries.credentials = [
+        RegistryCredential("docker.io", username="alex", password_env="DOCKERHUB_TOKEN"),
+        RegistryCredential("ghcr.io", password_file="/nonexistent"),
+    ]
+    page = TestClient(create_app(settings, FakeScanner(), background=False)).get("/settings").text
+    assert "docker.io" in page and "alex" in page and "loaded" in page and "invalid" in page
+    assert "super-secret-token" not in page
+    assert "passwordEnv: DOCKERHUB_TOKEN" in page  # camelCase like config.yaml

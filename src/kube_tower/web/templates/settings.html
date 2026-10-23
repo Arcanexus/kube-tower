@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, icon, page_title %}
+{% block content %}
+{{ page_title("settings", "Settings", "Effective configuration, read from the kube-tower ConfigMap and environment. Secrets are only referenced, never displayed.") }}
+
+<h3>{{ icon("key") }}Registry credentials</h3>
+<table class="striped">
+  <thead><tr><th>Registry</th><th>Source</th><th>Username</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for c in credentials %}
+    <tr>
+      <td><code>{{ c.registry }}</code></td><td>{{ c.source }}</td><td>{{ c.username }}</td>
+      <td>{% if c.ok %}<span class="badge badge-up-to-date">{{ icon("ok") }}loaded</span>{% else %}<span class="badge badge-error">{{ icon("error") }}invalid</span><br><small>{{ c.message }}</small>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4">No credentials: registries are queried anonymously (Docker Hub rate limits apply).</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h3>{{ icon("settings") }}Configuration</h3>
+<pre><code>{{ settings_yaml }}</code></pre>
+{% endblock %}

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: kube-tower
+description: Read-only dashboard of outdated container images and Helm charts across Kubernetes clusters
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/Arcanexus/kube-tower
+sources:
+  - https://github.com/Arcanexus/kube-tower
+icon: https://raw.githubusercontent.com/Arcanexus/kube-tower/main/docs/images/logo.png
+keywords:
+  - kubernetes
+  - helm
+  - argocd
+  - container-images
+  - version-checker
+  - dashboard
+maintainers:
+  - name: Arcanexus
+    url: https://github.com/Arcanexus

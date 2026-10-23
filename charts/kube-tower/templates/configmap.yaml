@@ -1,0 +1,24 @@
+{{- /* Per registry credentials are mounted from Secrets: only their file paths go in the config. */ -}}
+{{- $config := deepCopy .Values.config }}
+{{- $credentials := list }}
+{{- range $i, $c := .Values.registries.credentials }}
+{{- $entry := dict "registry" $c.registry "passwordFile" (printf "/etc/kube-tower/registries/%d/%s" $i ($c.passwordKey | default "password")) }}
+{{- if $c.usernameKey }}
+{{- $_ := set $entry "usernameFile" (printf "/etc/kube-tower/registries/%d/%s" $i $c.usernameKey) }}
+{{- else if $c.username }}
+{{- $_ := set $entry "username" $c.username }}
+{{- end }}
+{{- $credentials = append $credentials $entry }}
+{{- end }}
+{{- $registries := deepCopy ($config.registries | default dict) }}
+{{- $_ := set $registries "credentials" $credentials }}
+{{- $_ := set $config "registries" $registries }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kube-tower.fullname" . }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- toYaml $config | nindent 4 }}

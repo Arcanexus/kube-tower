@@ -1,0 +1,39 @@
+{% from "_macros.html" import icon %}
+{% if partial %}{% block results %}{% endblock %}{% else %}<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kube-tower · {{ tab | default("") }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='pico.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='kube-tower.css') }}">
+  <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <a class="brand" href="/">
+        <img src="{{ url_for('static', path='logo.svg') }}" alt="" width="36" height="36">
+        <span>kube-tower</span>
+      </a>
+      <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-label="Menu">
+      <label for="menu-toggle" class="menu-button">{{ icon("menu") }}</label>
+      <nav>
+        <ul>
+          {% for key, label, ico in [("images", "Images", "images"), ("charts", "Helm charts", "charts"), ("clusters", "Clusters", "clusters"), ("settings", "Settings", "settings")] %}
+          <li><a href="/{{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ icon(ico) }}<span>{{ label }}</span></a></li>
+          {% endfor %}
+        </ul>
+      </nav>
+      <footer><small>v{{ version }}<br>read-only: nothing is ever updated automatically</small></footer>
+    </aside>
+    <div class="content">
+      <header>{% include "_status.html" %}</header>
+      <main>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>{% endif %}

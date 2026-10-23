@@ -1,0 +1,113 @@
+name: Tests
+
+# Runs on its own (status badge, coverage badge) and is also called by docker-publish.yml
+# so that the image is only built when tests pass.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            src/requirements.txt
+            tests/requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install -U pip
+          pip install -r src/requirements.txt -r tests/requirements.txt
+      - name: Lint
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+      - name: Run tests with coverage
+        # Fails under the coverage threshold set in pyproject.toml ([tool.coverage.report] fail_under)
+        run: pytest
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f .coverage ]; then
+            echo "## Test coverage" >> "$GITHUB_STEP_SUMMARY"
+            python -m coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: |
+            htmlcov/
+            coverage.xml
+          if-no-files-found: ignore
+      - name: Coverage badge data
+        id: badge
+        run: |
+          python - <<'PY'
+          import json, os, xml.etree.ElementTree as ET
+          rate = float(ET.parse("coverage.xml").getroot().get("line-rate")) * 100
+          color = "brightgreen" if rate >= 90 else "green" if rate >= 80 else "yellow" if rate >= 70 else "red"
+          json.dump({"schemaVersion": 1, "label": "coverage", "message": f"{rate:.0f}%", "color": color}, open("coverage-badge.json", "w"))
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-badge
+          path: coverage-badge.json
+
+  # Publishes coverage-badge.json on the "badges" branch, read by the README badge through shields.io.
+  coverage-badge:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.workflow == 'Tests'
+    needs: python
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: coverage-badge
+      - name: Push badge to the badges branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git init -q badges && mv coverage-badge.json badges/coverage.json && cd badges
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q --orphan badges && git add coverage.json
+          git commit -q -m "Update coverage badge (${GITHUB_SHA::7})"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: |
+          helm lint charts/kube-tower
+          helm lint charts/kube-tower --set ingress.enabled=true --set serviceMonitor.enabled=true \
+            --set config.clusters.useArgocdSecrets=true --set registries.existingSecret=regcreds \
+            --set git.existingSecret=git --set 'clusters[0].name=prod' --set 'clusters[0].server=https://prod:6443' \
+            --set 'registries.credentials[0].registry=docker.io' --set 'registries.credentials[0].existingSecret=dockerhub' \
+            --set 'registries.credentials[0].usernameKey=username' \
+            --set 'registries.credentials[1].registry=ghcr.io' --set 'registries.credentials[1].existingSecret=ghcr'
+      - name: Render chart
+        run: |
+          helm template kube-tower charts/kube-tower \
+            --set 'registries.credentials[0].registry=docker.io' --set 'registries.credentials[0].existingSecret=dockerhub' \
+            --set 'registries.credentials[0].usernameKey=username' > rendered.yaml
+          # The rendered config must reference the mounted secret files
+          grep -q 'passwordFile: /etc/kube-tower/registries/0/password' rendered.yaml
+          grep -q 'usernameFile: /etc/kube-tower/registries/0/username' rendered.yaml
