@@ -103,7 +103,9 @@ class TrivyScanner:
         if self.settings.server_url:
             args += ["--server", self.settings.server_url]
         else:
-            args += ["--skip-db-update"]  # downloaded once per round by prepare()
+            # The database is downloaded once per round by prepare(). Layers are cached in memory:
+            # concurrent scans sharing the cacheDir layer cache fail with "cache may be in use".
+            args += ["--skip-db-update", "--cache-backend", "memory"]
         if not self.settings.java_db:
             # Without the Java DB Trivy fails on images holding Java archives: skip them.
             args += ["--skip-java-db-update", *(f"--skip-files=**/*.{ext}" for ext in JAVA_ARCHIVES)]

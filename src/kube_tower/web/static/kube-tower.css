@@ -107,11 +107,11 @@ h3 .icon { color: var(--kt-sidebar-active); }
 .counters-5 { grid-template-columns: repeat(5, 1fr); }
 @media (max-width: 600px) { .counters-5 { grid-template-columns: repeat(2, 1fr); } }
 .sev { display: inline-block; min-width: 1.8rem; padding: .1rem .4rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; text-align: center; white-space: nowrap; }
-.sev-critical { background: #b71c1c; color: #fff; }
-.sev-high { background: #e65100; color: #fff; }
-.sev-medium { background: #f9a825; color: #222; }
-.sev-low { background: #1565c0; color: #fff; }
-.sev-unknown { background: #757575; color: #fff; }
+.sev-critical, .segment-sev-critical { background: #b71c1c; color: #fff; }
+.sev-high, .segment-sev-high { background: #e65100; color: #fff; }
+.sev-medium, .segment-sev-medium { background: #f9a825; color: #222; }
+.sev-low, .segment-sev-low { background: #1565c0; color: #fff; }
+.sev-unknown, .segment-sev-unknown { background: #757575; color: #fff; }
 .cve-table { font-size: .85rem; }
 .cve-table code { white-space: nowrap; }
 .sev-none { background: transparent; color: var(--pico-muted-color); }
@@ -167,7 +167,7 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--pico-table
 /* Synthesis */
 .danger { color: var(--kt-danger); }
 .icon.ok { color: #2e7d32; }
-.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: var(--pico-spacing); }
+.tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; margin-bottom: var(--pico-spacing); }
 @media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
 .tile {
   display: flex; flex-direction: column; gap: .15rem; padding: .9rem 1.1rem; text-decoration: none; color: var(--pico-color);
@@ -189,6 +189,10 @@ article > header { font-weight: 600; }
 .status-bar .segment:last-child { border-radius: 0 4px 4px 0; }
 .status-bar .segment:only-child { border-radius: 4px; }
 .status-bar .segment:hover { opacity: .8; }
+/* Worst severity buckets without a severity: bar segments and their legend */
+.segment-sev-none { background: #2e7d32; color: #fff; }
+.segment-sev-failed { background: #e57373; color: #222; }
+.segment-sev-not-scanned { background: var(--pico-muted-border-color); color: var(--pico-color); }
 .legend { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 0; padding: 0; }
 .legend li { list-style: none; display: flex; align-items: center; gap: .4rem; margin: 0; }
 .legend a { text-decoration: none; }

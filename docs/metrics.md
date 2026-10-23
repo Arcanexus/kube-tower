@@ -176,6 +176,10 @@ The dashboard is [`charts/kube-tower/dashboards/kube-tower.json`](../charts/kube
   last scan, scan errors; images and charts by status, image updates by type, outdated images per cluster.
 - **Container images**: outdated images (current, latest, update type) and the workloads running them.
 - **Helm charts**: every ArgoCD Application chart with its status, and the outdated subcharts.
+- **Vulnerabilities**: images with critical and high vulnerabilities, fixable critical/high vulnerabilities,
+  end of life OS images, failed vulnerability scans, age of the last vulnerability scan; vulnerabilities by
+  severity and over time, the most vulnerable images and the workloads running an image with critical
+  vulnerabilities (see [Vulnerabilities](vulnerabilities.md)).
 - **Clusters and scans**: registered clusters, outdated items over time, scan duration.
 
 ### With the Grafana sidecar (kube-prometheus-stack)

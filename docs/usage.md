@@ -18,10 +18,11 @@ right; close it with its button, a click outside or `Esc`.
 ![Synthesis](images/synthesis.png)
 
 The home page: an overview of the last scan. Tiles give the number of images and charts (with
-the share that is up to date), the reachable clusters and the images using `latest`. Below, the
-distribution of images and charts by status (click a segment or a status to open the filtered
-list), the pending image updates by type (major, minor, patch, new digest), the images per
-registry, the most used outdated images (click one for its details) and the figures per cluster.
+the share that is up to date), the reachable clusters, the images with critical vulnerabilities and
+the images using `latest`. Below, the distribution of images and charts by status (click a segment or
+a status to open the filtered list), the pending image updates by type (major, minor, patch, new
+digest), the images per registry, the images by worst vulnerability severity, the most vulnerable
+and the most used outdated images (click one for its details) and the figures per cluster.
 
 ### Images
 
