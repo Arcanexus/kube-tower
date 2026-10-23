@@ -110,7 +110,7 @@ class OCIClient:
         fields = dict(_CHALLENGE_RE.findall(params))
         query = {"service": fields.get("service", ""), "scope": fields.get("scope", scope)}
         auth = self.credentials.get(registry)
-        log.debug("requesting a %s token for %s (%s)", "authenticated" if auth else "anonymous", registry, query["scope"])
+        log.debug("requesting an %s token for %s (%s)", "authenticated" if auth else "anonymous", registry, query["scope"])
         resp = await self.http.get(fields["realm"], params=query, auth=auth)
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot get a pull token for {registry}", resp))

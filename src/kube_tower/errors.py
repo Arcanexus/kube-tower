@@ -15,7 +15,10 @@ GIT_CREDENTIALS = "git.token / git.existingSecret"
 def http_hint(status: int, host: str, credentials: str = REGISTRY_CREDENTIALS) -> str:
     """What an HTTP status returned by a registry, a Helm repository or a git host means here."""
     if status == 401:
-        return f"authentication required or refused by {host}: add or fix its credentials ({credentials})"
+        return (
+            f"authentication required or refused by {host}: the repository is private or does not exist "
+            f"(Docker Hub answers 401 for unknown repositories); check the name, add or fix its credentials ({credentials})"
+        )
     if status == 403:
         return f"access denied by {host}: the credentials used for it are not allowed to pull this repository"
     if status == 404:
@@ -42,6 +45,8 @@ def explain(exc: BaseException) -> str:
             f"no answer from {_host(exc)} before registries.timeout: "
             "the host is slow or unreachable from the pod (network policy, proxy?)"
         )
+    if isinstance(exc, httpx.ProxyError):
+        return f"the HTTP proxy refused or failed the connection to {_host(exc)}: {_first_line(exc)} (proxy allow list?)"
     if isinstance(exc, httpx.ConnectError):
         return f"cannot connect to {_host(exc)}: {_first_line(exc)} (DNS, network policy, proxy or TLS certificate?)"
     if isinstance(exc, httpx.HTTPError):

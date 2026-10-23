@@ -26,6 +26,8 @@ def test_explain_network_errors():
         "cannot connect to quay.io: Name or service not known (DNS, network policy, proxy or TLS certificate?)"
     )
     assert explain(httpx.RemoteProtocolError("closed", request=request)) == "request to quay.io failed: closed"
+    assert explain(httpx.ProxyError("403 Forbidden", request=request)).startswith("the HTTP proxy refused or failed")
+    assert "does not exist" in http_hint(401, "registry-1.docker.io")
     assert explain(httpx.TransportError("no request")) == "request to the remote host failed: no request"
     assert explain(ValueError("bad\nsecond line")) == "bad"
 
