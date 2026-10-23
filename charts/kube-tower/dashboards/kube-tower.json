@@ -927,7 +927,7 @@
       },
       "description": "One line per image: an image used in several clusters is listed once",
       "gridPos": {
-        "h": 9,
+        "h": 12,
         "w": 24,
         "x": 0,
         "y": 14
@@ -1072,7 +1072,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 26
       },
       "targets": [
         {
@@ -1220,7 +1220,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 36
       },
       "panels": []
     },
@@ -1234,10 +1234,10 @@
       },
       "description": "status is the worst status of the chart and its subcharts",
       "gridPos": {
-        "h": 9,
+        "h": 10,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 37
       },
       "targets": [
         {
@@ -1279,7 +1279,9 @@
               "update": 7,
               "status": 8
             },
-            "renameByName": {}
+            "renameByName": {
+              "destination_namespace": "namespace"
+            }
           }
         },
         {
@@ -1314,7 +1316,7 @@
         "sortBy": [
           {
             "displayName": "status",
-            "desc": false
+            "desc": true
           }
         ]
       },
@@ -1433,7 +1435,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 47
       },
       "targets": [
         {
@@ -1572,7 +1574,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 54
       },
       "panels": []
     },
@@ -1589,7 +1591,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 51
+        "y": 55
       },
       "targets": [
         {
@@ -1700,6 +1702,14 @@
                 "value": {
                   "type": "color-text"
                 }
+              },
+              {
+                "id": "custom.align",
+                "value": "left"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
               }
             ]
           }
@@ -1718,7 +1728,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 51
+        "y": 55
       },
       "targets": [
         {
@@ -1782,7 +1792,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 51
+        "y": 55
       },
       "targets": [
         {

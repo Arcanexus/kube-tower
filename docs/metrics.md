@@ -163,6 +163,9 @@ groups:
 The dashboard is [`charts/kube-tower/dashboards/kube-tower.json`](../charts/kube-tower/dashboards/kube-tower.json)
 (Grafana 10 or later). It has a data source selector and `cluster` / `namespace` filters, and shows:
 
+![kube-tower Grafana dashboard](images/grafana.png)
+
+
 - **Overview**: outdated images, major image updates, outdated charts, unreachable clusters, age of the
   last scan, scan errors; images and charts by status, image updates by type, outdated images per cluster.
 - **Container images**: outdated images (current, latest, update type) and the workloads running them.
