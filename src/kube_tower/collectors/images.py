@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import threading
+import time
 from collections.abc import Iterable
 
 from kubernetes import client
@@ -65,6 +66,8 @@ class ImageInventory:
         core = client.CoreV1Api(cluster.api_client)
         apps = client.AppsV1Api(cluster.api_client)
         batch = client.BatchV1Api(cluster.api_client)
+        counts: dict[str, int] = {}
+        start = time.monotonic()
 
         def safe(what: str, fn):
             # Paginated lists: a single huge response holds the GIL while it is parsed and
@@ -76,9 +79,12 @@ class ImageInventory:
                     items += page.items
                     token = page.metadata._continue if page.metadata else None
                     if not token:
+                        log.debug("[%s] %d %s listed", cluster.name, len(items), what)
+                        counts[what] = len(items)
                         return items
             except client.ApiException as exc:
                 errors.append(f"[{cluster.name}] cannot list {what}: {exc.status} {exc.reason}")
+                log.warning("[%s] cannot list %s: %s %s", cluster.name, what, exc.status, exc.reason)
                 return items
 
         for pod in safe("pods", core.list_pod_for_all_namespaces):
@@ -113,4 +119,10 @@ class ImageInventory:
                         if "@sha256:" in image:
                             continue
                         self.add(image, Usage(cluster.name, "Node", None, node.metadata.name), digest)
+        log.info(
+            "[%s] images collected in %.1fs: %s",
+            cluster.name,
+            time.monotonic() - start,
+            ", ".join(f"{n} {what}" for what, n in counts.items()) or "nothing listed",
+        )
         return errors

@@ -41,6 +41,9 @@ All notable changes to this project are documented here. The format follows
   `X-Forwarded-*` headers.
 - Version check errors (image, chart, subchart) are logged as warnings (Logs page, pod logs) and listed with the scan
   errors in the UI and the `kube_tower_last_scan_errors` metric; they were only shown in the tables.
+- More detailed logs, each at the right level: HTTP requests, check results and objects listed
+  (`DEBUG`), clusters, per cluster collection and check summaries (`INFO`), non fatal problems such
+  as an unreachable cluster or a forbidden resource (`WARNING`). See the log levels in `docs/usage.md`.
 
 ### Changed
 

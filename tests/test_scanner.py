@@ -1,7 +1,9 @@
 import asyncio
+import logging
 import threading
 import time
 
+import httpx
 import pytest
 
 from kube_tower import scanner as scanner_module
@@ -178,3 +180,20 @@ def test_check_errors():
         "[c1] subchart redis 18.0.0 of application mon: timeout",
         "[c1] subchart common 2.0.0 of application mon: 404",
     ]
+
+
+async def test_scan_logs_each_step(fakes, caplog):
+    caplog.set_level(logging.DEBUG, logger="kube_tower")
+    await Scanner(Settings(), FakeRegistry()).scan()
+    messages = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert ("INFO", "1 cluster(s) to scan: up") in messages
+    assert ("INFO", "collection done: 1 distinct image(s), 1 Helm chart(s)") in messages
+    assert ("INFO", "registry credentials loaded for: none (anonymous access)") in messages
+    assert any(level == "INFO" and m.startswith("scan finished") for level, m in messages)
+
+
+async def test_http_requests_logged_without_query(caplog):
+    caplog.set_level(logging.DEBUG, logger="kube_tower")
+    request = httpx.Request("GET", "https://ghcr.io/token?scope=repository:org/app:pull&service=ghcr.io")
+    await scanner_module._log_response(httpx.Response(401, request=request))
+    assert caplog.records[-1].getMessage() == "GET https://ghcr.io/token -> 401"

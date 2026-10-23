@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import Counter
 
 from kube_tower.config import HelmSettings, ImagesSettings
 from kube_tower.models import ChartDependency, ChartReport, ImageReport, Status
@@ -26,6 +27,11 @@ def _dependencies(metadata: dict) -> list[ChartDependency]:
         ChartDependency(name=d.get("name", ""), version=str(d.get("version", "")), repository=d.get("repository", ""))
         for d in metadata.get("dependencies") or []
     ]
+
+
+def _summary(statuses) -> str:
+    counts = Counter(s.value for s in statuses)
+    return ", ".join(f"{counts[s.value]} {s.value}" for s in Status if counts[s.value]) or "nothing to check"
 
 
 class _Memo:
@@ -62,6 +68,17 @@ class ImageChecker:
         return await self.memo.get(("digest", registry, repository, tag), fetch)
 
     async def check(self, report: ImageReport) -> None:
+        await self._check(report)
+        if report.status != Status.ERROR:  # errors are logged as warnings
+            log.debug(
+                "image %s: %s%s%s",
+                report.image,
+                report.status.value,
+                f" (latest {report.latest_tag})" if report.latest_tag else "",
+                f", {report.message}" if report.message else "",
+            )
+
+    async def _check(self, report: ImageReport) -> None:
         ref = report.image
         try:
             if not ref.tag:
@@ -100,7 +117,9 @@ class ImageChecker:
             log.debug("cannot read digests of %s: %s", ref, _short(exc))
 
     async def check_all(self, reports: list[ImageReport]) -> None:
+        log.info("checking %d image(s) against their registries", len(reports))
         await asyncio.gather(*(self.check(r) for r in reports))
+        log.info("images checked: %s", _summary(r.status for r in reports))
 
 
 class ChartChecker:
@@ -138,18 +157,21 @@ class ChartChecker:
         repository = normalize_dependency_repository(dep.repository)
         if repository is None:
             dep.status, dep.message = Status.UNKNOWN, "local or aliased dependency"
+            log.debug("subchart %s %s: %s (%s)", dep.name, dep.version, dep.message, dep.repository)
             return
         try:
             dep.latest_version = await self._latest(repository, dep.name)
             if parse(dep.version) is None:
                 # Version constraint such as "~1.2" or "1.x": just display the latest one.
                 dep.status, dep.message = Status.UNKNOWN, "version is a constraint"
+                log.debug("subchart %s %s: version is a constraint (latest %s)", dep.name, dep.version, dep.latest_version)
                 return
             dep.status = Status.OUTDATED if is_newer(dep.latest_version, dep.version) else Status.UP_TO_DATE
         except Exception as exc:  # noqa: BLE001
             dep.status, dep.message = Status.ERROR, _short(exc)
             log.warning("cannot check subchart %s %s (%s): %s", dep.name, dep.version, dep.repository, dep.message)
             return
+        log.debug("subchart %s %s: %s (latest %s)", dep.name, dep.version, dep.status.value, dep.latest_version)
         if depth >= MAX_DEPENDENCY_DEPTH:
             return
         try:
@@ -161,6 +183,20 @@ class ChartChecker:
         await asyncio.gather(*(self.check_dependency(d, depth + 1) for d in dep.dependencies))
 
     async def check(self, report: ChartReport) -> None:
+        await self._check(report)
+        if report.status != Status.ERROR:  # errors are logged as warnings
+            log.debug(
+                "[%s] chart %s %s of application %s: %s%s%s",
+                report.cluster,
+                report.chart,
+                report.version,
+                report.application,
+                report.status.value,
+                f" (latest {report.latest_version})" if report.latest_version else "",
+                f", {len(report.dependencies)} subchart(s)" if report.dependencies else "",
+            )
+
+    async def _check(self, report: ChartReport) -> None:
         metadata: dict | None = None
         try:
             if report.source_type == "git":
@@ -193,4 +229,6 @@ class ChartChecker:
             await asyncio.gather(*(self.check_dependency(d) for d in report.dependencies))
 
     async def check_all(self, reports: list[ChartReport]) -> None:
+        log.info("checking %d Helm chart(s) against their repositories", len(reports))
         await asyncio.gather(*(self.check(r) for r in reports))
+        log.info("Helm charts checked: %s", _summary(r.worst_status for r in reports))

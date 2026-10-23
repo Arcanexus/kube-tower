@@ -116,9 +116,11 @@ class ClusterRegistry:
         if self._local is None:
             try:
                 config.load_incluster_config()
+                log.debug("using the in-cluster configuration")
             except config.ConfigException:
                 try:
                     config.load_kube_config()
+                    log.debug("using the local kubeconfig")
                 except (config.ConfigException, FileNotFoundError):
                     log.warning("no in-cluster config nor kubeconfig found")
                     return None
@@ -144,6 +146,7 @@ class ClusterRegistry:
                 if secret := self._read_secret(namespace, name):
                     secrets.append(secret)
             except client.ApiException as exc:
+                log.warning("cannot read cluster secret %s/%s: %s %s", namespace, name, exc.status, exc.reason)
                 statuses.append(ClusterStatus(name, "", "secret", message=exc.reason))
         return secrets
 
@@ -166,8 +169,10 @@ class ClusterRegistry:
             try:
                 secrets = self._list_secrets(namespace, selector)
             except client.ApiException as exc:
+                log.warning("cannot list %s cluster secrets in %s: %s %s", source, namespace, exc.status, exc.reason)
                 statuses.append(ClusterStatus(f"<{source}s in {namespace}>", "", source, message=exc.reason))
                 secrets = []
+            log.debug("%d %s cluster secret(s) in namespace %s (selector %s)", len(secrets), source, namespace, selector)
             if source == "secret":
                 # A named secret also matched by the label selector is skipped below (same server).
                 secrets = secrets + self._named_secrets(namespace, statuses)
@@ -175,15 +180,26 @@ class ClusterRegistry:
                 try:
                     cluster = cluster_from_secret(secret, source)
                 except Exception as exc:  # noqa: BLE001 - one bad secret must not break discovery
+                    log.warning("invalid cluster secret %s/%s: %s", namespace, secret.metadata.name, exc)
                     statuses.append(ClusterStatus(secret.metadata.name, "", source, message=str(exc)))
                     continue
                 if cluster.server.rstrip("/") in seen_servers:
+                    log.debug("cluster secret %s skipped: server %s already registered", secret.metadata.name, cluster.server)
                     continue
                 seen_servers.add(cluster.server.rstrip("/"))
                 clusters.append(cluster)
 
         for cluster in clusters:
-            statuses.append(self.probe(cluster))
+            status = self.probe(cluster)
+            statuses.append(status)
+            if status.reachable:
+                log.info(
+                    "cluster %s (%s, %s): reachable, Kubernetes %s", cluster.name, cluster.source, cluster.server, status.version
+                )
+            else:
+                log.warning(
+                    "cluster %s (%s, %s) is unreachable: %s", cluster.name, cluster.source, cluster.server, status.message
+                )
         return clusters, statuses
 
     def probe(self, cluster: Cluster) -> ClusterStatus:

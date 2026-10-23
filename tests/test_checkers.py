@@ -1,4 +1,5 @@
 import io
+import logging
 import tarfile
 
 import yaml
@@ -160,3 +161,14 @@ def test_git_raw_url(monkeypatch):
 
     monkeypatch.setenv("GIT_TOKEN", "secret")
     assert asyncio.run(run())["version"] == "0.3.0"
+
+
+async def test_checkers_log_results(caplog):
+    caplog.set_level(logging.DEBUG, logger="kube_tower")
+    oci = FakeOCI(tags={"library/nginx": ["1.25.3", "1.26.0"]})
+    await ImageChecker(oci, ImagesSettings()).check_all([_img("library/nginx", "1.25.3"), _img("library/missing", "1.0")])
+    messages = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert ("INFO", "checking 2 image(s) against their registries") in messages
+    assert ("DEBUG", "image docker.io/library/nginx:1.25.3: outdated (latest 1.26.0)") in messages
+    assert ("WARNING", "cannot check image docker.io/library/missing:1.0: not found") in messages
+    assert ("INFO", "images checked: 1 outdated, 1 error") in messages

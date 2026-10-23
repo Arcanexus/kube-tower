@@ -72,6 +72,13 @@ live, like `kubectl logs -f`. Filter by text or minimum level, and pause the str
 the lines logged at the configured `logs.level` or above are kept: set it to `DEBUG` to debug a
 scan.
 
+| Level | What is logged |
+| --- | --- |
+| `DEBUG` | Every registry, Helm repository and git request (method, URL without query, HTTP status), registry tokens requested, Kubernetes objects listed per kind, the result of each image, chart and subchart check, cluster secrets found |
+| `INFO` | Scan start and end, clusters to scan with their Kubernetes version, per cluster collection summary (objects listed, ArgoCD Applications, Helm charts), registry credentials loaded (registry names only), check summaries per status |
+| `WARNING` | Non fatal problems: an unreachable cluster, an invalid cluster secret, a resource that cannot be listed (e.g. 403), an image, chart or subchart that cannot be checked, ignored credentials |
+| `ERROR` | A scan that failed as a whole (with the stack trace); the previous results are kept |
+
 ### Settings
 
 ![Settings](images/settings.png)

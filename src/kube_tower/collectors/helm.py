@@ -67,6 +67,18 @@ def collect_charts(cluster: Cluster, settings: HelmSettings) -> tuple[list[Chart
             log.info("ArgoCD Application CRD not found on cluster %s", cluster.name)
         else:
             errors.append(f"[{cluster.name}] cannot list ArgoCD Applications: {exc.status} {exc.reason}")
+            log.warning("[%s] cannot list ArgoCD Applications: %s %s", cluster.name, exc.status, exc.reason)
         return [], errors
     reports = [r for app in apps for r in charts_from_application(cluster.name, app)]
+    log.info("[%s] %d ArgoCD Application(s), %d Helm chart(s) found", cluster.name, len(apps), len(reports))
+    for r in reports:
+        log.debug(
+            "[%s] application %s: chart %s %s from %s (%s)",
+            cluster.name,
+            r.application,
+            r.chart,
+            r.version,
+            r.repository,
+            r.source_type,
+        )
     return reports, errors

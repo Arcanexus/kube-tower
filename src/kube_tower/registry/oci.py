@@ -109,6 +109,7 @@ class OCIClient:
         fields = dict(_CHALLENGE_RE.findall(params))
         query = {"service": fields.get("service", ""), "scope": fields.get("scope", scope)}
         auth = self.credentials.get(registry)
+        log.debug("requesting a %s token for %s (%s)", "authenticated" if auth else "anonymous", registry, query["scope"])
         resp = await self.http.get(fields["realm"], params=query, auth=auth)
         if resp.status_code != 200:
             raise RegistryError(f"token request failed ({resp.status_code}) for {registry}")
@@ -146,6 +147,7 @@ class OCIClient:
             if resp.status_code != 200:
                 raise RegistryError(f"tags list failed ({resp.status_code}) for {registry}/{repository}")
             tags.extend(resp.json().get("tags") or [])
+            log.debug("%s/%s: %d tag(s) so far", registry, repository, len(tags))
             match = _LINK_RE.search(resp.headers.get("link", ""))
             url = str(httpx.URL(f"https://{host}").join(match[1])) if match else None
         return tags
