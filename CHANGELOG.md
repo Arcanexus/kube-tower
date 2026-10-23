@@ -54,6 +54,9 @@ All notable changes to this project are documented here. The format follows
   connection error or a 502/503/504, so a few dropped requests (Docker Hub bursts) no longer leave
   images in error. Timeout errors say whether the connection could not be opened, the registry did
   not answer, or too many requests were waiting.
+- Releases tagged on the coverage badge commit published nothing: the badge commit no longer
+  carries `[skip ci]` (which also skipped the tag push workflows); the Tests and Docker workflows
+  ignore pushes to main that only change `.github/badges` instead.
 - Pod restarting in a loop during long scans: scans run in a dedicated worker thread so the web
   server and `/healthz` stay responsive, each cluster is collected in its own thread (in parallel),
   Kubernetes lists are paginated, the chart adds a
