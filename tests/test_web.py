@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
+from kube_tower import __version__
 from kube_tower.config import Settings
 from kube_tower.main import create_app
 from kube_tower.models import ChartDependency, ChartReport, ClusterStatus, ImageRef, ImageReport, Snapshot, Status, Usage
@@ -142,7 +143,7 @@ def test_metrics():
         "kube_tower_scan_in_progress 0.0",
         'kube_tower_scans_total{result="success"} 3.0',
         'kube_tower_scans_total{result="failure"} 1.0',
-        'kube_tower_build_info{version="0.1.0"} 1.0',
+        f'kube_tower_build_info{{version="{__version__}"}} 1.0',
     ]
     for line in expected:
         assert line in lines, line
@@ -283,3 +284,36 @@ def test_ui_helpers():
     ]
     assert registry_links(ImageRef("quay.io", "prometheus/node-exporter", "1"))[0][0] == "Quay"
     assert registry_links(ImageRef("registry.k8s.io", "pause", "3.9")) == []
+
+
+def test_synthesis_is_the_home_page():
+    client, _ = _client()
+    page = client.get("/").text
+    assert 'href="synthesis" aria-current="page"' in page
+    assert page == client.get("/synthesis").text
+    # 3 images: 2 outdated (nginx minor, redis digest), 1 up to date; 1 chart outdated through its subchart
+    assert re.search(r"Images</span><strong>3</strong>\s*<small>33% up to date · 2 outdated", page)
+    assert 'href="images?status=outdated"' in page and 'href="charts?status=outdated"' in page
+    assert re.search(r"<th scope=\"row\">minor</th>.*?<td class=\"bar-value\">1</td>", page, re.S)
+    assert re.search(r"<th scope=\"row\">docker.io</th>.*?<td class=\"bar-value\">2</td>", page, re.S)
+    assert "Subcharts: 1 outdated out of 3." in page
+    assert "1 unreachable" in page
+
+
+def test_summary_folds_small_registries():
+    from kube_tower.web.summary import summarize
+
+    snap = Snapshot(images=[ImageReport(ImageRef(f"r{i}.io", "x", "1")) for i in range(8)])
+    registries = summarize(snap, registries=3).registries
+    assert registries[-1] == ("other", 6) and len(registries) == 3
+
+
+def test_version_comes_from_the_image(monkeypatch):
+    import importlib
+
+    import kube_tower
+
+    monkeypatch.setenv("KUBE_TOWER_VERSION", "1.2.3")
+    assert importlib.reload(kube_tower).__version__ == "1.2.3"
+    monkeypatch.delenv("KUBE_TOWER_VERSION")
+    assert importlib.reload(kube_tower).__version__ == "dev"

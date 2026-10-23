@@ -2,7 +2,7 @@
 
 ## The dashboards
 
-The left sidebar gives access to five pages, and its bottom button switches the theme between
+The left sidebar gives access to six pages, and its bottom button switches the theme between
 auto (follows the system), light and dark; the choice is remembered by the browser. The bar at the
 top shows when the last scan finished, a **Refresh now** button that starts a scan immediately,
 and the collection errors of the last scan, if any (e.g. a missing permission on a cluster).
@@ -10,6 +10,16 @@ and the collection errors of the last scan, if any (e.g. a missing permission on
 On the Images and Helm charts pages, the counters at the top are buttons: clicking one shows only
 that status (click it again to show everything). Clicking a line opens a detail panel on the
 right; close it with its button, a click outside or `Esc`.
+
+### Synthesis
+
+![Synthesis](images/synthesis.png)
+
+The home page: an overview of the last scan. Tiles give the number of images and charts (with
+the share that is up to date), the reachable clusters and the images using `latest`. Below, the
+distribution of images and charts by status (click a segment or a status to open the filtered
+list), the pending image updates by type (major, minor, patch, new digest), the images per
+registry, the most used outdated images (click one for its details) and the figures per cluster.
 
 ### Images
 

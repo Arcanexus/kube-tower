@@ -28,6 +28,8 @@ All notable changes to this project are documented here. The format follows
 - UI: Logs page following the application and scanner logs; light/dark theme switch; status counters
   filter the results; detail panels for images (digest comparison, registry links, usages) and charts;
   subcharts shown as an expanded tree, with the subcharts of subcharts; `latest` tags highlighted in red.
+- UI: Synthesis home page (status distributions, pending updates, registries, most used outdated images,
+  per cluster figures); the version shown by the UI and `kube_tower_build_info` comes from the image tag.
 
 ### Fixed
 

@@ -16,6 +16,10 @@ RUN pip install -r src/requirements.txt
 
 COPY src/ src/
 
+# Version shown by the UI and the metrics, given by the CI from the image tag
+ARG VERSION=dev
+ENV KUBE_TOWER_VERSION=${VERSION}
+
 # Unprivileged user, matches runAsUser in the Helm chart
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin kube-tower
 USER 10001
