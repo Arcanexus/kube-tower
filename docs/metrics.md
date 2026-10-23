@@ -72,7 +72,7 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
 | `kube_tower_cluster_info` | `cluster`, `source`, `version` | always 1 (`source`: `in-cluster`, `secret`, `argocd-secret`; `version`: Kubernetes version) |
 | `kube_tower_last_scan_timestamp_seconds` | | end of the last scan (Unix time) |
 | `kube_tower_last_scan_duration_seconds` | | duration of the last scan |
-| `kube_tower_last_scan_errors` | | non fatal collection errors of the last scan (e.g. a resource kube-tower may not list), detailed on the Status page |
+| `kube_tower_last_scan_errors` | | non fatal errors of the last scan (e.g. a resource kube-tower may not list, a registry that cannot be queried), detailed on the Status page |
 | `kube_tower_scan_in_progress` | | 1 while a scan is running |
 | `kube_tower_scans_total` | `result` (`success`, `failure`) | scans since kube-tower started (counter) |
 | `kube_tower_build_info` | `version` | always 1 |

@@ -36,6 +36,8 @@ All notable changes to this project are documented here. The format follows
 - The UI works however it is exposed (http, https behind an ingress terminating TLS, port-forward,
   sub-path): every UI link is relative (no more mixed content errors), and uvicorn trusts the
   `X-Forwarded-*` headers.
+- Version check errors (image, chart, subchart) are logged as warnings and listed with the scan
+  errors in the UI and the `kube_tower_last_scan_errors` metric; they were only shown in the tables.
 
 ### Changed
 

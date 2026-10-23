@@ -150,7 +150,8 @@ class SnapshotCollector(Collector):
         last = GaugeMetricFamily("kube_tower_last_scan_timestamp_seconds", "End of the last scan (Unix time)")
         duration = GaugeMetricFamily("kube_tower_last_scan_duration_seconds", "Duration of the last scan")
         errors = GaugeMetricFamily(
-            "kube_tower_last_scan_errors", "Non fatal collection errors of the last scan (e.g. a forbidden resource)"
+            "kube_tower_last_scan_errors",
+            "Non fatal errors of the last scan (e.g. a forbidden resource, a registry that cannot be queried)",
         )
         if snap.finished_at:
             last.add_metric([], snap.finished_at.timestamp())

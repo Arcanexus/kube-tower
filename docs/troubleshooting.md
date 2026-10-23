@@ -1,7 +1,7 @@
 # Troubleshooting
 
-Start with the **collection errors** shown at the top of every page and the `message` under each
-`error` status; the pod logs (`kubectl -n kube-tower logs deploy/kube-tower`) give the details.
+Start with the **scan errors** shown at the top of every page (collection and version check
+errors) and the `message` under each `error` status; the pod logs (`kubectl -n kube-tower logs deploy/kube-tower`) give the details.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |

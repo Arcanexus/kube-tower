@@ -28,7 +28,7 @@ def _img(repo, tag, digests=()):
     return ImageReport(image=ImageRef("docker.io", repo, tag), running_digests=set(digests))
 
 
-async def test_image_checker():
+async def test_image_checker(caplog):
     oci = FakeOCI(tags={"library/nginx": ["1.25.3", "1.26.0", "latest"]}, digests={"library/redis": "sha256:new"})
     reports = [
         _img("library/nginx", "1.25.3"),
@@ -49,6 +49,7 @@ async def test_image_checker():
     ]
     assert reports[0].latest_tag == "1.26.0"
     assert oci.calls == 2  # nginx tags fetched once for both reports
+    assert "cannot check image docker.io/library/missing:1.0: not found" in caplog.text
 
 
 def _chart_archive(chart: dict) -> bytes:

@@ -7,7 +7,7 @@ import pytest
 from kube_tower import scanner as scanner_module
 from kube_tower.clusters import Cluster
 from kube_tower.config import Settings
-from kube_tower.models import ChartReport, ClusterStatus, Status, Usage
+from kube_tower.models import ChartDependency, ChartReport, ClusterStatus, ImageRef, ImageReport, Snapshot, Status, Usage
 from kube_tower.scanner import Scanner
 
 
@@ -160,3 +160,17 @@ async def test_one_thread_per_cluster(monkeypatch):
     assert sorted(threads) == ["scan-a", "scan-b"]
     assert snap.errors == ["[a] error", "[b] error"]
     assert snap.images[0].clusters == ["a", "b"]
+
+
+def test_check_errors():
+    image = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), status=Status.ERROR, message="401 Unauthorized")
+    ok = ImageReport(ImageRef("docker.io", "library/redis", "7.2"), status=Status.UP_TO_DATE)
+    chart = ChartReport("c1", "app", "argocd", "app", "https://charts.example.com", "1.0.0", "helm")
+    chart.status, chart.message = Status.ERROR, "404 Not Found"
+    parent = ChartReport("c1", "mon", "argocd", "mon", "https://charts.example.com", "1.0.0", "helm", status=Status.UP_TO_DATE)
+    parent.dependencies = [ChartDependency("redis", "18.0.0", "https://x", status=Status.ERROR, message="timeout")]
+    assert scanner_module.check_errors(Snapshot(images=[image, ok], charts=[chart, parent])) == [
+        "image docker.io/library/nginx:1.25: 401 Unauthorized",
+        "[c1] chart app of application app: 404 Not Found",
+        "[c1] subchart redis 18.0.0 of application mon: timeout",
+    ]

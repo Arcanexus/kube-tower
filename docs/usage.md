@@ -3,8 +3,9 @@
 ## The dashboards
 
 The left sidebar gives access to four pages. The bar at the top shows when the last scan
-finished, a **Refresh now** button that starts a scan immediately, and the collection errors of
-the last scan, if any (e.g. a missing permission on a cluster).
+finished, a **Refresh now** button that starts a scan immediately, and the errors of the last scan,
+if any: collection errors (e.g. a missing permission on a cluster) and version check errors
+(e.g. a registry that cannot be queried). Each error is also logged as a warning in the pod logs.
 
 ### Images
 

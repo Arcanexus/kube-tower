@@ -23,7 +23,7 @@ from kube_tower.clusters import Cluster, ClusterRegistry
 from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
 from kube_tower.config import Settings
-from kube_tower.models import ChartReport, Snapshot
+from kube_tower.models import ChartReport, Snapshot, Status
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.registry.helm import HelmClient
 from kube_tower.registry.oci import OCIClient
@@ -57,6 +57,20 @@ async def run_in_thread[T](name: str, fn: Callable[[], T]) -> T:
 
     threading.Thread(target=work, name=name, daemon=True).start()
     return await future
+
+
+def check_errors(snap: Snapshot) -> list[str]:
+    """Version check failures, listed with the collection errors in the scan errors."""
+    errors = [f"image {r.image}: {r.message}" for r in snap.images if r.status == Status.ERROR]
+    for c in snap.charts:
+        if c.status == Status.ERROR:
+            errors.append(f"[{c.cluster}] chart {c.chart} of application {c.application}: {c.message}")
+        errors += [
+            f"[{c.cluster}] subchart {d.name} {d.version} of application {c.application}: {d.message}"
+            for d in c.dependencies
+            if d.status == Status.ERROR
+        ]
+    return errors
 
 
 class Scanner:
@@ -114,13 +128,15 @@ class Scanner:
                 ChartChecker(helm, self.settings.helm, reg.concurrency).check_all(snap.charts),
             )
         snap.charts.sort(key=lambda c: (c.cluster, c.application, c.chart))
+        snap.errors += check_errors(snap)
         snap.finished_at = datetime.now(UTC)
         log.info(
-            "scan finished in %.1fs: %d clusters, %d images, %d charts",
+            "scan finished in %.1fs: %d clusters, %d images, %d charts, %d errors",
             (snap.finished_at - snap.started_at).total_seconds(),
             len(clusters),
             len(snap.images),
             len(snap.charts),
+            len(snap.errors),
         )
         return snap
 

@@ -73,6 +73,7 @@ class ImageChecker:
                 report.status, report.message = Status.OUTDATED, f"a newer image is published under '{ref.tag}'"
         except Exception as exc:  # noqa: BLE001 - one registry failure must not stop the others
             report.status, report.message = Status.ERROR, _short(exc)
+            log.warning("cannot check image %s: %s", ref, report.message)
 
     async def check_all(self, reports: list[ImageReport]) -> None:
         await asyncio.gather(*(self.check(r) for r in reports))
@@ -123,6 +124,7 @@ class ChartChecker:
                 dep.status = Status.OUTDATED if is_newer(dep.latest_version, dep.version) else Status.UP_TO_DATE
         except Exception as exc:  # noqa: BLE001
             dep.status, dep.message = Status.ERROR, _short(exc)
+            log.warning("cannot check subchart %s %s (%s): %s", dep.name, dep.version, dep.repository, dep.message)
 
     async def check(self, report: ChartReport) -> None:
         metadata: dict | None = None
@@ -143,6 +145,14 @@ class ChartChecker:
                         metadata = await self._metadata(report.repository, report.chart, report.version)
         except Exception as exc:  # noqa: BLE001
             report.status, report.message = Status.ERROR, _short(exc)
+            log.warning(
+                "[%s] cannot check chart %s of application %s (%s): %s",
+                report.cluster,
+                report.chart,
+                report.application,
+                report.repository,
+                report.message,
+            )
             return
         if metadata and self.settings.check_dependencies:
             report.dependencies = [
