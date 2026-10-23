@@ -75,7 +75,7 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
 | `kube_tower_last_scan_errors` | | non fatal collection errors of the last scan (e.g. a resource kube-tower may not list), detailed on the Status page |
 | `kube_tower_scan_in_progress` | | 1 while a scan is running |
 | `kube_tower_scans_total` | `result` (`success`, `failure`) | scans since kube-tower started (counter) |
-| `kube_tower_build_info` | `version` | always 1 |
+| `kube_tower_build_info` | `version` (image tag: `1.2.3` for a release, the branch name otherwise) | always 1 |
 
 ### Cardinality
 

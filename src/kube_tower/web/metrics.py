@@ -24,7 +24,7 @@ from kube_tower.versions import update_kind
 router = APIRouter()
 
 
-def _image_update(r: ImageReport) -> str:
+def image_update(r: ImageReport) -> str:
     if r.status != Status.OUTDATED:
         return ""
     return update_kind(r.image.tag, r.latest_tag) or ("digest" if r.latest_digest else "")
@@ -73,7 +73,7 @@ class SnapshotCollector(Collector):
         for r in snap.images:
             name, tag = r.image.name, r.image.tag or ""
             latest = r.latest_tag or (r.latest_digest or "" if r.status == Status.OUTDATED else "")
-            outdated.add_metric([name, tag, latest, r.status.value, _image_update(r)], r.status == Status.OUTDATED)
+            outdated.add_metric([name, tag, latest, r.status.value, image_update(r)], r.status == Status.OUTDATED)
             for usage in sorted(_workload_usages(r)):
                 workload.add_metric([*usage, name, tag], 1)
             for cluster, count in sorted(Counter(u.cluster for u in r.usages if u.kind == "Node").items()):
