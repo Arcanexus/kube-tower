@@ -15,6 +15,8 @@ from kube_tower.registry.oci import parse_image_ref
 
 log = logging.getLogger(__name__)
 
+PAGE_SIZE = 250
+
 
 def _pod_spec_images(spec: client.V1PodSpec | None) -> Iterable[tuple[str, str]]:
     if spec is None:
@@ -62,11 +64,19 @@ class ImageInventory:
         batch = client.BatchV1Api(cluster.api_client)
 
         def safe(what: str, fn):
+            # Paginated lists: a single huge response holds the GIL while it is parsed and
+            # starves the event loop (/healthz times out and the liveness probe kills the pod).
+            items, token = [], None
             try:
-                return fn().items
+                while True:
+                    page = fn(limit=PAGE_SIZE, _continue=token) if token else fn(limit=PAGE_SIZE)
+                    items += page.items
+                    token = page.metadata._continue if page.metadata else None
+                    if not token:
+                        return items
             except client.ApiException as exc:
                 errors.append(f"[{cluster.name}] cannot list {what}: {exc.status} {exc.reason}")
-                return []
+                return items
 
         for pod in safe("pods", core.list_pod_for_all_namespaces):
             digests = {

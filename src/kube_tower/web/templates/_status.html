@@ -1,6 +1,6 @@
 {% from "_macros.html" import icon %}
 <div id="scan-status" class="scan-status"
-     {% if scanning %}hx-get="/status" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+     {% if scanning %}hx-get="/status?polling=1" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
   {% if scanning %}
     <span aria-busy="true">Scan in progress…</span>
   {% elif snapshot.finished_at %}

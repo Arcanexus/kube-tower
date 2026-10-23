@@ -89,4 +89,8 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/status", response_class=HTMLResponse, include_in_schema=False)
     async def scan_status(request: Request):
-        return render(request, "_status")
+        response = render(request, "_status")
+        if request.query_params.get("polling") and not request.app.state.scanner.running:
+            # The scan the page was waiting for is over: reload it to show the new results.
+            response.headers["HX-Refresh"] = "true"
+        return response

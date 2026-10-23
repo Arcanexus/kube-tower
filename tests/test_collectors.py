@@ -45,6 +45,15 @@ def test_image_inventory(monkeypatch):
     apps.list_stateful_set_for_all_namespaces.side_effect = client.ApiException(status=403, reason="Forbidden")
     apps.list_daemon_set_for_all_namespaces.return_value.items = []
     batch.list_cron_job_for_all_namespaces.return_value.items = [cron]
+    for api in (core, apps, batch):
+        for fn in (
+            "list_pod_for_all_namespaces",
+            "list_node",
+            "list_deployment_for_all_namespaces",
+            "list_daemon_set_for_all_namespaces",
+            "list_cron_job_for_all_namespaces",
+        ):
+            getattr(api, fn).return_value.metadata = client.V1ListMeta()
     monkeypatch.setattr(images_collector.client, "CoreV1Api", lambda _: core)
     monkeypatch.setattr(images_collector.client, "AppsV1Api", lambda _: apps)
     monkeypatch.setattr(images_collector.client, "BatchV1Api", lambda _: batch)
@@ -98,3 +107,44 @@ def test_collect_charts_without_argocd(monkeypatch):
     monkeypatch.setattr(helm_collector.client, "CustomObjectsApi", lambda _: api)
     charts, errors = helm_collector.collect_charts(Cluster("c1", "https://x", "secret", None), HelmSettings())
     assert charts == [] and errors == []
+
+
+def test_image_inventory_paginates(monkeypatch):
+    pages = {
+        None: client.V1PodList(
+            items=[client.V1Pod(metadata=_meta("a", "ns"), spec=_spec("nginx:1.25"), status=client.V1PodStatus())],
+            metadata=client.V1ListMeta(_continue="next"),
+        ),
+        "next": client.V1PodList(
+            items=[client.V1Pod(metadata=_meta("b", "ns"), spec=_spec("alpine:3.19"), status=client.V1PodStatus())],
+            metadata=client.V1ListMeta(),
+        ),
+    }
+    calls = []
+
+    def list_pods(limit, _continue=None):
+        calls.append((limit, _continue))
+        return pages[_continue]
+
+    core, other = MagicMock(), MagicMock()
+    core.list_pod_for_all_namespaces = list_pods
+    core.list_node.return_value = client.V1NodeList(items=[], metadata=client.V1ListMeta())
+    other.configure_mock(
+        **{
+            f"{fn}.return_value": NS(items=[], metadata=None)
+            for fn in (
+                "list_deployment_for_all_namespaces",
+                "list_stateful_set_for_all_namespaces",
+                "list_daemon_set_for_all_namespaces",
+                "list_cron_job_for_all_namespaces",
+            )
+        }
+    )
+    monkeypatch.setattr(images_collector.client, "CoreV1Api", lambda _: core)
+    monkeypatch.setattr(images_collector.client, "AppsV1Api", lambda _: other)
+    monkeypatch.setattr(images_collector.client, "BatchV1Api", lambda _: other)
+
+    inventory = ImageInventory(ImagesSettings())
+    assert inventory.collect(Cluster("c1", "https://x", "in-cluster", None)) == []
+    assert calls == [(images_collector.PAGE_SIZE, None), (images_collector.PAGE_SIZE, "next")]
+    assert set(inventory.reports) == {"docker.io/library/nginx:1.25", "docker.io/library/alpine:3.19"}

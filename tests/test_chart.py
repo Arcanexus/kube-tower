@@ -150,3 +150,15 @@ def test_credentials_change_restarts_pod(tmp_path):
         return docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["metadata"]["annotations"]["checksum/credentials"]
 
     assert checksum("a") != checksum("b")
+
+
+def test_probes(tmp_path):
+    c = container(render(tmp_path, {}))
+    for probe in ("startupProbe", "livenessProbe", "readinessProbe"):
+        assert c[probe]["httpGet"] == {"path": "/healthz", "port": "http"}
+    assert c["startupProbe"]["failureThreshold"] * c["startupProbe"]["periodSeconds"] >= 300
+
+    c = container(render(tmp_path, {"startupProbe": None, "livenessProbe": {"initialDelaySeconds": 30}}))
+    assert "startupProbe" not in c
+    assert c["livenessProbe"]["initialDelaySeconds"] == 30
+    assert c["livenessProbe"]["periodSeconds"] == 20

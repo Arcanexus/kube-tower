@@ -22,6 +22,13 @@ All notable changes to this project are documented here. The format follows
   are referenced by name (`clusters[].existingSecret`, new `clusters.secretNames` setting).
 - Helm chart rendering tests.
 
+### Fixed
+
+- Pod restarting in a loop during long scans: scans run in a dedicated worker thread so the web
+  server and `/healthz` stay responsive, Kubernetes lists are paginated, the chart adds a
+  `startupProbe` and longer probe timeouts (`startupProbe`, `livenessProbe`, `readinessProbe` values).
+- The UI reloads itself when the scan it shows as in progress is over.
+
 ### Changed
 
 - License changed from GPL-3.0 to Apache-2.0.

@@ -1,4 +1,6 @@
 import asyncio
+import threading
+import time
 
 import pytest
 
@@ -94,3 +96,33 @@ async def test_run_forever_loops(monkeypatch, fakes):
     with pytest.raises(asyncio.CancelledError):
         await scanner.run_forever()
     assert len(calls) == 2
+
+
+async def test_scan_does_not_block_the_web_loop(fakes, monkeypatch):
+    threads = []
+
+    async def slow_check(self, reports):
+        threads.append(threading.current_thread().name)
+        time.sleep(0.5)  # CPU bound / blocking work in the scan
+
+    monkeypatch.setattr(scanner_module.ImageChecker, "check_all", slow_check)
+    scanner = Scanner(Settings(), FakeRegistry())
+    assert scanner.trigger()
+    await asyncio.sleep(0.05)
+    # The web server's loop keeps serving while the scan blocks its own loop
+    start = time.monotonic()
+    for _ in range(10):
+        await asyncio.sleep(0.01)
+    assert time.monotonic() - start < 0.4
+    assert scanner.running
+    await scanner._task
+    assert threads == ["scanner"] and scanner.snapshot.finished_at is not None
+
+
+async def test_scan_error_is_raised_in_the_web_loop(monkeypatch):
+    class Broken:
+        def discover(self):
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await Scanner(Settings(), Broken()).scan()
