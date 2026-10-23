@@ -77,6 +77,9 @@ def load_docker_credentials(path: str) -> dict[str, tuple[str, str]]:
     return creds
 
 
+MAX_REDIRECTS = 5
+
+
 class RegistryError(Exception):
     """A registry, Helm repository or git host answered, but not with what was asked: the message says why."""
 
@@ -100,8 +103,8 @@ class OCIClient:
             return self.mirrors[registry]
         return DOCKER_HUB_API if registry == DOCKER_HUB else registry
 
-    async def _token(self, registry: str, challenge: str, scope: str) -> str | None:
-        key = (registry, scope)
+    async def _token(self, registry: str, host: str, challenge: str, scope: str) -> str | None:
+        key = (host, scope)
         if key in self._tokens:
             return self._tokens[key]
         scheme, _, params = challenge.partition(" ")
@@ -120,22 +123,33 @@ class OCIClient:
         return token
 
     async def _request(self, method: str, registry: str, repository: str, url: str, **kwargs) -> httpx.Response:
+        """A registry API request, authenticated on demand (bearer token or basic auth).
+
+        Registry redirects (e.g. registry.k8s.io to a regional Artifact Registry) are followed
+        here, authenticating against the target registry. Callers that pass `follow_redirects`
+        (blob downloads to object storage) let httpx follow them, without credentials.
+        """
         scope = f"repository:{repository}:pull"
-        headers = kwargs.pop("headers", {})
-        token = self._tokens.get((registry, scope))
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        resp = await self.http.request(method, url, headers=headers, **kwargs)
-        if resp.status_code == 401 and "www-authenticate" in resp.headers:
-            challenge = resp.headers["www-authenticate"]
-            if challenge.lower().startswith("basic") and registry in self.credentials:
-                resp = await self.http.request(method, url, headers=headers, auth=self.credentials[registry], **kwargs)
-            else:
-                token = await self._token(registry, challenge, scope)
-                if token:
+        base_headers = kwargs.pop("headers", {})
+        manual_redirects = "follow_redirects" not in kwargs
+        for _ in range(MAX_REDIRECTS + 1):
+            host = httpx.URL(url).host
+            headers = dict(base_headers)
+            if token := self._tokens.get((host, scope)):
+                headers["Authorization"] = f"Bearer {token}"
+            resp = await self.http.request(method, url, headers=headers, **kwargs)
+            if resp.status_code == 401 and "www-authenticate" in resp.headers:
+                challenge = resp.headers["www-authenticate"]
+                if challenge.lower().startswith("basic") and registry in self.credentials:
+                    resp = await self.http.request(method, url, headers=headers, auth=self.credentials[registry], **kwargs)
+                elif token := await self._token(registry, host, challenge, scope):
                     headers["Authorization"] = f"Bearer {token}"
                     resp = await self.http.request(method, url, headers=headers, **kwargs)
-        return resp
+            if not (manual_redirects and resp.is_redirect and "location" in resp.headers):
+                return resp
+            url = str(resp.url.join(resp.headers["location"]))
+            log.debug("%s redirected to %s", resp.request.url.copy_with(query=None), httpx.URL(url).copy_with(query=None))
+        raise RegistryError(f"too many redirects for {registry}/{repository} (more than {MAX_REDIRECTS})")
 
     async def list_tags(self, registry: str, repository: str) -> list[str]:
         host = self._api_host(registry)
@@ -150,7 +164,7 @@ class OCIClient:
             tags.extend(resp.json().get("tags") or [])
             log.debug("%s/%s: %d tag(s) so far", registry, repository, len(tags))
             match = _LINK_RE.search(resp.headers.get("link", ""))
-            url = str(httpx.URL(f"https://{host}").join(match[1])) if match else None
+            url = str(resp.url.join(match[1])) if match else None
         return tags
 
     async def get_digest(self, registry: str, repository: str, reference: str) -> str | None:

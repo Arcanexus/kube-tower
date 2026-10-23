@@ -5,7 +5,7 @@ import httpx
 import pytest
 import respx
 
-from kube_tower.registry.oci import OCIClient, load_docker_credentials, parse_image_ref
+from kube_tower.registry.oci import OCIClient, RegistryError, load_docker_credentials, parse_image_ref
 
 
 @pytest.mark.parametrize(
@@ -89,3 +89,38 @@ async def test_registry_errors_and_basic_auth():
             await oci.get_blob("private.example.com", "app", "sha256:x")
         with pytest.raises(RegistryError, match="cannot read the manifest of private.example.com/app:x"):
             await oci.get_manifest("private.example.com", "app", "x", "application/json")
+
+
+@respx.mock
+async def test_registry_redirect_authenticates_against_the_target():
+    # registry.k8s.io redirects to a regional Artifact Registry, which asks for its own token
+    respx.get("https://registry.k8s.io/v2/sig-storage/nfsplugin/tags/list?n=1000").respond(
+        307,
+        headers={"Location": "https://europe-docker.pkg.dev/v2/k8s-artifacts-prod/images/sig-storage/nfsplugin/tags/list?n=1000"},
+    )
+    target = respx.get("https://europe-docker.pkg.dev/v2/k8s-artifacts-prod/images/sig-storage/nfsplugin/tags/list?n=1000")
+    target.side_effect = [
+        httpx.Response(
+            401,
+            headers={
+                "www-authenticate": 'Bearer realm="https://europe-docker.pkg.dev/v2/token",'
+                'scope="repository:k8s-artifacts-prod/images/sig-storage/nfsplugin:pull"'
+            },
+        ),
+        httpx.Response(200, json={"tags": ["v4.11.0", "v4.13.0"]}),
+    ]
+    token = respx.get("https://europe-docker.pkg.dev/v2/token").respond(200, json={"token": "t"})
+    async with httpx.AsyncClient() as http:
+        assert await OCIClient(http).list_tags("registry.k8s.io", "sig-storage/nfsplugin") == ["v4.11.0", "v4.13.0"]
+    assert token.calls[0].request.url.params["scope"] == "repository:k8s-artifacts-prod/images/sig-storage/nfsplugin:pull"
+    assert target.calls[1].request.headers["authorization"] == "Bearer t"
+
+
+@respx.mock
+async def test_too_many_redirects():
+    respx.get("https://loop.example.com/v2/app/tags/list?n=1000").respond(
+        302, headers={"Location": "https://loop.example.com/v2/app/tags/list?n=1000"}
+    )
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(RegistryError, match="too many redirects"):
+            await OCIClient(http).list_tags("loop.example.com", "app")

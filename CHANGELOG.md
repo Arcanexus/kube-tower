@@ -42,6 +42,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Bursts of timeouts / disconnections in the middle of a scan: big Helm repository indexes
+  (index.yaml) were parsed in the scan event loop, stalling every other request for up to minutes on
+  small nodes. They are now parsed in a thread with libyaml, and downloaded once per repository
+  even when several charts come from it.
+- registry.k8s.io images in error with `HTTP 307 Temporary Redirect`: registry redirects are followed
+  and authenticated against the target registry (regional Artifact Registry).
+- Charts deployed with a `v` prefixed `targetRevision` (`v4.11.0`) for a chart published as `4.11.0`
+  were reported as not published.
 - Registry requests are retried (`registries.retries`, default 2, growing delay) after a timeout, a
   connection error or a 502/503/504, so a few dropped requests (Docker Hub bursts) no longer leave
   images in error. Timeout errors say whether the connection could not be opened, the registry did

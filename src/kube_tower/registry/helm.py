@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import os
@@ -18,6 +19,8 @@ from kube_tower.registry.auth import normalize_host
 from kube_tower.registry.oci import OCIClient, RegistryError
 
 log = logging.getLogger(__name__)
+
+YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 HELM_CHART_LAYER = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 HELM_MANIFEST_ACCEPT = "application/vnd.oci.image.manifest.v1+json"
@@ -49,20 +52,33 @@ class HelmClient:
         self.http = http
         self.oci = oci
         self.git = git
-        self._indexes: dict[str, dict] = {}
+        self._indexes: dict[str, asyncio.Future[dict]] = {}
 
     def _auth(self, url: str) -> tuple[str, str] | None:
         """Basic auth for private HTTP Helm repositories, from the per registry credentials."""
         return self.oci.credentials.get(normalize_host(url))
 
     async def _index(self, repository: str) -> dict:
+        """The index.yaml of a Helm repository, downloaded once per scan whatever the number of charts."""
         repository = repository.rstrip("/")
         if repository not in self._indexes:
-            resp = await self.http.get(f"{repository}/index.yaml", auth=self._auth(repository), follow_redirects=True)
-            if resp.status_code != 200:
-                raise RegistryError(http_error_message(f"cannot read the index.yaml of the Helm repository {repository}", resp))
-            self._indexes[repository] = yaml.safe_load(resp.text) or {}
-        return self._indexes[repository]
+            self._indexes[repository] = asyncio.ensure_future(self._fetch_index(repository))
+        return await self._indexes[repository]
+
+    async def _fetch_index(self, repository: str) -> dict:
+        resp = await self.http.get(f"{repository}/index.yaml", auth=self._auth(repository), follow_redirects=True)
+        if resp.status_code != 200:
+            raise RegistryError(http_error_message(f"cannot read the index.yaml of the Helm repository {repository}", resp))
+        # Big indexes (tens of MB) take seconds to minutes to parse on small nodes: parse them in a
+        # thread, with libyaml when available, so the other requests of the scan keep being served.
+        index = await asyncio.to_thread(yaml.load, resp.content, Loader=YAML_LOADER)
+        log.debug(
+            "index.yaml of %s: %d KB, %d chart(s)",
+            repository,
+            len(resp.content) // 1024,
+            len(index.get("entries") or {}) if index else 0,
+        )
+        return index or {}
 
     async def list_versions(self, repository: str, chart: str) -> list[str]:
         if is_oci(repository):
@@ -83,7 +99,8 @@ class HelmClient:
                 raise RegistryError(f"{repository}/{chart}:{version} is an OCI artifact but not a Helm chart")
             return chart_yaml_from_archive(await self.oci.get_blob(registry, path, layer["digest"]))
         entries = (await self._index(repository)).get("entries", {}).get(chart, [])
-        entry = next((e for e in entries if e.get("version") == version), None)
+        # ArgoCD accepts a leading "v" (targetRevision: v4.11.0) for a chart published as 4.11.0.
+        entry = next((e for e in entries if str(e.get("version", "")).removeprefix("v") == version.removeprefix("v")), None)
         if entry is None:
             raise RegistryError(f"version {version} of chart {chart} is not published in {repository} (removed from the index?)")
         url = urljoin(f"{repository.rstrip('/')}/", entry["urls"][0])
