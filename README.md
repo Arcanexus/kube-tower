@@ -103,4 +103,4 @@ Issues and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), th
 
 ## License
 
-[GPL-3.0](LICENSE). Icons by [Lucide](https://lucide.dev) (ISC), styles by [Pico CSS](https://picocss.com) (MIT), [htmx](https://htmx.org) (0BSD).
+[Apache-2.0](LICENSE). Icons by [Lucide](https://lucide.dev) (ISC), styles by [Pico CSS](https://picocss.com) (MIT), [htmx](https://htmx.org) (0BSD).
