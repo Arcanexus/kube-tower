@@ -23,7 +23,7 @@ from kube_tower.clusters import Cluster, ClusterRegistry
 from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
 from kube_tower.config import Settings
-from kube_tower.models import ChartReport, Snapshot
+from kube_tower.models import ChartReport, Snapshot, Status
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.registry.helm import HelmClient
 from kube_tower.registry.oci import OCIClient
@@ -59,6 +59,27 @@ async def run_in_thread[T](name: str, fn: Callable[[], T]) -> T:
     return await future
 
 
+async def _log_response(response: httpx.Response) -> None:
+    """Every registry / Helm repository / git request, at DEBUG level (no headers: they hold credentials)."""
+    request = response.request
+    log.debug("%s %s -> %s", request.method, request.url.copy_with(query=None), response.status_code)
+
+
+def check_errors(snap: Snapshot) -> list[str]:
+    """Version check failures, listed with the collection errors in the scan errors."""
+    errors = [f"image {r.image}: {r.message}" for r in snap.images if r.status == Status.ERROR]
+    for c in snap.charts:
+        if c.status == Status.ERROR:
+            errors.append(f"[{c.cluster}] chart {c.chart} of application {c.application}: {c.message}")
+        errors += [
+            f"[{c.cluster}] subchart {d.name} {d.version} of application {c.application}: {d.message}"
+            for top in c.dependencies
+            for _, d in top.walk()
+            if d.status == Status.ERROR
+        ]
+    return errors
+
+
 class Scanner:
     def __init__(self, settings: Settings, registry: ClusterRegistry | None = None):
         self.settings = settings
@@ -85,6 +106,7 @@ class Scanner:
         clusters, snap.clusters = await asyncio.to_thread(self.registry.discover)
         reachable = {s.name for s in snap.clusters if s.reachable}
         clusters = [c for c in clusters if c.name in reachable]
+        log.info("%d cluster(s) to scan: %s", len(clusters), ", ".join(c.name for c in clusters) or "none")
 
         inventory = ImageInventory(self.settings.images)
 
@@ -103,10 +125,13 @@ class Scanner:
             snap.charts += charts
             snap.errors += errors
         snap.images = sorted(inventory.reports.values(), key=lambda r: str(r.image))
+        log.info("collection done: %d distinct image(s), %d Helm chart(s)", len(snap.images), len(snap.charts))
 
         reg = self.settings.registries
-        async with httpx.AsyncClient(timeout=reg.timeout, headers={"User-Agent": "kube-tower"}) as http:
+        hooks = {"response": [_log_response]}
+        async with httpx.AsyncClient(timeout=reg.timeout, headers={"User-Agent": "kube-tower"}, event_hooks=hooks) as http:
             credentials, _ = resolve_credentials(reg)
+            log.info("registry credentials loaded for: %s", ", ".join(sorted(credentials)) or "none (anonymous access)")
             oci = OCIClient(http, credentials, reg.mirrors, self.settings.images.max_tag_pages)
             helm = HelmClient(http, oci, self.settings.git)
             await asyncio.gather(
@@ -114,13 +139,15 @@ class Scanner:
                 ChartChecker(helm, self.settings.helm, reg.concurrency).check_all(snap.charts),
             )
         snap.charts.sort(key=lambda c: (c.cluster, c.application, c.chart))
+        snap.errors += check_errors(snap)
         snap.finished_at = datetime.now(UTC)
         log.info(
-            "scan finished in %.1fs: %d clusters, %d images, %d charts",
+            "scan finished in %.1fs: %d clusters, %d images, %d charts, %d errors",
             (snap.finished_at - snap.started_at).total_seconds(),
             len(clusters),
             len(snap.images),
             len(snap.charts),
+            len(snap.errors),
         )
         return snap
 

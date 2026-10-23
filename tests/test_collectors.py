@@ -61,7 +61,11 @@ def test_image_inventory(monkeypatch):
     inventory = ImageInventory(ImagesSettings(ignore=["registry.k8s.io/pause*"]))
     errors = inventory.collect(Cluster("c1", "https://x", "in-cluster", None))
 
-    assert errors == ["[c1] cannot list StatefulSet: 403 Forbidden"]
+    assert errors == [
+        "[c1] cannot list StatefulSet: 403 Forbidden - the ServiceAccount used for this cluster is not allowed to list "
+        "StatefulSet in all namespaces: apply deploy/remote-cluster-rbac.yaml on remote clusters, keep rbac.create=true "
+        "for the local one"
+    ]
     assert set(inventory.reports) == {
         "docker.io/library/nginx:1.25",
         "docker.io/library/alpine:3.19",

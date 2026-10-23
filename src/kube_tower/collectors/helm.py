@@ -8,6 +8,7 @@ from kubernetes import client
 
 from kube_tower.clusters import Cluster
 from kube_tower.config import HelmSettings
+from kube_tower.errors import kubernetes_hint
 from kube_tower.models import ChartReport
 
 log = logging.getLogger(__name__)
@@ -64,9 +65,24 @@ def collect_charts(cluster: Cluster, settings: HelmSettings) -> tuple[list[Chart
             apps = api.list_cluster_custom_object(ARGO_GROUP, ARGO_VERSION, ARGO_PLURAL)["items"]
     except client.ApiException as exc:
         if exc.status == 404:
-            log.info("ArgoCD Application CRD not found on cluster %s", cluster.name)
+            log.info("[%s] no ArgoCD Application CRD on this cluster: no Helm chart to read there", cluster.name)
         else:
-            errors.append(f"[{cluster.name}] cannot list ArgoCD Applications: {exc.status} {exc.reason}")
+            message = f"[{cluster.name}] cannot list ArgoCD Applications: {exc.status} {exc.reason}"
+            if hint := kubernetes_hint(exc.status, "ArgoCD Applications"):
+                message += f" - {hint}"
+            errors.append(message)
+            log.warning("%s", message)
         return [], errors
     reports = [r for app in apps for r in charts_from_application(cluster.name, app)]
+    log.info("[%s] %d ArgoCD Application(s), %d Helm chart(s) found", cluster.name, len(apps), len(reports))
+    for r in reports:
+        log.debug(
+            "[%s] application %s: chart %s %s from %s (%s)",
+            cluster.name,
+            r.application,
+            r.chart,
+            r.version,
+            r.repository,
+            r.source_type,
+        )
     return reports, errors

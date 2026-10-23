@@ -14,7 +14,7 @@
           hx-on::after-request="htmx.ajax('GET', 'status', {target: '#scan-status', swap: 'outerHTML'})">{{ icon("refresh") }}Refresh now</button>
   {% endif %}
   {% if snapshot.errors %}
-  <details class="errors"><summary>{{ icon("warning") }}{{ snapshot.errors | length }} collection error(s)</summary>
+  <details class="errors"><summary>{{ icon("warning") }}{{ snapshot.errors | length }} scan error(s)</summary>
     <ul>{% for e in snapshot.errors %}<li><small>{{ e }}</small></li>{% endfor %}</ul>
   </details>
   {% endif %}

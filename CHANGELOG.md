@@ -41,6 +41,15 @@ All notable changes to this project are documented here. The format follows
 - The UI works however it is exposed (http, https behind an ingress terminating TLS, port-forward,
   sub-path): every UI link is relative (no more mixed content errors), and uvicorn trusts the
   `X-Forwarded-*` headers.
+- Version check errors (image, chart, subchart) are logged as warnings (Logs page, pod logs) and listed with the scan
+  errors in the UI and the `kube_tower_last_scan_errors` metric; they were only shown in the tables.
+- More detailed logs, each at the right level: HTTP requests, check results and objects listed
+  (`DEBUG`), clusters, per cluster collection and check summaries (`INFO`), non fatal problems such
+  as an unreachable cluster or a forbidden resource (`WARNING`). See the log levels in `docs/usage.md`.
+- Explicit error messages: each one says what failed, the HTTP or Kubernetes status and what to do
+  (e.g. `HTTP 429 Too Many Requests - rate limited by registry-1.docker.io: add credentials for it`,
+  `403 Forbidden - the ServiceAccount used for this cluster is not allowed to list pods…`), for
+  registries, Helm repositories, git hosts, clusters and cluster secrets.
 
 ### Changed
 
