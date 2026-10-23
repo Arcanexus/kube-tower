@@ -83,7 +83,8 @@ Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md).
 | [Installation](docs/installation.md) | Helm, ArgoCD, ingress, upgrades, requirements |
 | [Configuration](docs/configuration.md) | every setting, registry authentication, secrets |
 | [Clusters](docs/clusters.md) | registering remote clusters, reusing ArgoCD clusters |
-| [Usage](docs/usage.md) | the dashboards, statuses, API, Prometheus metrics and alerts |
+| [Usage](docs/usage.md) | the dashboards, statuses, JSON API |
+| [Metrics and Grafana](docs/metrics.md) | Prometheus exporter, PromQL examples, alerts, Grafana dashboard |
 | [Development](docs/development.md) | run locally, tests and coverage, project layout, releases |
 | [Troubleshooting](docs/troubleshooting.md) | common errors and how to fix them |
 

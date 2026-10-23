@@ -66,6 +66,7 @@ class Scanner:
         self.snapshot = Snapshot()
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
+        self.scans_total = {"success": 0, "failure": 0}  # exported as kube_tower_scans_total
 
     @property
     def running(self) -> bool:
@@ -133,7 +134,9 @@ class Scanner:
     async def _safe_scan(self) -> None:
         try:
             await self.scan()
+            self.scans_total["success"] += 1
         except Exception:  # noqa: BLE001 - keep the previous snapshot and the loop alive
+            self.scans_total["failure"] += 1
             log.exception("scan failed")
 
     async def run_forever(self) -> None:

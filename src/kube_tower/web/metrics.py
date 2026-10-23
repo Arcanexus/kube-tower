@@ -1,43 +1,172 @@
-"""Prometheus metrics computed from the last snapshot (e.g. for a Grafana dashboard)."""
+"""Prometheus exporter: the last snapshot rendered as metrics (e.g. for a Grafana dashboard).
+
+Metrics are computed on each scrape from the in-memory snapshot, so a series disappears
+as soon as the image, chart or cluster is no longer found. To keep cardinality bounded:
+- images are reported once (they are deduplicated across clusters), their usages separately;
+- pods are only reported when no controller (Deployment, StatefulSet...) runs the same
+  container in the same namespace, so pod names (which change on every rollout) are avoided;
+- node images are reported as a count of nodes per cluster, not one series per node.
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, Response
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
+from collections import Counter
 
-from kube_tower.models import Status
+from fastapi import APIRouter, Request, Response
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
+from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
+from prometheus_client.registry import Collector
+
+from kube_tower import __version__
+from kube_tower.models import ImageReport, Snapshot, Status
+from kube_tower.versions import update_kind
 
 router = APIRouter()
 
 
+def _image_update(r: ImageReport) -> str:
+    if r.status != Status.OUTDATED:
+        return ""
+    return update_kind(r.image.tag, r.latest_tag) or ("digest" if r.latest_digest else "")
+
+
+def _workload_usages(r: ImageReport) -> set[tuple[str, str, str, str, str]]:
+    """(cluster, namespace, kind, workload, container) running the image, without pods owned by a controller."""
+    controllers = {(u.cluster, u.namespace, u.container) for u in r.usages if u.kind not in ("Pod", "Node")}
+    return {
+        (u.cluster, u.namespace or "", u.kind, u.name, u.container or "")
+        for u in r.usages
+        if u.kind != "Node" and (u.kind != "Pod" or (u.cluster, u.namespace, u.container) not in controllers)
+    }
+
+
+class SnapshotCollector(Collector):
+    def __init__(self, scanner):
+        self.scanner = scanner
+
+    def describe(self):
+        return []  # labels depend on the snapshot: nothing to check at registration
+
+    def collect(self):
+        snap: Snapshot = self.scanner.snapshot
+        yield from self._images(snap)
+        yield from self._charts(snap)
+        yield from self._clusters(snap)
+        yield from self._scan(snap)
+
+    def _images(self, snap: Snapshot):
+        outdated = GaugeMetricFamily(
+            "kube_tower_image_outdated",
+            "1 if a newer version of the image is available, else 0 (one series per image, all clusters together)",
+            labels=["image", "tag", "latest", "status", "update"],
+        )
+        workload = GaugeMetricFamily(
+            "kube_tower_image_workload_info",
+            "Workloads running the image (always 1); join with kube_tower_image_outdated on image and tag",
+            labels=["cluster", "namespace", "kind", "workload", "container", "image", "tag"],
+        )
+        nodes = GaugeMetricFamily(
+            "kube_tower_image_nodes",
+            "Number of nodes of the cluster where the image is present (node.status.images)",
+            labels=["cluster", "image", "tag"],
+        )
+        for r in snap.images:
+            name, tag = r.image.name, r.image.tag or ""
+            latest = r.latest_tag or (r.latest_digest or "" if r.status == Status.OUTDATED else "")
+            outdated.add_metric([name, tag, latest, r.status.value, _image_update(r)], r.status == Status.OUTDATED)
+            for usage in sorted(_workload_usages(r)):
+                workload.add_metric([*usage, name, tag], 1)
+            for cluster, count in sorted(Counter(u.cluster for u in r.usages if u.kind == "Node").items()):
+                nodes.add_metric([cluster, name, tag], count)
+        return outdated, workload, nodes
+
+    def _charts(self, snap: Snapshot):
+        chart = GaugeMetricFamily(
+            "kube_tower_chart_outdated",
+            "1 if a newer version of the chart or of one of its subcharts is available, else 0",
+            labels=[
+                "cluster",
+                "application",
+                "destination_namespace",
+                "chart",
+                "source",
+                "version",
+                "latest",
+                "status",
+                "update",
+            ],
+        )
+        dependency = GaugeMetricFamily(
+            "kube_tower_chart_dependency_outdated",
+            "1 if a newer version of the subchart is available, else 0",
+            labels=["cluster", "application", "chart", "dependency", "version", "latest", "status", "update"],
+        )
+        for c in snap.charts:
+            status = c.worst_status
+            chart.add_metric(
+                [
+                    c.cluster,
+                    c.application,
+                    c.destination_namespace or "",
+                    c.chart,
+                    c.source_type,
+                    c.version,
+                    c.latest_version or "",
+                    status.value,
+                    update_kind(c.version, c.latest_version),
+                ],
+                status == Status.OUTDATED,
+            )
+            for d in c.dependencies:
+                dependency.add_metric(
+                    [
+                        c.cluster,
+                        c.application,
+                        c.chart,
+                        d.name,
+                        d.version,
+                        d.latest_version or "",
+                        d.status.value,
+                        update_kind(d.version, d.latest_version),
+                    ],
+                    d.status == Status.OUTDATED,
+                )
+        return chart, dependency
+
+    def _clusters(self, snap: Snapshot):
+        reachable = GaugeMetricFamily("kube_tower_cluster_reachable", "1 if the cluster answered", labels=["cluster"])
+        info = GaugeMetricFamily(
+            "kube_tower_cluster_info", "Registered clusters (always 1)", labels=["cluster", "source", "version"]
+        )
+        for c in snap.clusters:
+            reachable.add_metric([c.name], c.reachable)
+            info.add_metric([c.name, c.source, c.version or ""], 1)
+        return reachable, info
+
+    def _scan(self, snap: Snapshot):
+        build = GaugeMetricFamily("kube_tower_build_info", "kube-tower version (always 1)", labels=["version"])
+        build.add_metric([__version__], 1)
+        yield build
+        last = GaugeMetricFamily("kube_tower_last_scan_timestamp_seconds", "End of the last scan (Unix time)")
+        duration = GaugeMetricFamily("kube_tower_last_scan_duration_seconds", "Duration of the last scan")
+        errors = GaugeMetricFamily(
+            "kube_tower_last_scan_errors", "Non fatal collection errors of the last scan (e.g. a forbidden resource)"
+        )
+        if snap.finished_at:
+            last.add_metric([], snap.finished_at.timestamp())
+            if snap.started_at:
+                duration.add_metric([], (snap.finished_at - snap.started_at).total_seconds())
+            errors.add_metric([], len(snap.errors))
+        yield from (last, duration, errors)
+        yield GaugeMetricFamily("kube_tower_scan_in_progress", "1 while a scan is running", value=int(bool(self.scanner.running)))
+        scans = CounterMetricFamily("kube_tower_scans", "Scans since start, by result", labels=["result"])
+        for result, count in sorted(getattr(self.scanner, "scans_total", {}).items()):
+            scans.add_metric([result], count)
+        yield scans
+
+
 @router.get("/metrics", include_in_schema=False)
 async def metrics(request: Request) -> Response:
-    snap = request.app.state.scanner.snapshot
-    registry = CollectorRegistry()
-    image = Gauge(
-        "kube_tower_image_outdated",
-        "1 if a newer version of the image is available",
-        ["image", "tag", "latest", "status"],
-        registry=registry,
-    )
-    chart = Gauge(
-        "kube_tower_chart_outdated",
-        "1 if a newer version of the chart (or one of its subcharts) is available",
-        ["cluster", "application", "chart", "version", "latest", "status"],
-        registry=registry,
-    )
-    last = Gauge("kube_tower_last_scan_timestamp_seconds", "End of the last scan", registry=registry)
-    reachable = Gauge("kube_tower_cluster_reachable", "1 if the cluster answered", ["cluster"], registry=registry)
-
-    for r in snap.images:
-        image.labels(r.image.name, r.image.tag or "", r.latest_tag or "", r.status.value).set(r.status == Status.OUTDATED)
-    for c in snap.charts:
-        status = c.worst_status
-        chart.labels(c.cluster, c.application, c.chart, c.version, c.latest_version or "", status.value).set(
-            status == Status.OUTDATED
-        )
-    for c in snap.clusters:
-        reachable.labels(c.name).set(c.reachable)
-    if snap.finished_at:
-        last.set(snap.finished_at.timestamp())
+    registry = CollectorRegistry(auto_describe=False)
+    registry.register(SnapshotCollector(request.app.state.scanner))
     return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)

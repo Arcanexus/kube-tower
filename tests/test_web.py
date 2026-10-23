@@ -16,11 +16,26 @@ class FakeScanner:
             images=[
                 ImageReport(
                     ImageRef("docker.io", "library/nginx", "1.25"),
-                    [Usage("c1", "Pod", "default", "web")],
+                    [
+                        Usage("c1", "Pod", "default", "web", "nginx"),
+                        Usage("c1", "Pod", "default", "web-7d9f-abcde", "nginx"),
+                        Usage("c1", "Deployment", "default", "web", "nginx"),
+                        Usage("c1", "Pod", "tools", "debug", "nginx"),
+                    ],
                     status=Status.OUTDATED,
                     latest_tag="1.27",
                 ),
-                ImageReport(ImageRef("ghcr.io", "org/app", "2.0"), [Usage("c2", "Node", None, "n1")], status=Status.UP_TO_DATE),
+                ImageReport(
+                    ImageRef("ghcr.io", "org/app", "2.0"),
+                    [Usage("c2", "Node", None, "n1"), Usage("c2", "Node", None, "n2")],
+                    status=Status.UP_TO_DATE,
+                ),
+                ImageReport(
+                    ImageRef("docker.io", "library/redis", "latest"),
+                    [Usage("c1", "Node", None, "n1")],
+                    status=Status.OUTDATED,
+                    latest_digest="sha256:new",
+                ),
             ],
             charts=[
                 ChartReport(
@@ -46,6 +61,7 @@ class FakeScanner:
             finished_at=now,
         )
         self.triggered = 0
+        self.scans_total = {"success": 3, "failure": 1}
 
     def trigger(self):
         self.triggered += 1
@@ -88,9 +104,42 @@ def test_api_and_metrics():
     assert client.post("/api/refresh").json() == {"started": True} and scanner.triggered == 1
     assert client.get("/healthz").status_code == 200
     assert client.get("/readyz").status_code == 200
-    metrics = client.get("/metrics").text
-    assert 'kube_tower_image_outdated{image="docker.io/library/nginx",latest="1.27",status="outdated",tag="1.25"} 1.0' in metrics
-    assert 'kube_tower_cluster_reachable{cluster="c2"} 0.0' in metrics
+
+
+def test_metrics():
+    client, _ = _client()
+    resp = client.get("/metrics")
+    assert resp.headers["content-type"].startswith("text/plain")
+    lines = set(resp.text.splitlines())
+    expected = [
+        'kube_tower_image_outdated{image="docker.io/library/nginx",latest="1.27",status="outdated",tag="1.25",'
+        'update="minor"} 1.0',
+        'kube_tower_image_outdated{image="ghcr.io/org/app",latest="",status="up-to-date",tag="2.0",update=""} 0.0',
+        'kube_tower_image_outdated{image="docker.io/library/redis",latest="sha256:new",status="outdated",tag="latest",'
+        'update="digest"} 1.0',
+        'kube_tower_image_workload_info{cluster="c1",container="nginx",image="docker.io/library/nginx",kind="Deployment",'
+        'namespace="default",tag="1.25",workload="web"} 1.0',
+        'kube_tower_image_workload_info{cluster="c1",container="nginx",image="docker.io/library/nginx",kind="Pod",'
+        'namespace="tools",tag="1.25",workload="debug"} 1.0',
+        'kube_tower_image_nodes{cluster="c2",image="ghcr.io/org/app",tag="2.0"} 2.0',
+        'kube_tower_chart_outdated{application="redis",chart="redis",cluster="c1",destination_namespace="",latest="18.0.0",source="helm",'
+        'status="outdated",update="",version="18.0.0"} 1.0',
+        'kube_tower_chart_dependency_outdated{application="redis",chart="redis",cluster="c1",dependency="common",latest="2.1.0",'
+        'status="outdated",update="minor",version="2.0.0"} 1.0',
+        'kube_tower_cluster_reachable{cluster="c2"} 0.0',
+        'kube_tower_cluster_info{cluster="c1",source="in-cluster",version="v1.30.0"} 1.0',
+        "kube_tower_last_scan_duration_seconds 0.0",
+        "kube_tower_last_scan_errors 0.0",
+        "kube_tower_scan_in_progress 0.0",
+        'kube_tower_scans_total{result="success"} 3.0',
+        'kube_tower_scans_total{result="failure"} 1.0',
+        'kube_tower_build_info{version="0.1.0"} 1.0',
+    ]
+    for line in expected:
+        assert line in lines, line
+    # pods owned by the Deployment are not exported (pod names churn on every rollout)
+    assert "web-7d9f-abcde" not in resp.text
+    assert not any(line.startswith("kube_tower_image_workload_info") and 'kind="Node"' in line for line in lines)
 
 
 def test_settings_page_shows_credentials_without_secrets(monkeypatch):
@@ -106,6 +155,20 @@ def test_settings_page_shows_credentials_without_secrets(monkeypatch):
     assert "docker.io" in page and "alex" in page and "loaded" in page and "invalid" in page
     assert "super-secret-token" not in page
     assert "passwordEnv: DOCKERHUB_TOKEN" in page  # camelCase like config.yaml
+
+
+def test_grafana_dashboard_uses_exported_metrics():
+    import json
+    import re
+    from pathlib import Path
+
+    dashboard = Path(__file__).parents[1] / "charts/kube-tower/dashboards/kube-tower.json"
+    text = dashboard.read_text()
+    json.loads(text)
+    client, _ = _client()
+    exported = {line.split("{")[0].split(" ")[0] for line in client.get("/metrics").text.splitlines() if not line.startswith("#")}
+    used = set(re.findall(r"kube_tower_[a-z_]+", text))
+    assert used and used <= exported, used - exported
 
 
 def test_status_reloads_page_when_scan_ends():

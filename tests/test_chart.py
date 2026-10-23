@@ -1,5 +1,6 @@
 """Helm chart rendering tests: run where helm is installed (the CI helm job), skipped otherwise."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -162,3 +163,23 @@ def test_probes(tmp_path):
     assert "startupProbe" not in c
     assert c["livenessProbe"]["initialDelaySeconds"] == 30
     assert c["livenessProbe"]["periodSeconds"] == 20
+
+
+def test_monitoring(tmp_path):
+    assert not [k for k in render(tmp_path, {}) if k[0] == "ServiceMonitor" or k[1].endswith("-dashboard")]
+    docs = render(
+        tmp_path,
+        {
+            "serviceMonitor": {"enabled": True, "labels": {"release": "kps"}, "scrapeTimeout": "30s"},
+            "grafanaDashboard": {"enabled": True, "namespace": "grafana", "annotations": {"grafana_folder": "Kubernetes"}},
+        },
+    )
+    monitor = docs[("ServiceMonitor", "kt-kube-tower")]
+    assert monitor["metadata"]["labels"]["release"] == "kps"
+    assert monitor["spec"]["endpoints"][0]["honorLabels"] is True
+    assert monitor["spec"]["endpoints"][0]["scrapeTimeout"] == "30s"
+    dashboard = docs[("ConfigMap", "kt-kube-tower-dashboard")]
+    assert dashboard["metadata"]["namespace"] == "grafana"
+    assert dashboard["metadata"]["labels"]["grafana_dashboard"] == "1"
+    assert dashboard["metadata"]["annotations"] == {"grafana_folder": "Kubernetes"}
+    assert json.loads(dashboard["data"]["kube-tower.json"])["uid"] == "kube-tower"
