@@ -1,0 +1,2 @@
+{% for line in lines %}<div class="log-line log-{{ line.level | lower }}"><span class="log-time">{{ line.time.strftime("%Y-%m-%d %H:%M:%S") }}</span> <span class="log-level">{{ line.level }}</span> <span class="log-logger">{{ line.logger }}</span> {{ line.message }}</div>
+{% endfor %}

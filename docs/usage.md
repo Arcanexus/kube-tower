@@ -2,9 +2,14 @@
 
 ## The dashboards
 
-The left sidebar gives access to four pages. The bar at the top shows when the last scan
-finished, a **Refresh now** button that starts a scan immediately, and the collection errors of
-the last scan, if any (e.g. a missing permission on a cluster).
+The left sidebar gives access to five pages, and its bottom button switches the theme between
+auto (follows the system), light and dark; the choice is remembered by the browser. The bar at the
+top shows when the last scan finished, a **Refresh now** button that starts a scan immediately,
+and the collection errors of the last scan, if any (e.g. a missing permission on a cluster).
+
+On the Images and Helm charts pages, the counters at the top are buttons: clicking one shows only
+that status (click it again to show everything). Clicking a line opens a detail panel on the
+right; close it with its button, a click outside or `Esc`.
 
 ### Images
 
@@ -12,7 +17,9 @@ the last scan, if any (e.g. a missing permission on a cluster).
 
 One line per image reference (`registry/repository:tag`), whatever the number of workloads using
 it. The counters at the top summarize the statuses; filter by text, status or cluster (filters
-are kept in the URL, so a filtered view can be bookmarked or shared).
+are kept in the URL, so a filtered view can be bookmarked or shared). Images using `latest` (or no
+tag at all, which means `latest`) are shown in red: the running version changes on every pull, pin
+a version instead.
 
 | Column | Meaning |
 | --- | --- |
@@ -20,16 +27,27 @@ are kept in the URL, so a filtered view can be bookmarked or shared).
 | Current | Tag (and digest) used by the workloads |
 | Latest | Highest tag of the same shape published in the registry, or the published digest for floating tags |
 | Status | See [statuses](#statuses) |
-| Used by | Every workload, pod and node using the image, per cluster |
+| Used by | Number of workloads, pods and nodes using the image, and their clusters |
+
+The detail panel of an image shows the upgrade target, links to the image page on its registry
+(Docker Hub, GitHub Packages, Quay, ECR Public, Microsoft Artifact Registry), every place where it
+is used, and compares digests: the digests reported by the running pods, the digest currently
+published for the same tag (a difference means the tag was pushed again since the pods started),
+and the digest of the latest tag. Published digests are read with `images.fetchTagDigests`
+(enabled by default).
+
+![Image details](images/image-detail.png)
 
 ### Helm charts
 
 ![Helm charts](images/charts.png)
 
 One line per Helm source of every ArgoCD Application (multi-source Applications give several
-lines). Subcharts are listed under each chart; the status used by the counters and filters is the
-worst one of the chart and its subcharts, so a chart whose subchart is outdated shows up when
-filtering on `outdated`.
+lines). The subcharts are shown as a tree under each chart, always expanded, including the
+subcharts of subcharts (down to 3 levels). The status used by the counters and filters is the
+worst one of the chart and its whole subchart tree, so a chart whose subchart is outdated shows up
+when filtering on `outdated`. The detail panel of a chart shows its source, the ArgoCD Application,
+links to the repository and Artifact Hub, and the subchart tree with each subchart repository.
 
 | Source type | Current version | Latest version |
 | --- | --- | --- |
@@ -42,6 +60,15 @@ filtering on `outdated`.
 Every cluster kube-tower knows, where it comes from (`in-cluster`, `secret`, `argocd-secret`), its
 Kubernetes version and whether it answered. Unreachable clusters are skipped during the scan and
 show the connection error.
+
+### Logs
+
+![Logs](images/logs.png)
+
+The last 2000 log lines of kube-tower (scans, registries, clusters), kept in memory and followed
+live, like `kubectl logs -f`. Filter by text or minimum level, and pause the stream to read. Only
+the lines logged at the configured `logs.level` or above are kept: set it to `DEBUG` to debug a
+scan.
 
 ### Settings
 

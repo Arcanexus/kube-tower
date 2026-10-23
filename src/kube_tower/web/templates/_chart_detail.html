@@ -1,0 +1,43 @@
+{% from "_macros.html" import badge, drawer, icon, links %}
+{% call drawer(c.chart, c.application ~ " · " ~ c.cluster) %}
+<p>{{ badge(c.status) }}{% if c.message %} <small>{{ c.message }}</small>{% endif %}
+  {% if c.worst_status != c.status %}<br><small>Subcharts: </small>{{ badge(c.worst_status) }}{% endif %}</p>
+{{ links(chart_links(c)) }}
+
+<h4>Chart</h4>
+<table>
+  <tr><th scope="row">Version</th><td>{{ c.version or "n/a" }}</td></tr>
+  <tr><th scope="row">Latest</th><td>{{ c.latest_version or "n/a" }}</td></tr>
+  <tr><th scope="row">Source</th><td>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }}</td></tr>
+  <tr><th scope="row">Repository</th><td><code>{{ c.repository }}</code></td></tr>
+  {% if c.git_ref %}<tr><th scope="row">Git revision</th><td><code>{{ c.git_ref }}</code></td></tr>{% endif %}
+</table>
+
+<h4>ArgoCD Application</h4>
+<table>
+  <tr><th scope="row">Name</th><td>{{ c.application }}</td></tr>
+  <tr><th scope="row">Namespace</th><td>{{ c.app_namespace }}</td></tr>
+  <tr><th scope="row">Cluster</th><td>{{ c.cluster }}</td></tr>
+  <tr><th scope="row">Destination namespace</th><td>{{ c.destination_namespace or "" }}</td></tr>
+</table>
+
+<h4>Subcharts</h4>
+{% if c.dependencies %}
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>Subchart</th><th>Current</th><th>Latest</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for connector, d in dependency_tree(c.dependencies) %}
+    <tr>
+      <td><span class="tree">{{ connector }}</span><code>{{ d.name }}</code><br><small class="tree-repo">{{ d.repository or "local" }}</small></td>
+      <td>{{ d.version }}</td><td>{{ d.latest_version or "" }}</td>
+      <td>{{ badge(d.status) }}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p><small>No subchart.</small></p>
+{% endif %}
+{% endcall %}

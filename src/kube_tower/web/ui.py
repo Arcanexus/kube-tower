@@ -8,18 +8,20 @@ from pathlib import Path
 
 import yaml
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from kube_tower import __version__
-from kube_tower.models import Status
+from kube_tower.models import ChartDependency, ImageRef, Status
 from kube_tower.registry.auth import resolve_credentials
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["version"] = __version__
 templates.env.globals["Status"] = Status
+
+LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
 def _camel(data):
@@ -33,6 +35,50 @@ def _camel(data):
 
 def _matches(text: str, query: str) -> bool:
     return not query or query.lower() in text.lower()
+
+
+def registry_links(ref: ImageRef) -> list[tuple[str, str]]:
+    """Web pages of the image on its registry, for the registries that have one."""
+    repo = ref.repository
+    if ref.registry == "docker.io":
+        page = (
+            f"https://hub.docker.com/_/{repo.removeprefix('library/')}"
+            if repo.startswith("library/")
+            else f"https://hub.docker.com/r/{repo}"
+        )
+        return [("Docker Hub", page), ("Tags", f"{page}/tags")]
+    if ref.registry == "ghcr.io":
+        return [("GitHub Packages", f"https://ghcr.io/{repo}")]
+    if ref.registry == "quay.io":
+        return [("Quay", f"https://quay.io/repository/{repo}"), ("Tags", f"https://quay.io/repository/{repo}?tab=tags")]
+    if ref.registry == "public.ecr.aws":
+        return [("ECR Public Gallery", f"https://gallery.ecr.aws/{repo}")]
+    if ref.registry == "mcr.microsoft.com":
+        return [("Microsoft Artifact Registry", f"https://mcr.microsoft.com/artifact/mar/{repo}")]
+    return []
+
+
+def chart_links(chart) -> list[tuple[str, str]]:
+    links = []
+    repo = chart.repository
+    if repo.startswith(("https://", "http://")):
+        links.append(("Git repository" if chart.source_type == "git" else "Helm repository", repo.removesuffix(".git")))
+    if chart.source_type != "git":
+        links.append(("Search on Artifact Hub", f"https://artifacthub.io/packages/search?ts_query_web={chart.chart}"))
+    return links
+
+
+def dependency_tree(dependencies: list[ChartDependency], prefix: str = "") -> list[tuple[str, ChartDependency]]:
+    """Flatten a subchart tree into (connector, dependency) rows: `├─ `, `│  └─ `..."""
+    rows = []
+    for i, dep in enumerate(dependencies):
+        last = i == len(dependencies) - 1
+        rows.append((prefix + ("└─ " if last else "├─ "), dep))
+        rows += dependency_tree(dep.dependencies, prefix + ("   " if last else "│  "))
+    return rows
+
+
+templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
 
 
 def mount(app: FastAPI) -> None:
@@ -56,24 +102,68 @@ def mount(app: FastAPI) -> None:
     @app.get("/images", response_class=HTMLResponse, include_in_schema=False)
     async def images(request: Request):
         q, status, cluster = filters(request)
-        rows = [
+        # Counters ignore the status filter: they are the buttons that set it.
+        matching = [
             r
             for r in request.app.state.scanner.snapshot.images
-            if _matches(str(r.image), q) and (not status or r.status.value == status) and (not cluster or cluster in r.clusters)
+            if _matches(str(r.image), q) and (not cluster or cluster in r.clusters)
         ]
-        return render(request, "images", tab="images", rows=rows, q=q, status=status, cluster=cluster)
+        rows = [r for r in matching if not status or r.status.value == status]
+        return render(request, "images", tab="images", rows=rows, matching=matching, q=q, status=status, cluster=cluster)
+
+    @app.get("/images/detail", response_class=HTMLResponse, include_in_schema=False)
+    async def image_detail(request: Request, ref: str = ""):
+        report = next((r for r in request.app.state.scanner.snapshot.images if str(r.image) == ref), None)
+        if report is None:
+            return Response(status_code=404)
+        return render(request, "_image_detail", r=report)
 
     @app.get("/charts", response_class=HTMLResponse, include_in_schema=False)
     async def charts(request: Request):
         q, status, cluster = filters(request)
-        rows = [
+        matching = [
             c
             for c in request.app.state.scanner.snapshot.charts
-            if _matches(f"{c.application} {c.chart} {c.repository}", q)
-            and (not status or c.worst_status.value == status)
-            and (not cluster or c.cluster == cluster)
+            if _matches(f"{c.application} {c.chart} {c.repository}", q) and (not cluster or c.cluster == cluster)
         ]
-        return render(request, "charts", tab="charts", rows=rows, q=q, status=status, cluster=cluster)
+        rows = [c for c in matching if not status or c.worst_status.value == status]
+        return render(request, "charts", tab="charts", rows=rows, matching=matching, q=q, status=status, cluster=cluster)
+
+    @app.get("/charts/detail", response_class=HTMLResponse, include_in_schema=False)
+    async def chart_detail(request: Request, cluster: str = "", namespace: str = "", app: str = "", chart: str = ""):
+        report = next(
+            (
+                c
+                for c in request.app.state.scanner.snapshot.charts
+                if (c.cluster, c.app_namespace, c.application, c.chart) == (cluster, namespace, app, chart)
+            ),
+            None,
+        )
+        if report is None:
+            return Response(status_code=404)
+        return render(request, "_chart_detail", c=report)
+
+    def _log_lines(request: Request, after: int, level: str, q: str):
+        """Lines after `after` matching the filters, and the sequence number to tail from."""
+        minimum = LOG_LEVELS.index(level) if level in LOG_LEVELS else 0
+        lines = request.app.state.log_buffer.since(after)
+        matching = [
+            line
+            for line in lines
+            if (LOG_LEVELS.index(line.level) if line.level in LOG_LEVELS else 0) >= minimum
+            and _matches(f"{line.logger} {line.message}", q)
+        ]
+        return matching, lines[-1].seq if lines else after
+
+    @app.get("/logs", response_class=HTMLResponse, include_in_schema=False)
+    async def logs(request: Request, level: str = "INFO", q: str = ""):
+        lines, after = _log_lines(request, 0, level, q)
+        return render(request, "logs", tab="logs", lines=lines, after=after, level=level, q=q, levels=LOG_LEVELS)
+
+    @app.get("/logs/tail", response_class=HTMLResponse, include_in_schema=False)
+    async def logs_tail(request: Request, after: int = 0, level: str = "INFO", q: str = ""):
+        lines, after = _log_lines(request, after, level, q)
+        return render(request, "_log_tail", lines=lines, after=after, level=level, q=q)
 
     @app.get("/clusters", response_class=HTMLResponse, include_in_schema=False)
     async def clusters(request: Request):

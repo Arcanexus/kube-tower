@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from kube_tower.config import Settings, load_settings
+from kube_tower.logbuffer import LogBuffer
 from kube_tower.logger import get_logger
 from kube_tower.scanner import Scanner
 from kube_tower.web import api, metrics, ui
@@ -17,7 +18,10 @@ from kube_tower.web import api, metrics, ui
 
 def create_app(settings: Settings | None = None, scanner: Scanner | None = None, background: bool = True) -> FastAPI:
     settings = settings or load_settings()
-    get_logger("kube_tower", level=settings.logs.level.upper(), format_type=settings.logs.format)
+    logger = get_logger("kube_tower", level=settings.logs.level.upper(), format_type=settings.logs.format)
+    # Last log lines, shown on the Logs page of the UI.
+    log_buffer = LogBuffer()
+    logger.addHandler(log_buffer)
     scanner = scanner or Scanner(settings)
 
     @asynccontextmanager
@@ -32,6 +36,7 @@ def create_app(settings: Settings | None = None, scanner: Scanner | None = None,
     app = FastAPI(title="kube-tower", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.settings = settings
     app.state.scanner = scanner
+    app.state.log_buffer = log_buffer
     app.include_router(api.router)
     app.include_router(metrics.router)
     ui.mount(app)

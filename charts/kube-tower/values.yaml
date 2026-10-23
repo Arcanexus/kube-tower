@@ -36,6 +36,8 @@ config:
     includeNodeImages: true
     includePrerelease: false
     checkFloatingDigests: true
+    # Read the published digests of the current and latest tags (shown in the image details)
+    fetchTagDigests: true
     ignore: []
   helm:
     applicationNamespaces:
