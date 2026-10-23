@@ -30,6 +30,13 @@ app.kubernetes.io/name: {{ include "kube-tower.name" . }}-trivy
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{- /* Path of the Trivy CLI copied by the init container, empty when kube-tower does not scan with Trivy */ -}}
+{{- define "kube-tower.trivyBinary" -}}
+{{- $vuln := .Values.config.vulnerabilities | default dict }}
+{{- $trivy := $vuln.trivy | default dict }}
+{{- if and .Values.trivy.enabled (ne $vuln.enabled false) (ne $trivy.enabled false) }}/opt/trivy/bin/trivy{{- end }}
+{{- end }}
+
 {{- define "kube-tower.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
 {{- default (include "kube-tower.fullname" .) .Values.serviceAccount.name }}

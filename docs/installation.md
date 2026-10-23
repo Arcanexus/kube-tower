@@ -240,9 +240,10 @@ To follow the development version, point `source` at the git repository instead:
 | `serviceMonitor.labels` / `.metricRelabelings` | `{}` / `[]` | Extra labels (e.g. `release: kube-prometheus-stack`) and relabelings |
 | `grafanaDashboard.enabled` | `false` | ConfigMap holding the [Grafana dashboard](metrics.md#grafana-dashboard) |
 | `grafanaDashboard.namespace` / `.labels` / `.annotations` | release ns / `grafana_dashboard: "1"` / `{}` | Where and how the Grafana sidecar finds it |
+| `trivy.enabled` / `trivy.image` | `true` / `ghcr.io/aquasecurity/trivy:0.75.0` | Init container copying the Trivy CLI from this image (amd64, arm64; disable on arm/v7), see [vulnerabilities](vulnerabilities.md#where-the-trivy-cli-comes-from) |
 | `trivy.cacheSizeLimit` | `3Gi` | `emptyDir` holding the Trivy database (standalone mode), see [vulnerabilities](vulnerabilities.md) |
 | `trivy.server.enabled` | `false` | Trivy server Deployment and Service; kube-tower then scans in client mode |
-| `trivy.server.image` / `.resources` / `.cacheSizeLimit` | `aquasec/trivy:0.75.0` / 1Gi limit / `3Gi` | Trivy server settings (also `nodeSelector`, `tolerations`, `affinity`) |
+| `trivy.server.image` / `.resources` / `.cacheSizeLimit` | `trivy.image` / 1Gi limit / `3Gi` | Trivy server settings (also `nodeSelector`, `tolerations`, `affinity`) |
 | `resources`, `nodeSelector`, `tolerations`, `affinity`, `podAnnotations` | | Usual pod settings |
 | `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
 

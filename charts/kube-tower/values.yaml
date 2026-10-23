@@ -50,7 +50,7 @@ config:
     # Read the VulnerabilityReports of Trivy Operator in the clusters where it is installed
     trivyOperator: true
     trivy:
-      # Scan with the Trivy CLI (shipped in the kube-tower image) the images without a Trivy Operator report
+      # Scan with the Trivy CLI the images without a Trivy Operator report (binary from trivy.image)
       enabled: true
       # Trivy server URL (client/server mode); set automatically when trivy.server.enabled is true
       serverUrl: ""
@@ -155,16 +155,22 @@ grafanaDashboard:
   annotations: {}
 
 trivy:
+  # The Trivy CLI is not in the kube-tower image: an init container copies it from the official
+  # Trivy image at pod start. That image has no linux/arm/v7 variant: on such nodes set
+  # enabled: false (Trivy Operator reports still work) or use your own image.
+  enabled: true
+  image:
+    repository: ghcr.io/aquasecurity/trivy
+    tag: "0.75.0"
+    pullPolicy: IfNotPresent
   # emptyDir holding the Trivy vulnerability database in standalone mode (no server)
   cacheSizeLimit: 3Gi
   # Trivy server (client/server mode): it holds and refreshes the vulnerability database, kube-tower
   # only sends the image layers analysis. Use it to keep the kube-tower pod small.
   server:
     enabled: false
-    image:
-      repository: aquasec/trivy
-      tag: "0.75.0"
-      pullPolicy: IfNotPresent
+    # Defaults to trivy.image
+    image: {}
     port: 4954
     cacheSizeLimit: 3Gi
     resources:

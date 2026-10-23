@@ -22,13 +22,18 @@
 {{- $_ := set $clusters "secretNames" $secretNames }}
 {{- $_ := set $config "clusters" $clusters }}
 {{- end }}
-{{- /* The chart's Trivy server, unless another server is configured */ -}}
-{{- if .Values.trivy.server.enabled }}
+{{- /* The Trivy CLI copied by the init container, and the chart's Trivy server unless another one is configured */ -}}
 {{- $vulnerabilities := deepCopy ($config.vulnerabilities | default dict) }}
 {{- $trivy := deepCopy ($vulnerabilities.trivy | default dict) }}
-{{- if not $trivy.serverUrl }}
+{{- with include "kube-tower.trivyBinary" . }}
+{{- if not $trivy.binary }}
+{{- $_ := set $trivy "binary" . }}
+{{- end }}
+{{- end }}
+{{- if and .Values.trivy.server.enabled (not $trivy.serverUrl) }}
 {{- $_ := set $trivy "serverUrl" (printf "http://%s-trivy:%v" (include "kube-tower.fullname" .) .Values.trivy.server.port) }}
 {{- end }}
+{{- if $trivy }}
 {{- $_ := set $vulnerabilities "trivy" $trivy }}
 {{- $_ := set $config "vulnerabilities" $vulnerabilities }}
 {{- end }}
