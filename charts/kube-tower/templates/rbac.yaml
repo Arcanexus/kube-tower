@@ -46,6 +46,15 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["list"]
+  {{- $names := concat (.Values.config.clusters.secretNames | default list) (include "kube-tower.clusterSecretNames" . | fromJsonArray) | uniq }}
+  {{- if $names }}
+  # Existing cluster Secrets referenced by name
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      {{- toYaml $names | nindent 6 }}
+    verbs: ["get"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

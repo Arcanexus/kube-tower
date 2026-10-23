@@ -31,3 +31,44 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{- /* Secret holding the credentials of registries.credentials[index]: the existing one or the chart's */ -}}
+{{- define "kube-tower.registrySecretName" -}}
+{{- $c := index .root.Values.registries.credentials .index }}
+{{- if $c.existingSecret }}
+{{- $c.existingSecret }}
+{{- else if $c.password }}
+{{- printf "%s-registry-%d" (include "kube-tower.fullname" .root) .index }}
+{{- else }}
+{{- fail (printf "registries.credentials[%d] (%s): set existingSecret or password" .index ($c.registry | default "?")) }}
+{{- end }}
+{{- end }}
+
+{{- /* kubernetes.io/dockerconfigjson Secret: the existing one or the chart's, empty when none */ -}}
+{{- define "kube-tower.dockerConfigSecretName" -}}
+{{- if .Values.registries.existingSecret }}
+{{- .Values.registries.existingSecret }}
+{{- else if .Values.registries.dockerConfigJson }}
+{{- printf "%s-dockerconfig" (include "kube-tower.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{- /* Secret holding the git token: the existing one or the chart's, empty when none */ -}}
+{{- define "kube-tower.gitSecretName" -}}
+{{- if .Values.git.existingSecret }}
+{{- .Values.git.existingSecret }}
+{{- else if .Values.git.token }}
+{{- printf "%s-git" (include "kube-tower.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{- /* Names of the existing cluster Secrets referenced in the values */ -}}
+{{- define "kube-tower.clusterSecretNames" -}}
+{{- $names := list }}
+{{- range .Values.clusters }}
+{{- if .existingSecret }}
+{{- $names = append $names .existingSecret }}
+{{- end }}
+{{- end }}
+{{- toJson $names }}
+{{- end }}

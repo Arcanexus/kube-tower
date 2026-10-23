@@ -10,6 +10,7 @@ using the same layout as ArgoCD cluster secrets:
         {"bearerToken": "...", "tlsClientConfig": {"caData": "<base64 PEM>", "insecure": false}}
 
 A `kubeconfig` key holding a full kubeconfig is also accepted instead of `server`/`config`.
+Secrets listed by name in `clusters.secretNames` are used too, whatever their labels.
 """
 
 from __future__ import annotations
@@ -130,6 +131,22 @@ class ClusterRegistry:
             return []
         return client.CoreV1Api(local).list_namespaced_secret(namespace, label_selector=selector).items
 
+    def _read_secret(self, namespace: str, name: str) -> client.V1Secret | None:
+        local = self.local_client()
+        if local is None:
+            return None
+        return client.CoreV1Api(local).read_namespaced_secret(name, namespace)
+
+    def _named_secrets(self, namespace: str, statuses: list[ClusterStatus]) -> list[client.V1Secret]:
+        secrets = []
+        for name in self.settings.secret_names:
+            try:
+                if secret := self._read_secret(namespace, name):
+                    secrets.append(secret)
+            except client.ApiException as exc:
+                statuses.append(ClusterStatus(name, "", "secret", message=exc.reason))
+        return secrets
+
     def discover(self) -> tuple[list[Cluster], list[ClusterStatus]]:
         """Return usable clusters and a status line for every declared cluster."""
         clusters: list[Cluster] = []
@@ -140,7 +157,8 @@ class ClusterRegistry:
             clusters.append(Cluster(self.settings.in_cluster_name, local.configuration.host, "in-cluster", local))
             seen_servers.add(ARGOCD_IN_CLUSTER_SERVER)
 
-        sources = [(self.settings.namespace or current_namespace(), self.settings.secret_label_selector, "secret")]
+        namespace = self.settings.namespace or current_namespace()
+        sources = [(namespace, self.settings.secret_label_selector, "secret")]
         if self.settings.use_argocd_secrets:
             sources.append((self.settings.argocd_namespace, ARGOCD_SECRET_SELECTOR, "argocd-secret"))
 
@@ -149,7 +167,10 @@ class ClusterRegistry:
                 secrets = self._list_secrets(namespace, selector)
             except client.ApiException as exc:
                 statuses.append(ClusterStatus(f"<{source}s in {namespace}>", "", source, message=exc.reason))
-                continue
+                secrets = []
+            if source == "secret":
+                # A named secret also matched by the label selector is skipped below (same server).
+                secrets = secrets + self._named_secrets(namespace, statuses)
             for secret in secrets:
                 try:
                     cluster = cluster_from_secret(secret, source)

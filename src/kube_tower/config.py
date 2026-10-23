@@ -42,6 +42,8 @@ class ClustersSettings:
     # Namespace where cluster secrets live; empty means the pod's own namespace.
     namespace: str = ""
     secret_label_selector: str = "kube-tower.arcanexus.com/secret-type=cluster"
+    # Extra cluster secrets of that namespace, read by name whatever their labels.
+    secret_names: list[str] = field(default_factory=list)
     # Also reuse ArgoCD cluster secrets (label argocd.argoproj.io/secret-type=cluster).
     use_argocd_secrets: bool = False
     argocd_namespace: str = "argocd"

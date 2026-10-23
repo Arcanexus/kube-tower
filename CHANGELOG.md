@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format follows
 - Web UI (Images, Helm charts, Clusters, Settings), JSON API and Prometheus metrics.
 - Helm chart, multi-arch image (amd64, arm64, arm/v7), CI with coverage.
 - Documentation: complete ArgoCD `Application` example (OCI chart, ingress, ArgoCD clusters, registry credentials).
+- Helm chart: cluster, registry (per registry and dockerconfigjson) and git credentials can be
+  created by the chart from the values or taken from existing Secrets; existing cluster Secrets
+  are referenced by name (`clusters[].existingSecret`, new `clusters.secretNames` setting).
+- Helm chart rendering tests.
 
 ### Changed
 

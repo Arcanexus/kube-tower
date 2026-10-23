@@ -114,6 +114,45 @@ def test_discover_in_cluster_and_argocd_secrets(monkeypatch):
     assert statuses[0].message == "Forbidden"
 
 
+def test_discover_named_secrets(monkeypatch):
+    from kube_tower.models import ClusterStatus
+
+    named = {
+        "prod-creds": _secret("prod-creds", name="prod", server="https://prod", config="{}"),
+        "labelled": _secret("labelled", name="a", server="https://a", config="{}"),
+    }
+
+    class Registry(ClusterRegistry):
+        def local_client(self):
+            return client.ApiClient(client.Configuration(host="https://local"))
+
+        def _list_secrets(self, namespace, selector):
+            return [named["labelled"]]
+
+        def _read_secret(self, namespace, name):
+            assert namespace == "kube-tower"
+            if name not in named:
+                raise client.ApiException(status=404, reason="Not Found")
+            return named[name]
+
+        def probe(self, cluster):
+            return ClusterStatus(cluster.name, cluster.server, cluster.source, reachable=True)
+
+    settings = ClustersSettings(in_cluster=False, namespace="kube-tower", secret_names=["prod-creds", "labelled", "missing"])
+    clusters, statuses = Registry(settings).discover()
+    assert [c.name for c in clusters] == ["a", "prod"]
+    assert ("missing", "Not Found") in [(s.name, s.message) for s in statuses]
+
+
+def test_read_secret_without_local_client():
+    class Registry(ClusterRegistry):
+        def local_client(self):
+            return None
+
+    assert Registry(ClustersSettings()).discover() == ([], [])
+    assert Registry(ClustersSettings())._read_secret("ns", "s") is None
+
+
 def test_probe_reports_errors(monkeypatch):
     cluster = cluster_from_secret(_secret("s", name="p", server="https://127.0.0.1:1", config="{}"), "secret")
     status = ClusterRegistry(ClustersSettings(request_timeout=1)).probe(cluster)
