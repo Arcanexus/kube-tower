@@ -32,17 +32,20 @@ helm:
   applicationNamespaces: [argocd]   # [] = all namespaces
   includePrerelease: false
   checkDependencies: true     # subcharts, and their own subcharts (3 levels)
-vulnerabilities:               # see vulnerabilities.md
+vulnerabilities:               # see "Vulnerabilities (Trivy)" below
   enabled: true
   trivyOperator: true          # read Trivy Operator VulnerabilityReports
   trivy:
     enabled: true              # scan the other images with the Trivy CLI
-    serverUrl: ""              # Trivy server (client/server mode)
+    binary: trivy              # set by the Helm chart to the copied binary
+    serverUrl: ""              # Trivy server (client/server mode), set by the chart with trivy.server
+    cacheDir: /tmp/trivy
     timeout: 10m
     concurrency: 2
     rescanInterval: 24h
     ignoreUnfixed: false
     javaDb: false
+    extraArgs: []
   ignore: []
 registries:
   dockerConfigPath: /etc/kube-tower/dockerconfig/config.json
@@ -63,6 +66,54 @@ git:
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
 
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`.
+
+## Vulnerabilities (Trivy)
+
+kube-tower reads the reports of [Trivy Operator](https://aquasecurity.github.io/trivy-operator/)
+when it runs in a cluster, and scans the other images with the [Trivy](https://trivy.dev) CLI. See
+[Vulnerabilities](vulnerabilities.md) for how it works.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `vulnerabilities.enabled` | `true` | Collect vulnerabilities at all. `false`: no vulnerability is collected, and the chart does not add the Trivy init container |
+| `vulnerabilities.trivyOperator` | `true` | Read Trivy Operator `VulnerabilityReports` (nothing happens when the CRD does not exist). `false`: always scan with the Trivy CLI |
+| `vulnerabilities.ignore` | `[]` | fnmatch patterns on `registry/repository` or `registry/repository:tag` of images never scanned by the Trivy CLI, e.g. `registry.k8s.io/pause*` |
+| `vulnerabilities.trivy.enabled` | `true` | Scan the images without an operator report with the Trivy CLI. `false`: only operator reports are shown |
+| `vulnerabilities.trivy.binary` | `trivy` | Path of the Trivy CLI. The Helm chart sets it to the binary copied by its init container (`/opt/trivy/bin/trivy`) |
+| `vulnerabilities.trivy.serverUrl` | `""` | Trivy server URL (client/server mode), e.g. `http://kube-tower-trivy:4954`. Empty: standalone mode. The chart sets it when `trivy.server.enabled` is `true`; set it yourself to use a Trivy server you already run |
+| `vulnerabilities.trivy.cacheDir` | `/tmp/trivy` | Where the vulnerability database is downloaded in standalone mode (~1.6 GB, ~3.1 GB with the Java DB). An `emptyDir` with the chart (`trivy.cacheSizeLimit`) |
+| `vulnerabilities.trivy.timeout` | `10m` | Maximum duration of the scan of one image |
+| `vulnerabilities.trivy.concurrency` | `2` | Images scanned at the same time. More is faster but needs more memory and bandwidth |
+| `vulnerabilities.trivy.rescanInterval` | `24h` | Results are kept in memory and an image is scanned again after this delay. Failed scans are retried at the next scan |
+| `vulnerabilities.trivy.ignoreUnfixed` | `false` | Only report the vulnerabilities that have a fixed version |
+| `vulnerabilities.trivy.javaDb` | `false` | Download the Java DB (~1.5 GB) and scan Java archives (`.jar`, `.war`, `.ear`, `.par`). When `false`, they are skipped |
+| `vulnerabilities.trivy.extraArgs` | `[]` | Extra `trivy image` arguments, e.g. `["--db-repository", "registry.example.com/aquasec/trivy-db"]` for a mirror of the database |
+
+The Trivy CLI uses the [registry credentials](#registry-authentication) of kube-tower to pull the
+layers of private images. In standalone mode, the pod must reach the database registries
+(`mirror.gcr.io` and `ghcr.io`, or the mirror given in `extraArgs`); in client/server mode, only the
+Trivy server needs them.
+
+Examples:
+
+```yaml
+# Only report what can be fixed, scan once a week, skip some images
+vulnerabilities:
+  ignore:
+    - registry.k8s.io/pause*
+    - docker.io/library/busybox*
+  trivy:
+    ignoreUnfixed: true
+    rescanInterval: 7d
+```
+
+```yaml
+# Trivy Operator already scans every workload: do not run Trivy in kube-tower
+# (node images without an operator report are then not scanned)
+vulnerabilities:
+  trivy:
+    enabled: false
+```
 
 ## Registry authentication
 

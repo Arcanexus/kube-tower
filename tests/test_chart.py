@@ -219,12 +219,19 @@ def test_trivy_server(tmp_path):
     trivy = server["spec"]["template"]["spec"]["containers"][0]
     assert trivy["args"] == ["server", "--listen", "0.0.0.0:4954", "--cache-dir", "/cache"]
     assert trivy["image"] == "ghcr.io/aquasecurity/trivy:0.75.0" and trivy["securityContext"]["readOnlyRootFilesystem"]
+    assert "imagePullSecrets" not in server["spec"]["template"]["spec"]
 
     docs = render(
         tmp_path,
-        {"trivy": {"server": {"enabled": True}}, "config": {"vulnerabilities": {"trivy": {"serverUrl": "http://other:4954"}}}},
+        {
+            "trivy": {"server": {"enabled": True}},
+            "config": {"vulnerabilities": {"trivy": {"serverUrl": "http://other:4954"}}},
+            "imagePullSecrets": [{"name": "mirror"}],
+        },
     )
     assert app_settings(tmp_path, docs).vulnerabilities.trivy.server_url == "http://other:4954"
+    # A private trivy.image is pulled with the same secrets as kube-tower
+    assert docs[("Deployment", "kt-kube-tower-trivy")]["spec"]["template"]["spec"]["imagePullSecrets"] == [{"name": "mirror"}]
 
 
 @pytest.mark.parametrize(
