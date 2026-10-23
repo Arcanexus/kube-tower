@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -179,3 +180,15 @@ def test_status_reloads_page_when_scan_ends():
     scanner.running = False
     assert client.get("/status?polling=1").headers["HX-Refresh"] == "true"
     assert "HX-Refresh" not in client.get("/status").headers
+
+
+def test_links_are_relative():
+    # Relative links work however the UI is exposed: http, https behind a TLS ingress
+    # (no mixed content), port-forward or a sub-path.
+    client, _ = _client()
+    for path in ("/", "/images", "/charts", "/clusters", "/settings", "/status"):
+        page = client.get(path, headers={"X-Forwarded-Proto": "https"}).text
+        assert "http://" not in page, path
+        assert not re.search(r'(href|src|hx-get|hx-post)="/', page), path
+    page = client.get("/").text
+    assert 'href="static/pico.min.css"' in page and 'src="static/htmx.min.js"' in page

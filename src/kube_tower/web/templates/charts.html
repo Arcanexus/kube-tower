@@ -2,7 +2,7 @@
 {% from "_macros.html" import badge, counters, filters, icon, page_title %}
 {% block content %}
 {{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.") }}
-{{ filters("/charts", q, status, cluster, snapshot) }}
+{{ filters("charts", q, status, cluster, snapshot) }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}

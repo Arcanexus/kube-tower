@@ -1,6 +1,6 @@
 {% from "_macros.html" import icon %}
 <div id="scan-status" class="scan-status"
-     {% if scanning %}hx-get="/status?polling=1" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+     {% if scanning %}hx-get="status?polling=1" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
   {% if scanning %}
     <span aria-busy="true">Scan in progress…</span>
   {% elif snapshot.finished_at %}
@@ -10,8 +10,8 @@
     <small>{{ icon("clock") }}No scan yet.</small>
   {% endif %}
   {% if not scanning %}
-  <button class="outline secondary small" hx-post="/api/refresh" hx-swap="none"
-          hx-on::after-request="htmx.ajax('GET', '/status', {target: '#scan-status', swap: 'outerHTML'})">{{ icon("refresh") }}Refresh now</button>
+  <button class="outline secondary small" hx-post="api/refresh" hx-swap="none"
+          hx-on::after-request="htmx.ajax('GET', 'status', {target: '#scan-status', swap: 'outerHTML'})">{{ icon("refresh") }}Refresh now</button>
   {% endif %}
   {% if snapshot.errors %}
   <details class="errors"><summary>{{ icon("warning") }}{{ snapshot.errors | length }} collection error(s)</summary>

@@ -4,17 +4,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    // Links are relative so the UI works however it is exposed (http, https, port-forward, sub-path).
+    // Under a sub-path without trailing slash (/kube-tower), add it so relative links resolve.
+    if (!location.pathname.endsWith("/") && !/\/(images|charts|clusters|settings)$/.test(location.pathname)) {
+      location.replace(location.pathname + "/" + location.search + location.hash);
+    }
+  </script>
   <title>kube-tower · {{ tab | default("") }}</title>
-  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='favicon.svg') }}">
-  <link rel="stylesheet" href="{{ url_for('static', path='pico.min.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', path='kube-tower.css') }}">
-  <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
+  <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
+  <link rel="stylesheet" href="static/pico.min.css">
+  <link rel="stylesheet" href="static/kube-tower.css">
+  <script src="static/htmx.min.js" defer></script>
 </head>
 <body>
   <div class="layout">
     <aside class="sidebar">
-      <a class="brand" href="/">
-        <img src="{{ url_for('static', path='logo.svg') }}" alt="" width="36" height="36">
+      <a class="brand" href="./">
+        <img src="static/logo.svg" alt="" width="36" height="36">
         <span>kube-tower</span>
       </a>
       <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-label="Menu">
@@ -22,7 +29,7 @@
       <nav>
         <ul>
           {% for key, label, ico in [("images", "Images", "images"), ("charts", "Helm charts", "charts"), ("clusters", "Clusters", "clusters"), ("settings", "Settings", "settings")] %}
-          <li><a href="/{{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ icon(ico) }}<span>{{ label }}</span></a></li>
+          <li><a href="{{ key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ icon(ico) }}<span>{{ label }}</span></a></li>
           {% endfor %}
         </ul>
       </nav>

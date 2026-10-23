@@ -6,6 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONPATH=/app/src
 
+# uvicorn trusts X-Forwarded-Proto/For from the ingress controller (TLS terminated upstream)
+ENV FORWARDED_ALLOW_IPS=*
+
 WORKDIR /app
 
 COPY src/requirements.txt src/requirements.txt
