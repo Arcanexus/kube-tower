@@ -33,6 +33,8 @@ All notable changes to this project are documented here. The format follows
   Kubernetes lists are paginated, the chart adds a
   `startupProbe` and longer probe timeouts (`startupProbe`, `livenessProbe`, `readinessProbe` values).
 - The UI reloads itself when the scan it shows as in progress is over.
+- Mixed content errors behind an ingress terminating TLS: static files use relative links and
+  uvicorn trusts the `X-Forwarded-*` headers.
 
 ### Changed
 

@@ -179,3 +179,11 @@ def test_status_reloads_page_when_scan_ends():
     scanner.running = False
     assert client.get("/status?polling=1").headers["HX-Refresh"] == "true"
     assert "HX-Refresh" not in client.get("/status").headers
+
+
+def test_static_links_are_relative_behind_tls_proxy():
+    # Behind an ingress terminating TLS, absolute http:// links would be blocked as mixed content.
+    client, _ = _client()
+    page = client.get("/", headers={"X-Forwarded-Proto": "https"}).text
+    assert 'href="/static/pico.min.css"' in page and 'src="/static/htmx.min.js"' in page
+    assert "http://" not in page
