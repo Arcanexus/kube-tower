@@ -21,7 +21,9 @@ def test_http_error_message_explains_the_status():
 
 def test_explain_network_errors():
     request = httpx.Request("GET", "https://quay.io/v2/")
-    assert explain(httpx.ReadTimeout("", request=request)).startswith("no answer from quay.io before registries.timeout")
+    assert explain(httpx.ReadTimeout("", request=request)).startswith("quay.io accepted the connection but did not answer")
+    assert "broken IPv6" in explain(httpx.ConnectTimeout("", request=request))
+    assert "lower registries.concurrency" in explain(httpx.PoolTimeout("", request=request))
     assert explain(httpx.ConnectError("Name or service not known", request=request)) == (
         "cannot connect to quay.io: Name or service not known (DNS, network policy, proxy or TLS certificate?)"
     )

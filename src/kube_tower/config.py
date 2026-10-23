@@ -129,6 +129,8 @@ class RegistriesSettings:
     mirrors: dict[str, str] = field(default_factory=dict)
     concurrency: int = 8
     timeout: int = 20
+    # Extra attempts for a request that timed out, failed to connect or got a 502/503/504.
+    retries: int = 2
 
 
 @dataclass
