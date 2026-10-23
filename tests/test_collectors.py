@@ -102,7 +102,12 @@ def test_charts_from_application_single_and_multi_source():
 
     grafana, monitoring = charts_from_application("c1", multi_app)
     assert grafana.source_type == "oci"
-    assert (monitoring.source_type, monitoring.chart, monitoring.git_ref) == ("git", "monitoring", "HEAD")
+    assert (monitoring.source_type, monitoring.chart, monitoring.git_ref, monitoring.path) == (
+        "git",
+        "monitoring",
+        "HEAD",
+        "monitoring",
+    )
 
 
 def test_collect_charts_without_argocd(monkeypatch):

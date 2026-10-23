@@ -99,6 +99,20 @@ class FakeScanner:
         )
         self.triggered = 0
         self.scans_total = {"success": 3, "failure": 1}
+        self.rescanning = set()
+        self.rescans = []
+        self.rescan_error = None
+
+    def can_rescan_vulnerabilities(self, report):
+        return report.image.repository != "library/redis"
+
+    def rescan_image(self, report, versions=True, vulnerabilities=True):
+        self.rescans.append((str(report.image), versions, vulnerabilities))
+        return self.rescan_error
+
+    def rescan_chart(self, report):
+        self.rescans.append(report.key)
+        return self.rescan_error
 
     def trigger(self):
         self.triggered += 1
@@ -408,3 +422,46 @@ def test_vulnerability_detail():
     # the image detail links to its vulnerabilities
     image = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
     assert 'hx-get="vulnerabilities/detail?ref=docker.io/library/nginx%3A1.25"' in image
+
+
+def test_rescan_api():
+    client, scanner = _client()
+    resp = client.post("/api/rescan/image", params={"ref": "docker.io/library/nginx:1.25", "vulnerabilities": "false"})
+    assert resp.status_code == 202 and resp.json() == {"started": True}
+    assert client.post("/api/rescan/chart?cluster=c1&namespace=argocd&app=redis&chart=redis").status_code == 202
+    assert scanner.rescans == [("docker.io/library/nginx:1.25", True, False), ("c1", "argocd", "redis", "redis")]
+    scanner.rescan_error = "a scan is running"
+    resp = client.post("/api/rescan/image", params={"ref": "docker.io/library/nginx:1.25"})
+    assert resp.status_code == 409 and resp.json() == {"started": False, "reason": "a scan is running"}
+    assert client.post("/api/rescan/image", params={"ref": "nope"}).status_code == 404
+    assert client.post("/api/rescan/chart?cluster=c1&namespace=argocd&app=x&chart=redis").status_code == 404
+
+
+def test_rescan_buttons_and_polling():
+    client, scanner = _client()
+    ref = {"ref": "docker.io/library/nginx:1.25"}
+    detail = client.get("/images/detail", params=ref).text
+    assert 'hx-post="api/rescan/image?ref=docker.io/library/nginx%3A1.25&amp;vulnerabilities=false"' in detail
+    assert 'hx-post="api/rescan/image?ref=docker.io/library/nginx%3A1.25&amp;versions=false"' in detail
+    assert "images/detail?ref=docker.io/library/nginx%3A1.25&amp;polling=1" in detail and "Rescanning" not in detail
+    # no vulnerability rescan when it cannot give a result
+    redis = client.get("/images/detail", params={"ref": "docker.io/library/redis:latest"}).text
+    assert "Check version" in redis and "Scan vulnerabilities" not in redis
+    assert "Scan now" not in client.get("/vulnerabilities/detail", params={"ref": "docker.io/library/redis:latest"}).text
+    assert "Scan again" in client.get("/vulnerabilities/detail", params=ref).text
+    chart = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
+    assert 'hx-post="api/rescan/chart?cluster=c1&amp;namespace=argocd&amp;app=redis&amp;chart=redis"' in chart
+    # buttons are disabled while a full scan runs
+    scanner.running = True
+    assert "disabled" in client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
+    scanner.running = False
+    # while rescanned, the panel polls itself; the poll that sees the end reloads the results
+    scanner.rescanning = {("image", "docker.io/library/nginx:1.25")}
+    resp = client.get("/images/detail", params={**ref, "polling": "1"})
+    assert "Rescanning" in resp.text and 'hx-trigger="every 3s"' in resp.text and "Check version" not in resp.text
+    assert "HX-Trigger" not in resp.headers
+    assert "Rescanning" in client.get("/vulnerabilities/detail", params=ref).text
+    scanner.rescanning = set()
+    resp = client.get("/images/detail", params={**ref, "polling": "1"})
+    assert resp.headers["HX-Trigger"] == "kt-rescanned" and "Rescanning" not in resp.text
+    assert "HX-Trigger" not in client.get("/images/detail", params=ref).headers

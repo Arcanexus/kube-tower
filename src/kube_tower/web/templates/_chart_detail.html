@@ -1,7 +1,9 @@
-{% from "_macros.html" import badge, drawer, icon, links %}
+{% from "_macros.html" import badge, drawer, icon, links, rescan %}
+{% set query = "cluster=" ~ (c.cluster | urlencode) ~ "&namespace=" ~ (c.app_namespace | urlencode) ~ "&app=" ~ (c.application | urlencode) ~ "&chart=" ~ (c.chart | urlencode) %}
 {% call drawer(c.chart, c.application ~ " · " ~ c.cluster) %}
 <p>{{ badge(c.status) }}{% if c.message %} <small>{{ c.message }}</small>{% endif %}
   {% if c.worst_status != c.status %}<br><small>Subcharts: </small>{{ badge(c.worst_status) }}{% endif %}</p>
+{{ rescan([("Check versions", "api/rescan/chart?" ~ query)], "charts/detail?" ~ query, rescanning, scanning) }}
 {{ links(chart_links(c)) }}
 
 <h4>Chart</h4>

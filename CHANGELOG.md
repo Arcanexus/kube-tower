@@ -14,6 +14,8 @@ All notable changes to this project are documented here. The format follows
   `trivy.server.enabled`). End of life OS releases are flagged. The Trivy CLI is not in the
   kube-tower image: the chart copies it from the official Trivy image with an init container
   (`trivy.enabled`, `trivy.image`).
+- Rescan of one image (version and/or vulnerabilities) or one Helm chart from its detail panel, or
+  with `POST /api/rescan/image` and `POST /api/rescan/chart`, without waiting for the next scan.
 - Vulnerabilities on the Synthesis page (critical CVEs tile and per cluster, images by worst severity,
   most vulnerable images) and a Vulnerabilities row in the Grafana dashboard.
 

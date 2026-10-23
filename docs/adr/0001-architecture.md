@@ -43,7 +43,7 @@ A single Python 3.13 process (FastAPI + uvicorn) packaged as one multi-arch imag
 | `registry/helm.py` | Helm repositories (`index.yaml`), OCI charts, and `Chart.yaml` read from git through raw URLs. |
 | `checkers.py` | Computes the status of each image / chart / subchart, querying each repository once per scan. |
 | `scanner.py` | Runs a full scan periodically and keeps the last `Snapshot` in memory. |
-| `web/` | Server-rendered UI, JSON API (`/api/snapshot`, `/api/refresh`), Prometheus `/metrics`. |
+| `web/` | Server-rendered UI, JSON API (`/api/snapshot`, `/api/refresh`, `/api/rescan/*`), Prometheus `/metrics`. |
 
 New sources (e.g. Flux HelmReleases, plain Helm release secrets) are added as a new collector,
 new registries types as a new client, without touching the rest.
