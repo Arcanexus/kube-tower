@@ -16,6 +16,12 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") ktCloseDetail();
 });
 
+// A rescan from a detail panel is over: reload the results of the page (same filters) to update its row.
+document.addEventListener("kt-rescanned", () => {
+  const form = document.querySelector("form.filters");
+  if (form) htmx.trigger(form, "change");
+});
+
 // Theme: auto (follow the system) -> light -> dark.
 const KT_THEMES = ["auto", "light", "dark"];
 function ktCurrentTheme() {

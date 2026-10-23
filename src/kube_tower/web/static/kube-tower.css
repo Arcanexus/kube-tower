@@ -77,6 +77,8 @@ h3 .icon { color: var(--kt-sidebar-active); }
 /* Scan status bar */
 .scan-status { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
 .scan-status button.small { padding: .2rem .6rem; font-size: .8rem; margin: 0; width: auto; }
+.rescan { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.rescan button.small { padding: .2rem .6rem; font-size: .8rem; margin: 0; width: auto; }
 .scan-status .errors { margin: 0; }
 
 .filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .5rem; }

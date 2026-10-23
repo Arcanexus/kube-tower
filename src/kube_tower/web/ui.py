@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from kube_tower import __version__
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status
 from kube_tower.registry.auth import resolve_credentials
+from kube_tower.scanner import chart_key, image_key
 from kube_tower.web.summary import UPDATE_KINDS, WORST_ORDER, summarize
 
 HERE = Path(__file__).parent
@@ -105,6 +106,17 @@ def mount(app: FastAPI) -> None:
             {"snapshot": scanner.snapshot, "scanning": scanner.running, "partial": partial, **context},
         )
 
+    def render_detail(request: Request, name: str, key: tuple, **context) -> HTMLResponse:
+        """A detail panel. While its item is rescanned the panel polls itself (`polling=1`); the poll
+        that sees the rescan over tells the page (event kt-rescanned) to reload its results.
+        """
+        scanner = request.app.state.scanner
+        rescanning = key in scanner.rescanning
+        response = render(request, name, rescanning=rescanning, **context)
+        if request.query_params.get("polling") and not rescanning:
+            response.headers["HX-Trigger"] = "kt-rescanned"
+        return response
+
     def filters(request: Request) -> tuple[str, str, str]:
         p = request.query_params
         return p.get("q", ""), p.get("status", ""), p.get("cluster", "")
@@ -129,10 +141,11 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/images/detail", response_class=HTMLResponse, include_in_schema=False)
     async def image_detail(request: Request, ref: str = ""):
-        report = next((r for r in request.app.state.scanner.snapshot.images if str(r.image) == ref), None)
-        if report is None:
+        scanner = request.app.state.scanner
+        if (report := scanner.snapshot.image(ref)) is None:
             return Response(status_code=404)
-        return render(request, "_image_detail", r=report)
+        can_scan = scanner.can_rescan_vulnerabilities(report)
+        return render_detail(request, "_image_detail", image_key(report), r=report, can_rescan_vulnerabilities=can_scan)
 
     @app.get("/vulnerabilities", response_class=HTMLResponse, include_in_schema=False)
     async def vulnerabilities(request: Request):
@@ -164,10 +177,11 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/vulnerabilities/detail", response_class=HTMLResponse, include_in_schema=False)
     async def vulnerability_detail(request: Request, ref: str = ""):
-        report = next((r for r in request.app.state.scanner.snapshot.images if str(r.image) == ref), None)
-        if report is None:
+        scanner = request.app.state.scanner
+        if (report := scanner.snapshot.image(ref)) is None:
             return Response(status_code=404)
-        return render(request, "_vulnerability_detail", r=report)
+        can_scan = scanner.can_rescan_vulnerabilities(report)
+        return render_detail(request, "_vulnerability_detail", image_key(report), r=report, can_rescan_vulnerabilities=can_scan)
 
     @app.get("/charts", response_class=HTMLResponse, include_in_schema=False)
     async def charts(request: Request):
@@ -182,17 +196,9 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/charts/detail", response_class=HTMLResponse, include_in_schema=False)
     async def chart_detail(request: Request, cluster: str = "", namespace: str = "", app: str = "", chart: str = ""):
-        report = next(
-            (
-                c
-                for c in request.app.state.scanner.snapshot.charts
-                if (c.cluster, c.app_namespace, c.application, c.chart) == (cluster, namespace, app, chart)
-            ),
-            None,
-        )
-        if report is None:
+        if (report := request.app.state.scanner.snapshot.chart(cluster, namespace, app, chart)) is None:
             return Response(status_code=404)
-        return render(request, "_chart_detail", c=report)
+        return render_detail(request, "_chart_detail", chart_key(report), c=report)
 
     def _log_lines(request: Request, after: int, level: str, q: str):
         """Lines after `after` matching the filters, and the sequence number to tail from."""

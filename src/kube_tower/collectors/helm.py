@@ -49,7 +49,8 @@ def charts_from_application(cluster: str, app: dict) -> list[ChartReport]:
             # sourceType (app never synced) is kept and reported as an error without Chart.yaml.
             base["version"] = ""
             git_ref = source.get("targetRevision") or "HEAD"
-            reports.append(ChartReport(chart=source["path"] or ".", source_type="git", git_ref=git_ref, **base))
+            path = source["path"] or "."
+            reports.append(ChartReport(chart=path, source_type="git", git_ref=git_ref, path=path, **base))
     return reports
 
 

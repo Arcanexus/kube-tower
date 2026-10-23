@@ -71,3 +71,20 @@
 {% set counts = report.counts() %}
 {% for s in Severity if counts[s] %}<span class="sev sev-{{ s.value }}" title="{{ counts[s] }} {{ s.value }}">{{ counts[s] }} {{ s.value[0] | upper }}</span> {% else %}<span class="badge badge-up-to-date">{{ icon("ok") }}none</span>{% endfor %}
 {%- endmacro %}
+
+{% macro rescan(buttons, detail_url, busy, scanning) -%}
+{# Buttons of a detail panel that check its item again: each starts the rescan with the API, then the
+   panel polls itself while it runs (the poll that sees it over reloads the results, see kube-tower.js). #}
+<p class="rescan">
+{% if busy %}
+  <small aria-busy="true">Rescanning…</small>
+  <span hidden hx-get="{{ detail_url }}&amp;polling=1" hx-trigger="every 3s" hx-target="#detail"></span>
+{% else %}
+  {% for label, api in buttons %}
+  <button type="button" class="outline secondary small" hx-post="{{ api }}" hx-swap="none"
+          {% if scanning %}disabled title="A scan is running: it checks everything again"{% endif %}
+          hx-on::after-request="htmx.ajax('GET', '{{ detail_url }}&amp;polling=1', {target: '#detail'})">{{ icon("refresh") }}{{ label }}</button>
+  {% endfor %}
+{% endif %}
+</p>
+{%- endmacro %}

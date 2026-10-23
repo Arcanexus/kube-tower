@@ -164,6 +164,12 @@ class ChartReport:
     latest_version: str | None = None
     message: str | None = None
     dependencies: list[ChartDependency] = field(default_factory=list)
+    path: str | None = None  # git sources: path of the chart in the repository (`chart` becomes its name once read)
+
+    @property
+    def key(self) -> tuple[str, str, str, str]:
+        """Identifies the chart in a snapshot (an Application can deploy several charts)."""
+        return self.cluster, self.app_namespace, self.application, self.chart
 
     def walk(self):
         """Yield (depth, dependency) for the whole subchart tree, depth first (direct subcharts at depth 1)."""
@@ -195,6 +201,12 @@ class Snapshot:
     # End of the vulnerability scan, which runs after the version checks
     vulnerabilities_finished_at: datetime | None = None
     errors: list[str] = field(default_factory=list)
+
+    def image(self, ref: str) -> ImageReport | None:
+        return next((r for r in self.images if str(r.image) == ref), None)
+
+    def chart(self, cluster: str, namespace: str, application: str, chart: str) -> ChartReport | None:
+        return next((c for c in self.charts if c.key == (cluster, namespace, application, chart)), None)
 
     def to_dict(self) -> dict:
         def enc(obj):

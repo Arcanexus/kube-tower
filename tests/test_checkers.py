@@ -172,3 +172,20 @@ async def test_checkers_log_results(caplog):
     assert ("DEBUG", "image docker.io/library/nginx:1.25.3: outdated (latest 1.26.0)") in messages
     assert ("WARNING", "cannot check image docker.io/library/missing:1.0: not found") in messages
     assert ("INFO", "images checked: 1 outdated, 1 error") in messages
+
+
+async def test_git_chart_checked_again_from_its_path():
+    paths = []
+
+    class Helm(FakeHelm):
+        async def git_chart_metadata(self, repository, ref, path):
+            paths.append(path)
+            return {"name": "monitoring", "version": "0.3.0"}
+
+    report = ChartReport(
+        "c1", "mon", "argocd", "charts/mon", "https://github.com/o/r.git", "", "git", git_ref="HEAD", path="charts/mon"
+    )
+    await ChartChecker(Helm(), HelmSettings()).check(report)
+    assert report.chart == "monitoring"
+    await ChartChecker(Helm(), HelmSettings()).check(report)  # rescan: Chart.yaml read from the same path
+    assert paths == ["charts/mon", "charts/mon"]

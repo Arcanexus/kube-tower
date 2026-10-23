@@ -197,7 +197,9 @@ class ChartChecker:
         metadata: dict | None = None
         try:
             if report.source_type == "git":
-                metadata = await self._git_metadata(report.repository, report.git_ref or "HEAD", report.chart)
+                # `chart` holds the path until Chart.yaml is read, then the chart name (rescans use `path`).
+                path = report.path if report.path is not None else report.chart
+                metadata = await self._git_metadata(report.repository, report.git_ref or "HEAD", path)
                 report.chart = metadata.get("name", report.chart)
                 report.version = str(metadata.get("version", ""))
                 # Charts deployed from git follow the git revision: only subcharts can be outdated.

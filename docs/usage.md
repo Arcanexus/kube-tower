@@ -13,6 +13,24 @@ On the Images, Helm charts and Vulnerabilities pages, the counters at the top ar
 that status (click it again to show everything). Clicking a line opens a detail panel on the
 right; close it with its button, a click outside or `Esc`.
 
+### Rescan one image or chart
+
+No need to wait for the next scan (or to rescan everything) after an upgrade: the detail panels
+have buttons that check one item again, in the background.
+
+| Detail panel | Buttons |
+| --- | --- |
+| Image | **Check version** (registry query), **Scan vulnerabilities** |
+| Vulnerabilities of an image | **Scan again** (or **Scan now** when it was never scanned) |
+| Helm chart | **Check versions** (the chart and its subcharts) |
+
+While it runs the panel shows *Rescanning…*, then the panel and the line of the list are updated.
+The vulnerabilities of an image read from a Trivy Operator report are read again from its clusters
+(the operator scans the images itself); the other images are scanned again with Trivy, without
+using the cached result. The buttons are disabled while a full scan runs, since it checks
+everything again. A rescan only updates the existing results: new workloads or images only appear
+with the next full scan.
+
 ### Synthesis
 
 ![Synthesis](images/synthesis.png)
@@ -118,6 +136,8 @@ credentials come from, the username and whether they could be read.
 | --- | --- |
 | `GET /api/snapshot` | The last scan: images, charts, clusters, errors, timestamps |
 | `POST /api/refresh` | Start a scan now (`{"started": false}` if one is already running) |
+| `POST /api/rescan/image?ref=…` | Check one image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`); `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
+| `POST /api/rescan/chart?cluster=…&namespace=…&app=…&chart=…` | Check one Helm chart and its subcharts again (`namespace` is the Application's namespace) |
 | `GET /healthz` | Liveness |
 | `GET /readyz` | 200 once the first scan has finished |
 | `GET /api/docs` | Interactive OpenAPI documentation |
