@@ -66,15 +66,15 @@ jobs:
           name: coverage-badge
           path: coverage-badge.json
 
-  # Proposes coverage badge updates to main (.github/badges/coverage.json), read by the README
-  # badge through shields.io. Repository rules require changes to be made through a pull request.
+  # Commits the coverage badge data to main (.github/badges/coverage.json), read by the README
+  # badge through shields.io. Only commits when the value changes. Pushes made with GITHUB_TOKEN
+  # never trigger workflows, so this cannot loop; [skip ci] makes it explicit.
   coverage-badge:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.workflow == 'Tests'
     needs: python
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -83,19 +83,21 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: coverage-badge
-      - name: Prepare coverage badge
+      - name: Commit badge to main
         run: |
           mkdir -p .github/badges
           mv coverage-badge.json .github/badges/coverage.json
-      - name: Create or update coverage badge pull request
-        uses: peter-evans/create-pull-request@v8.1.1
-        with:
-          branch: automation/coverage-badge
-          base: main
-          add-paths: .github/badges/coverage.json
-          commit-message: Update coverage badge
-          title: Update coverage badge
-          body: Automatically update the README coverage badge.
+          if git diff --quiet -- .github/badges/coverage.json && git ls-files --error-unmatch .github/badges/coverage.json >/dev/null 2>&1; then
+            echo "Coverage unchanged, nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/coverage.json
+          git commit -q -m "Update coverage badge [skip ci]"
+          # main may have moved while the tests were running
+          git pull -q --rebase origin main
+          git push -q origin HEAD:main
 
   helm:
     runs-on: ubuntu-latest
