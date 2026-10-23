@@ -2,7 +2,7 @@
 {% from "_macros.html" import badge, counters, filters, icon, page_title %}
 {% block content %}
 {{ page_title("images", "Container images", "Every image used by workloads (running or not) and cached on nodes.") }}
-{{ filters("/images", q, status, cluster, snapshot) }}
+{{ filters("images", q, status, cluster, snapshot) }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
