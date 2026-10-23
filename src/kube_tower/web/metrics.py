@@ -24,7 +24,7 @@ from kube_tower.versions import update_kind
 router = APIRouter()
 
 
-def _image_update(r: ImageReport) -> str:
+def image_update(r: ImageReport) -> str:
     if r.status != Status.OUTDATED:
         return ""
     return update_kind(r.image.tag, r.latest_tag) or ("digest" if r.latest_digest else "")
@@ -74,7 +74,7 @@ class SnapshotCollector(Collector):
         for r in snap.images:
             name, tag = r.image.name, r.image.tag or ""
             latest = r.latest_tag or (r.latest_digest or "" if r.status == Status.OUTDATED else "")
-            outdated.add_metric([name, tag, latest, r.status.value, _image_update(r)], r.status == Status.OUTDATED)
+            outdated.add_metric([name, tag, latest, r.status.value, image_update(r)], r.status == Status.OUTDATED)
             for usage in sorted(_workload_usages(r)):
                 workload.add_metric([*usage, name, tag], 1)
             for cluster, count in sorted(Counter(u.cluster for u in r.usages if u.kind == "Node").items()):
@@ -189,7 +189,8 @@ class SnapshotCollector(Collector):
         last = GaugeMetricFamily("kube_tower_last_scan_timestamp_seconds", "End of the last scan (Unix time)")
         duration = GaugeMetricFamily("kube_tower_last_scan_duration_seconds", "Duration of the last scan")
         errors = GaugeMetricFamily(
-            "kube_tower_last_scan_errors", "Non fatal collection errors of the last scan (e.g. a forbidden resource)"
+            "kube_tower_last_scan_errors",
+            "Non fatal errors of the last scan (e.g. a forbidden resource, a registry that cannot be queried)",
         )
         vulnerabilities = GaugeMetricFamily(
             "kube_tower_last_vulnerability_scan_timestamp_seconds", "End of the last vulnerability scan (Unix time)"

@@ -69,7 +69,7 @@ async def test_http_repository_with_basic_auth():
         helm = HelmClient(http, OCIClient(http, {"charts.example.com": ("u", "p")}), GitSettings())
         assert await helm.list_versions("https://charts.example.com", "app") == ["1.1.0", "1.0.0"]
         meta = await helm.chart_metadata("https://charts.example.com", "app", "1.1.0")
-        with pytest.raises(RegistryError, match="not found"):
+        with pytest.raises(RegistryError, match="chart missing is not published"):
             await helm.list_versions("https://charts.example.com", "missing")
         with pytest.raises(RegistryError, match="version 9.9.9"):
             await helm.chart_metadata("https://charts.example.com", "app", "9.9.9")
@@ -101,7 +101,7 @@ async def test_oci_chart():
         helm = HelmClient(http, OCIClient(http), GitSettings())
         assert await helm.list_versions("oci://ghcr.io/org/charts", "app") == ["1.0.0", "1.2.0"]
         assert (await helm.chart_metadata("ghcr.io/org/charts", "app", "1.2.0"))["version"] == "1.2.0"
-        with pytest.raises(RegistryError, match="not a helm chart"):
+        with pytest.raises(RegistryError, match="not a Helm chart"):
             await helm.chart_metadata("oci://ghcr.io/org/charts", "notchart", "1.0.0")
 
 
@@ -112,7 +112,7 @@ async def test_git_sources():
     async with httpx.AsyncClient() as http:
         helm = HelmClient(http, OCIClient(http), GitSettings())
         assert (await helm.git_chart_metadata("git@gitlab.com:grp/repo.git", "v1", "charts/app"))["version"] == "2.0.0"
-        with pytest.raises(RegistryError, match="404"):
+        with pytest.raises(RegistryError, match=r"HTTP 404 Not Found - not found on raw.githubusercontent.com.*git.token"):
             await helm.git_chart_metadata("https://github.com/org/repo", "", "missing")
         with pytest.raises(RegistryError, match="no raw URL template"):
             await helm.git_chart_metadata("https://git.example.com/org/repo", "HEAD", "x")

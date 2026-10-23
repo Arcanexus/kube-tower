@@ -79,11 +79,13 @@ async def test_registry_errors_and_basic_auth():
         oci = OCIClient(http, {"private.example.com": ("u", "p")}, mirrors={"docker.io": "mirror.example.com"})
         assert await oci.list_tags("private.example.com", "app") == []
         assert oci._api_host("docker.io") == "mirror.example.com"
-        with pytest.raises(RegistryError, match="token request failed"):
+        with pytest.raises(
+            RegistryError, match="cannot get a pull token for denied.example.com: HTTP 403 Forbidden - access denied"
+        ):
             await oci.list_tags("denied.example.com", "app")
-        with pytest.raises(RegistryError, match="manifest HEAD failed"):
+        with pytest.raises(RegistryError, match="cannot read the digest of private.example.com/app:missing"):
             await oci.get_digest("private.example.com", "app", "missing")
-        with pytest.raises(RegistryError, match="blob GET failed"):
+        with pytest.raises(RegistryError, match="cannot download private.example.com/app@sha256:x"):
             await oci.get_blob("private.example.com", "app", "sha256:x")
-        with pytest.raises(RegistryError, match="manifest GET failed"):
+        with pytest.raises(RegistryError, match="cannot read the manifest of private.example.com/app:x"):
             await oci.get_manifest("private.example.com", "app", "x", "application/json")

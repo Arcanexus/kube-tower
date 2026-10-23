@@ -2,14 +2,26 @@
 
 ## The dashboards
 
-The left sidebar gives access to six pages, and its bottom button switches the theme between
+The left sidebar gives access to seven pages, and its bottom button switches the theme between
 auto (follows the system), light and dark; the choice is remembered by the browser. The bar at the
 top shows when the last scan finished, a **Refresh now** button that starts a scan immediately,
-and the collection errors of the last scan, if any (e.g. a missing permission on a cluster).
+and the errors of the last scan, if any: collection errors (e.g. a missing permission on a
+cluster) and version check errors (e.g. a registry that cannot be queried). Each error is also
+logged as a warning, visible on the Logs page and in the pod logs.
 
 On the Images, Helm charts and Vulnerabilities pages, the counters at the top are buttons: clicking one shows only
 that status (click it again to show everything). Clicking a line opens a detail panel on the
 right; close it with its button, a click outside or `Esc`.
+
+### Synthesis
+
+![Synthesis](images/synthesis.png)
+
+The home page: an overview of the last scan. Tiles give the number of images and charts (with
+the share that is up to date), the reachable clusters and the images using `latest`. Below, the
+distribution of images and charts by status (click a segment or a status to open the filtered
+list), the pending image updates by type (major, minor, patch, new digest), the images per
+registry, the most used outdated images (click one for its details) and the figures per cluster.
 
 ### Images
 
@@ -74,6 +86,13 @@ The last 2000 log lines of kube-tower (scans, registries, clusters), kept in mem
 live, like `kubectl logs -f`. Filter by text or minimum level, and pause the stream to read. Only
 the lines logged at the configured `logs.level` or above are kept: set it to `DEBUG` to debug a
 scan.
+
+| Level | What is logged |
+| --- | --- |
+| `DEBUG` | Every registry, Helm repository and git request (method, URL without query, HTTP status), registry tokens requested, Kubernetes objects listed per kind, the result of each image, chart and subchart check, cluster secrets found |
+| `INFO` | Scan start and end, clusters to scan with their Kubernetes version, per cluster collection summary (objects listed, ArgoCD Applications, Helm charts), registry credentials loaded (registry names only), check summaries per status |
+| `WARNING` | Non fatal problems: an unreachable cluster, an invalid cluster secret, a resource that cannot be listed (e.g. 403), an image, chart or subchart that cannot be checked, ignored credentials |
+| `ERROR` | A scan that failed as a whole (with the stack trace); the previous results are kept |
 
 ### Settings
 

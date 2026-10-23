@@ -1,17 +1,22 @@
 import asyncio
+import logging
 import threading
 import time
 
+import httpx
 import pytest
 
 from kube_tower import scanner as scanner_module
 from kube_tower.clusters import Cluster
 from kube_tower.config import Settings
 from kube_tower.models import (
+    ChartDependency,
     ChartReport,
     ClusterStatus,
     ImageRef,
+    ImageReport,
     Severity,
+    Snapshot,
     Status,
     Usage,
     Vulnerability,
@@ -173,6 +178,41 @@ async def test_one_thread_per_cluster(monkeypatch):
     assert sorted(threads) == ["scan-a", "scan-b"]
     assert snap.errors == ["[a] error", "[b] error"]
     assert snap.images[0].clusters == ["a", "b"]
+
+
+def test_check_errors():
+    image = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), status=Status.ERROR, message="401 Unauthorized")
+    ok = ImageReport(ImageRef("docker.io", "library/redis", "7.2"), status=Status.UP_TO_DATE)
+    chart = ChartReport("c1", "app", "argocd", "app", "https://charts.example.com", "1.0.0", "helm")
+    chart.status, chart.message = Status.ERROR, "404 Not Found"
+    parent = ChartReport("c1", "mon", "argocd", "mon", "https://charts.example.com", "1.0.0", "helm", status=Status.UP_TO_DATE)
+    nested = ChartDependency("common", "2.0.0", "https://x", status=Status.ERROR, message="404")
+    parent.dependencies = [
+        ChartDependency("redis", "18.0.0", "https://x", status=Status.ERROR, message="timeout", dependencies=[nested])
+    ]
+    assert scanner_module.check_errors(Snapshot(images=[image, ok], charts=[chart, parent])) == [
+        "image docker.io/library/nginx:1.25: 401 Unauthorized",
+        "[c1] chart app of application app: 404 Not Found",
+        "[c1] subchart redis 18.0.0 of application mon: timeout",
+        "[c1] subchart common 2.0.0 of application mon: 404",
+    ]
+
+
+async def test_scan_logs_each_step(fakes, caplog):
+    caplog.set_level(logging.DEBUG, logger="kube_tower")
+    await Scanner(Settings(), FakeRegistry()).scan()
+    messages = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert ("INFO", "1 cluster(s) to scan: up") in messages
+    assert ("INFO", "collection done: 1 distinct image(s), 1 Helm chart(s)") in messages
+    assert ("INFO", "registry credentials loaded for: none (anonymous access)") in messages
+    assert any(level == "INFO" and m.startswith("scan finished") for level, m in messages)
+
+
+async def test_http_requests_logged_without_query(caplog):
+    caplog.set_level(logging.DEBUG, logger="kube_tower")
+    request = httpx.Request("GET", "https://ghcr.io/token?scope=repository:org/app:pull&service=ghcr.io")
+    await scanner_module._log_response(httpx.Response(401, request=request))
+    assert caplog.records[-1].getMessage() == "GET https://ghcr.io/token -> 401"
 
 
 async def test_vulnerabilities_from_operator_then_trivy(fakes, monkeypatch):

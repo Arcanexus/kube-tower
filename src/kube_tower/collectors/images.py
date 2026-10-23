@@ -5,12 +5,14 @@ from __future__ import annotations
 import fnmatch
 import logging
 import threading
+import time
 from collections.abc import Iterable
 
 from kubernetes import client
 
 from kube_tower.clusters import Cluster
 from kube_tower.config import ImagesSettings
+from kube_tower.errors import kubernetes_hint
 from kube_tower.models import ImageRef, ImageReport, Usage
 from kube_tower.registry.oci import parse_image_ref
 
@@ -65,6 +67,8 @@ class ImageInventory:
         core = client.CoreV1Api(cluster.api_client)
         apps = client.AppsV1Api(cluster.api_client)
         batch = client.BatchV1Api(cluster.api_client)
+        counts: dict[str, int] = {}
+        start = time.monotonic()
 
         def safe(what: str, fn):
             # Paginated lists: a single huge response holds the GIL while it is parsed and
@@ -76,9 +80,15 @@ class ImageInventory:
                     items += page.items
                     token = page.metadata._continue if page.metadata else None
                     if not token:
+                        log.debug("[%s] %d %s listed", cluster.name, len(items), what)
+                        counts[what] = len(items)
                         return items
             except client.ApiException as exc:
-                errors.append(f"[{cluster.name}] cannot list {what}: {exc.status} {exc.reason}")
+                message = f"[{cluster.name}] cannot list {what}: {exc.status} {exc.reason}"
+                if hint := kubernetes_hint(exc.status, what):
+                    message += f" - {hint}"
+                errors.append(message)
+                log.warning("%s", message)
                 return items
 
         for pod in safe("pods", core.list_pod_for_all_namespaces):
@@ -113,4 +123,10 @@ class ImageInventory:
                         if "@sha256:" in image:
                             continue
                         self.add(image, Usage(cluster.name, "Node", None, node.metadata.name), digest)
+        log.info(
+            "[%s] images collected in %.1fs: %s",
+            cluster.name,
+            time.monotonic() - start,
+            ", ".join(f"{n} {what}" for what, n in counts.items()) or "nothing listed",
+        )
         return errors

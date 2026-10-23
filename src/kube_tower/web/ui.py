@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from kube_tower import __version__
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status
 from kube_tower.registry.auth import resolve_credentials
+from kube_tower.web.summary import UPDATE_KINDS, summarize
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -109,6 +110,11 @@ def mount(app: FastAPI) -> None:
         return p.get("q", ""), p.get("status", ""), p.get("cluster", "")
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    @app.get("/synthesis", response_class=HTMLResponse, include_in_schema=False)
+    async def synthesis(request: Request):
+        summary = summarize(request.app.state.scanner.snapshot)
+        return render(request, "synthesis", tab="synthesis", summary=summary, update_kinds=UPDATE_KINDS)
+
     @app.get("/images", response_class=HTMLResponse, include_in_schema=False)
     async def images(request: Request):
         q, status, cluster = filters(request)
