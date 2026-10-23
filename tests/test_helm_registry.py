@@ -1,3 +1,4 @@
+import asyncio
 import io
 import tarfile
 
@@ -116,3 +117,17 @@ async def test_git_sources():
             await helm.git_chart_metadata("https://github.com/org/repo", "", "missing")
         with pytest.raises(RegistryError, match="no raw URL template"):
             await helm.git_chart_metadata("https://git.example.com/org/repo", "HEAD", "x")
+
+
+@respx.mock
+async def test_index_fetched_once_for_concurrent_charts_and_v_prefix():
+    index = respx.get("https://charts.example.com/index.yaml").respond(200, text=INDEX)
+    respx.get("https://charts.example.com/app-1.1.0.tgz").respond(200, content=_archive({"name": "app", "version": "1.1.0"}))
+    async with httpx.AsyncClient() as http:
+        helm = HelmClient(http, OCIClient(http), GitSettings())
+        results = await asyncio.gather(*(helm.list_versions("https://charts.example.com", "app") for _ in range(5)))
+        # ArgoCD targetRevision "v1.1.0" for a chart published as "1.1.0"
+        meta = await helm.chart_metadata("https://charts.example.com", "app", "v1.1.0")
+    assert results == [["1.1.0", "1.0.0"]] * 5
+    assert index.call_count == 1
+    assert meta["version"] == "1.1.0"

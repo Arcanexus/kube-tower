@@ -5,6 +5,8 @@ name: Tests
 on:
   push:
     branches: ["main"]
+    # The coverage badge commit changes only this file: no run for it
+    paths-ignore: [".github/badges/**"]
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -68,7 +70,9 @@ jobs:
 
   # Commits the coverage badge data to main (.github/badges/coverage.json), read by the README
   # badge through shields.io. Only commits when the value changes. Pushes made with GITHUB_TOKEN
-  # never trigger workflows, so this cannot loop; [skip ci] makes it explicit.
+  # never trigger workflows, so this cannot loop. Workflows on main also ignore pushes that only
+  # change .github/badges (paths-ignore). No [skip ci] in the message: on a tagged commit it would
+  # also skip the tag push workflows, while paths-ignore never applies to tags.
   coverage-badge:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.workflow == 'Tests'
     needs: python
@@ -94,7 +98,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .github/badges/coverage.json
-          git commit -q -m "Update coverage badge [skip ci]"
+          git commit -q -m "Update coverage badge"
           # main may have moved while the tests were running
           git pull -q --rebase origin main
           git push -q origin HEAD:main

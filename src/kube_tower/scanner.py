@@ -33,6 +33,7 @@ from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Stat
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.registry.helm import HelmClient
 from kube_tower.registry.oci import OCIClient
+from kube_tower.registry.transport import RetryingClient
 from kube_tower.trivy import TrivyScanner, scan_target
 
 log = logging.getLogger(__name__)
@@ -178,7 +179,9 @@ class Scanner:
         """Registry and Helm repository clients, with the registry credentials read again (Secrets may have been rotated)."""
         reg = self.settings.registries
         hooks = {"response": [_log_response]}
-        async with httpx.AsyncClient(timeout=reg.timeout, headers={"User-Agent": "kube-tower"}, event_hooks=hooks) as http:
+        async with RetryingClient(
+            timeout=reg.timeout, headers={"User-Agent": "kube-tower"}, event_hooks=hooks, retries=reg.retries
+        ) as http:
             credentials, _ = resolve_credentials(reg)
             self.trivy.credentials = credentials
             oci = OCIClient(http, credentials, reg.mirrors, self.settings.images.max_tag_pages)
