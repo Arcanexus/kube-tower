@@ -77,6 +77,8 @@ spec:
               subPath: config.yaml
             - name: tmp
               mountPath: /tmp
+            - name: trivy-cache
+              mountPath: /tmp/trivy
             {{- if include "kube-tower.dockerConfigSecretName" . }}
             - name: dockerconfig
               mountPath: /etc/kube-tower/dockerconfig
@@ -93,6 +95,11 @@ spec:
             name: {{ include "kube-tower.fullname" . }}
         - name: tmp
           emptyDir: {}
+        - name: trivy-cache
+          emptyDir:
+            {{- with .Values.trivy.cacheSizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
         {{- with include "kube-tower.dockerConfigSecretName" . }}
         - name: dockerconfig
           secret:

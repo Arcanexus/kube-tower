@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fnmatch
 import logging
 import threading
 from collections.abc import Callable
@@ -22,11 +23,13 @@ from kube_tower.checkers import ChartChecker, ImageChecker
 from kube_tower.clusters import Cluster, ClusterRegistry
 from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
+from kube_tower.collectors.vulnerabilities import collect_operator_reports, pick_report
 from kube_tower.config import Settings
-from kube_tower.models import ChartReport, Snapshot
+from kube_tower.models import ImageRef, ImageReport, Snapshot, VulnerabilityReport
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.registry.helm import HelmClient
 from kube_tower.registry.oci import OCIClient
+from kube_tower.trivy import TrivyScanner
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +70,8 @@ class Scanner:
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self.scans_total = {"success": 0, "failure": 0}  # exported as kube_tower_scans_total
+        # Keeps its results between scans; registry credentials are set at each scan.
+        self.trivy = TrivyScanner(settings.vulnerabilities.trivy, {})
 
     @property
     def running(self) -> bool:
@@ -75,7 +80,10 @@ class Scanner:
     async def scan(self) -> Snapshot:
         async with self._lock:
             snap = await run_in_thread("scanner", lambda: asyncio.run(self._scan()))
+            # Versions are shown as soon as they are checked, vulnerabilities fill in afterwards.
             self.snapshot = snap
+            if self.settings.vulnerabilities.enabled:
+                await run_in_thread("trivy", lambda: asyncio.run(self._scan_vulnerabilities(snap)))
             return snap
 
     async def _scan(self) -> Snapshot:
@@ -87,26 +95,36 @@ class Scanner:
         clusters = [c for c in clusters if c.name in reachable]
 
         inventory = ImageInventory(self.settings.images)
+        vuln = self.settings.vulnerabilities
+        read_operator = self.settings.images.enabled and vuln.enabled and vuln.trivy_operator
 
-        def collect(cluster: Cluster) -> tuple[list[ChartReport], list[str]]:
-            charts, errors = [], []
+        def collect(cluster: Cluster):
+            charts, errors, operator_reports = [], [], []
             if self.settings.images.enabled:
                 errors += inventory.collect(cluster)
             if self.settings.helm.enabled:
                 charts, chart_errors = collect_charts(cluster, self.settings.helm)
                 errors += chart_errors
-            return charts, errors
+            if read_operator:
+                operator_reports, operator_errors = collect_operator_reports(cluster)
+                errors += operator_errors
+            return charts, errors, operator_reports
 
         # One thread per cluster: a slow or large cluster does not hold back the others.
         results = await asyncio.gather(*(run_in_thread(f"scan-{c.name}", partial(collect, c)) for c in clusters))
-        for charts, errors in results:
+        operator_reports: dict[str, list[VulnerabilityReport]] = {}
+        for charts, errors, reports in results:
             snap.charts += charts
             snap.errors += errors
+            for key, report in reports:
+                operator_reports.setdefault(str(key), []).append(report)
         snap.images = sorted(inventory.reports.values(), key=lambda r: str(r.image))
+        attach_operator_reports(snap.images, operator_reports)
 
         reg = self.settings.registries
         async with httpx.AsyncClient(timeout=reg.timeout, headers={"User-Agent": "kube-tower"}) as http:
             credentials, _ = resolve_credentials(reg)
+            self.trivy.credentials = credentials  # Secrets may have been rotated
             oci = OCIClient(http, credentials, reg.mirrors, self.settings.images.max_tag_pages)
             helm = HelmClient(http, oci, self.settings.git)
             await asyncio.gather(
@@ -123,6 +141,22 @@ class Scanner:
             len(snap.charts),
         )
         return snap
+
+    async def _scan_vulnerabilities(self, snap: Snapshot) -> None:
+        """Scan with Trivy the images without a Trivy Operator report, run in a worker thread's event loop."""
+        settings = self.settings.vulnerabilities
+        todo = [r for r in snap.images if r.vulnerabilities is None and not vulnerabilities_ignored(r.image, settings.ignore)]
+        if todo and settings.trivy.enabled:
+            if self.trivy.available:
+                snap.errors += await self.trivy.scan_all(todo)
+            else:
+                message = f"trivy binary {settings.trivy.binary!r} not found"
+                log.warning("vulnerability scan skipped: %s", message)
+                for r in todo:
+                    r.vulnerabilities = VulnerabilityReport("trivy", message=message)
+        snap.vulnerabilities_finished_at = datetime.now(UTC)
+        scanned = sum(1 for r in snap.images if r.vulnerabilities and not r.vulnerabilities.message)
+        log.info("vulnerability scan finished: %d/%d images with a report", scanned, len(snap.images))
 
     def trigger(self) -> bool:
         """Start a scan in the background unless one is already running."""
@@ -143,3 +177,14 @@ class Scanner:
         while True:
             await self._safe_scan()
             await asyncio.sleep(self.settings.refresh_interval)
+
+
+def vulnerabilities_ignored(image: ImageRef, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatch(image.name, p) or fnmatch.fnmatch(str(image), p) for p in patterns)
+
+
+def attach_operator_reports(images: list[ImageReport], reports: dict[str, list[VulnerabilityReport]]) -> None:
+    """Give each image the Trivy Operator report of its reference (all clusters together)."""
+    for image in images:
+        if candidates := reports.get(str(image.image)):
+            image.vulnerabilities = pick_report(candidates, image.running_digests)

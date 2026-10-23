@@ -74,6 +74,36 @@ class HelmSettings:
 
 
 @dataclass
+class TrivySettings:
+    """Trivy CLI, used for the images without a Trivy Operator report."""
+
+    enabled: bool = True
+    binary: str = "trivy"
+    # Trivy server URL (client/server mode, e.g. http://kube-tower-trivy:4954): the server holds
+    # the vulnerability database. Empty: standalone mode, the database is downloaded in cacheDir.
+    server_url: str = ""
+    cache_dir: str = "/tmp/trivy"
+    timeout: int = 600  # per image
+    concurrency: int = 2
+    # Images are scanned again after this delay (new CVEs are published every day).
+    rescan_interval: int = 24 * 3600
+    ignore_unfixed: bool = False
+    # Java DB (~1.5 GB) to scan Java archives (jar, war...): when disabled, they are skipped.
+    java_db: bool = False
+    extra_args: list[str] = field(default_factory=list)
+
+
+@dataclass
+class VulnerabilitiesSettings:
+    enabled: bool = True
+    # Read the VulnerabilityReports of Trivy Operator from the clusters where it is installed.
+    trivy_operator: bool = True
+    trivy: TrivySettings = field(default_factory=TrivySettings)
+    # fnmatch patterns on the image name (registry/repository) of images never scanned.
+    ignore: list[str] = field(default_factory=list)
+
+
+@dataclass
 class RegistryCredential:
     """Credentials for one registry host (container registry or Helm repository).
 
@@ -121,6 +151,7 @@ class Settings:
     clusters: ClustersSettings = field(default_factory=ClustersSettings)
     images: ImagesSettings = field(default_factory=ImagesSettings)
     helm: HelmSettings = field(default_factory=HelmSettings)
+    vulnerabilities: VulnerabilitiesSettings = field(default_factory=VulnerabilitiesSettings)
     registries: RegistriesSettings = field(default_factory=RegistriesSettings)
     git: GitSettings = field(default_factory=GitSettings)
 
@@ -142,7 +173,7 @@ def _build(cls: type, data: dict[str, Any]) -> Any:
             kwargs[attr] = _build(hint, value)
         elif get_origin(hint) is list and get_args(hint) and is_dataclass(get_args(hint)[0]):
             kwargs[attr] = [_build(get_args(hint)[0], item) for item in value or []]
-        elif attr == "refresh_interval":
+        elif hint is int and isinstance(value, str):  # durations: refreshInterval: 6h, timeout: 10m
             kwargs[attr] = parse_duration(value)
         else:
             kwargs[attr] = value

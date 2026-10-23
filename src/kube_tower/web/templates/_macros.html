@@ -65,3 +65,9 @@
   </select>
 </form>
 {%- endmacro %}
+
+{% macro severity_counts(report) -%}
+{# Vulnerability counts of an image by severity, only the non-zero ones. #}
+{% set counts = report.counts() %}
+{% for s in Severity if counts[s] %}<span class="sev sev-{{ s.value }}" title="{{ counts[s] }} {{ s.value }}">{{ counts[s] }} {{ s.value[0] | upper }}</span> {% else %}<span class="badge badge-up-to-date">{{ icon("ok") }}none</span>{% endfor %}
+{%- endmacro %}

@@ -24,6 +24,12 @@ app.kubernetes.io/name: {{ include "kube-tower.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{- /* Distinct from the kube-tower pods, which select on name and instance only */ -}}
+{{- define "kube-tower.trivySelectorLabels" -}}
+app.kubernetes.io/name: {{ include "kube-tower.name" . }}-trivy
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
 {{- define "kube-tower.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
 {{- default (include "kube-tower.fullname" .) .Values.serviceAccount.name }}

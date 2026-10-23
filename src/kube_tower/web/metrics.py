@@ -18,7 +18,7 @@ from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 from prometheus_client.registry import Collector
 
 from kube_tower import __version__
-from kube_tower.models import ImageReport, Snapshot, Status
+from kube_tower.models import ImageReport, Severity, Snapshot, Status
 from kube_tower.versions import update_kind
 
 router = APIRouter()
@@ -50,6 +50,7 @@ class SnapshotCollector(Collector):
     def collect(self):
         snap: Snapshot = self.scanner.snapshot
         yield from self._images(snap)
+        yield from self._vulnerabilities(snap)
         yield from self._charts(snap)
         yield from self._clusters(snap)
         yield from self._scan(snap)
@@ -79,6 +80,44 @@ class SnapshotCollector(Collector):
             for cluster, count in sorted(Counter(u.cluster for u in r.usages if u.kind == "Node").items()):
                 nodes.add_metric([cluster, name, tag], count)
         return outdated, workload, nodes
+
+    def _vulnerabilities(self, snap: Snapshot):
+        total = GaugeMetricFamily(
+            "kube_tower_image_vulnerabilities",
+            "Known vulnerabilities of the image by severity (one series per image, all clusters together)",
+            labels=["image", "tag", "severity", "source"],
+        )
+        fixable = GaugeMetricFamily(
+            "kube_tower_image_vulnerabilities_fixable",
+            "Vulnerabilities of the image fixed in a newer version of the package, by severity",
+            labels=["image", "tag", "severity"],
+        )
+        eosl = GaugeMetricFamily(
+            "kube_tower_image_os_eosl",
+            "1 if the OS of the image is end of life (no more security fixes), else 0",
+            labels=["image", "tag", "os"],
+        )
+        failed = GaugeMetricFamily(
+            "kube_tower_image_vulnerability_scan_failed",
+            "1 if the vulnerability scan of the image failed",
+            labels=["image", "tag"],
+        )
+        for r in snap.images:
+            v = r.vulnerabilities
+            if v is None:
+                continue
+            name, tag = r.image.name, r.image.tag or ""
+            failed.add_metric([name, tag], bool(v.message))
+            if v.message:
+                continue
+            counts = v.counts()
+            fixed = {s: sum(1 for x in v.vulnerabilities if x.severity == s and x.fixed_version) for s in Severity}
+            for s in Severity:
+                total.add_metric([name, tag, s.value, v.source], counts[s])
+                fixable.add_metric([name, tag, s.value], fixed[s])
+            if v.os:
+                eosl.add_metric([name, tag, v.os], v.os_eosl)
+        return total, fixable, eosl, failed
 
     def _charts(self, snap: Snapshot):
         chart = GaugeMetricFamily(
@@ -152,12 +191,17 @@ class SnapshotCollector(Collector):
         errors = GaugeMetricFamily(
             "kube_tower_last_scan_errors", "Non fatal collection errors of the last scan (e.g. a forbidden resource)"
         )
+        vulnerabilities = GaugeMetricFamily(
+            "kube_tower_last_vulnerability_scan_timestamp_seconds", "End of the last vulnerability scan (Unix time)"
+        )
+        if snap.vulnerabilities_finished_at:
+            vulnerabilities.add_metric([], snap.vulnerabilities_finished_at.timestamp())
         if snap.finished_at:
             last.add_metric([], snap.finished_at.timestamp())
             if snap.started_at:
                 duration.add_metric([], (snap.finished_at - snap.started_at).total_seconds())
             errors.add_metric([], len(snap.errors))
-        yield from (last, duration, errors)
+        yield from (last, duration, errors, vulnerabilities)
         yield GaugeMetricFamily("kube_tower_scan_in_progress", "1 while a scan is running", value=int(bool(self.scanner.running)))
         scans = CounterMetricFamily("kube_tower_scans", "Scans since start, by result", labels=["result"])
         for result, count in sorted(getattr(self.scanner, "scans_total", {}).items()):

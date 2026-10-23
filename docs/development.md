@@ -37,7 +37,9 @@ src/kube_tower/
   main.py              FastAPI app factory, background scan loop
   config.py            settings (config.yaml + env)
   clusters.py          cluster discovery (in-cluster, Secrets, ArgoCD Secrets)
-  collectors/          inventory: images.py (workloads, nodes), helm.py (ArgoCD Applications)
+  collectors/          inventory: images.py (workloads, nodes), helm.py (ArgoCD Applications),
+                       vulnerabilities.py (Trivy Operator VulnerabilityReports)
+  trivy.py             vulnerability scans with the Trivy CLI
   registry/            oci.py (OCI distribution API), helm.py (Helm repos, OCI charts, git), auth.py
   checkers.py          version comparison, one lookup per repository per scan
   versions.py          tag parsing and ordering

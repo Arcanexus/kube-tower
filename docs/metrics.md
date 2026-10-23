@@ -64,6 +64,12 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
   `latest` and `update` describe the chart itself: a chart can be `outdated` with an empty `update`
   when only a subchart is behind.
 
+### Vulnerabilities
+
+See [vulnerabilities](vulnerabilities.md#metrics): `kube_tower_image_vulnerabilities`,
+`kube_tower_image_vulnerabilities_fixable`, `kube_tower_image_os_eosl`,
+`kube_tower_image_vulnerability_scan_failed` and `kube_tower_last_vulnerability_scan_timestamp_seconds`.
+
 ### Clusters and scans
 
 | Metric | Labels | Value |

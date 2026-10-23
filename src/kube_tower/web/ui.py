@@ -13,13 +13,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from kube_tower import __version__
-from kube_tower.models import ChartDependency, ImageRef, Status
+from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status
 from kube_tower.registry.auth import resolve_credentials
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["version"] = __version__
 templates.env.globals["Status"] = Status
+templates.env.globals["Severity"] = Severity
 
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -78,6 +79,15 @@ def dependency_tree(dependencies: list[ChartDependency], prefix: str = "") -> li
     return rows
 
 
+def vulnerability_sort_key(report: ImageReport) -> tuple:
+    """Most vulnerable images first, then failed scans, then images not scanned (yet), then by name."""
+    vulns = report.vulnerabilities
+    if vulns is None or vulns.message:
+        return (2 if vulns is None else 1, [], str(report.image))
+    counts = vulns.counts()
+    return (0, [-counts[s] for s in Severity], str(report.image))
+
+
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
 
 
@@ -117,6 +127,41 @@ def mount(app: FastAPI) -> None:
         if report is None:
             return Response(status_code=404)
         return render(request, "_image_detail", r=report)
+
+    @app.get("/vulnerabilities", response_class=HTMLResponse, include_in_schema=False)
+    async def vulnerabilities(request: Request):
+        # The severity filter is named status, like on the other pages (counters set it).
+        q, severity, cluster = filters(request)
+        # Counters ignore the severity filter: they are the buttons that set it.
+        matching = sorted(
+            (
+                r
+                for r in request.app.state.scanner.snapshot.images
+                if _matches(str(r.image), q) and (not cluster or cluster in r.clusters)
+            ),
+            key=vulnerability_sort_key,
+        )
+        counts = {id(r): r.vulnerabilities.counts() if r.vulnerabilities else {} for r in matching}
+        affected = {s: sum(1 for r in matching if counts[id(r)].get(s)) for s in Severity}
+        rows = [r for r in matching if not severity or counts[id(r)].get(Severity.parse(severity))]
+        return render(
+            request,
+            "vulnerabilities",
+            tab="vulnerabilities",
+            rows=rows,
+            matching=matching,
+            q=q,
+            severity=severity,
+            cluster=cluster,
+            affected=affected,
+        )
+
+    @app.get("/vulnerabilities/detail", response_class=HTMLResponse, include_in_schema=False)
+    async def vulnerability_detail(request: Request, ref: str = ""):
+        report = next((r for r in request.app.state.scanner.snapshot.images if str(r.image) == ref), None)
+        if report is None:
+            return Response(status_code=404)
+        return render(request, "_vulnerability_detail", r=report)
 
     @app.get("/charts", response_class=HTMLResponse, include_in_schema=False)
     async def charts(request: Request):

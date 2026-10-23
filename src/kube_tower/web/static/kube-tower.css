@@ -102,6 +102,19 @@ h3 .icon { color: var(--kt-sidebar-active); }
 .badge-outdated { background: #ef6c00; color: #fff; }
 .badge-unknown { background: #757575; color: #fff; }
 .badge-error { background: #c62828; color: #fff; }
+
+/* Vulnerability severities */
+.counters-5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 600px) { .counters-5 { grid-template-columns: repeat(2, 1fr); } }
+.sev { display: inline-block; min-width: 1.8rem; padding: .1rem .4rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; text-align: center; white-space: nowrap; }
+.sev-critical { background: #b71c1c; color: #fff; }
+.sev-high { background: #e65100; color: #fff; }
+.sev-medium { background: #f9a825; color: #222; }
+.sev-low { background: #1565c0; color: #fff; }
+.sev-unknown { background: #757575; color: #fff; }
+.cve-table { font-size: .85rem; }
+.cve-table code { white-space: nowrap; }
+.sev-none { background: transparent; color: var(--pico-muted-color); }
 td details summary { font-size: .85rem; }
 
 /* "latest" is a bad practice: highlighted in red */

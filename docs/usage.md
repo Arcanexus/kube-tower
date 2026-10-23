@@ -2,12 +2,12 @@
 
 ## The dashboards
 
-The left sidebar gives access to five pages, and its bottom button switches the theme between
+The left sidebar gives access to six pages, and its bottom button switches the theme between
 auto (follows the system), light and dark; the choice is remembered by the browser. The bar at the
 top shows when the last scan finished, a **Refresh now** button that starts a scan immediately,
 and the collection errors of the last scan, if any (e.g. a missing permission on a cluster).
 
-On the Images and Helm charts pages, the counters at the top are buttons: clicking one shows only
+On the Images, Helm charts and Vulnerabilities pages, the counters at the top are buttons: clicking one shows only
 that status (click it again to show everything). Clicking a line opens a detail panel on the
 right; close it with its button, a click outside or `Esc`.
 
@@ -54,6 +54,11 @@ links to the repository and Artifact Hub, and the subchart tree with each subcha
 | `helm` (HTTP repository) | Application `targetRevision` | from the repository `index.yaml` |
 | `oci` | Application `targetRevision` | from the registry tags |
 | `git` (chart in a git path) | `version` of `Chart.yaml` at `targetRevision` | n/a: the chart follows git, only its subcharts are checked |
+
+### Vulnerabilities
+
+Known vulnerabilities (CVE) of every image, from Trivy Operator reports or scanned with Trivy:
+see [vulnerabilities](vulnerabilities.md).
 
 ### Clusters
 

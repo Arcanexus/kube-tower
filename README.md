@@ -36,6 +36,7 @@ never updates anything, you stay in control of your GitOps workflow.
 | 🔁 **Floating tags too** | `latest`, `stable`… are checked by digest, like watchtower: you know when a newer image was pushed under the same tag. |
 | ⎈ **Helm charts and subcharts** | Charts deployed by ArgoCD Applications, from Helm repositories, OCI registries or git paths, with every dependency checked. |
 | 🌐 **Multi-cluster** | Register clusters ArgoCD-style with a Secret, or reuse the cluster Secrets ArgoCD already has. |
+| 🛡️ **Vulnerabilities (CVE)** | Read from Trivy Operator reports when the cluster has them, else scanned with the bundled Trivy (standalone or client/server). |
 | 🔐 **Registry authentication** | Per registry credentials for private registries, private Helm repositories and Docker Hub rate limits. |
 | 🪶 **Stateless** | No database. One small pod, rebuilt inventory every few hours or on demand. |
 | 📈 **Observable** | JSON API and Prometheus metrics, ready for Grafana dashboards and alerts. |
@@ -84,6 +85,7 @@ Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md).
 | [Configuration](docs/configuration.md) | every setting, registry authentication, secrets |
 | [Clusters](docs/clusters.md) | registering remote clusters, reusing ArgoCD clusters |
 | [Usage](docs/usage.md) | the dashboards, statuses, JSON API |
+| [Vulnerabilities](docs/vulnerabilities.md) | CVE detection with Trivy Operator reports or Trivy |
 | [Metrics and Grafana](docs/metrics.md) | Prometheus exporter, PromQL examples, alerts, Grafana dashboard |
 | [Development](docs/development.md) | run locally, tests and coverage, project layout, releases |
 | [Troubleshooting](docs/troubleshooting.md) | common errors and how to fix them |
@@ -95,6 +97,7 @@ Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md).
 | Updates things for you | ❌ never | ✅ containers | ✅ pull requests | ❌ |
 | Container images | ✅ | ✅ Docker only | ✅ from git | ✅ |
 | Helm charts and subcharts | ✅ from ArgoCD | ❌ | ✅ from git | ❌ |
+| Vulnerabilities (CVE) | ✅ Trivy | ❌ | ❌ | ❌ |
 | Several clusters in one view | ✅ | ❌ | n/a | ❌ one per cluster |
 | Web UI | ✅ | ❌ | ❌ | ❌ (Grafana) |
 

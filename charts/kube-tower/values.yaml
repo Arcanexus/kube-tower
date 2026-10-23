@@ -44,6 +44,25 @@ config:
       - argocd
     includePrerelease: false
     checkDependencies: true
+  # Known vulnerabilities (CVE) of the images, see docs/vulnerabilities.md
+  vulnerabilities:
+    enabled: true
+    # Read the VulnerabilityReports of Trivy Operator in the clusters where it is installed
+    trivyOperator: true
+    trivy:
+      # Scan with the Trivy CLI (shipped in the kube-tower image) the images without a Trivy Operator report
+      enabled: true
+      # Trivy server URL (client/server mode); set automatically when trivy.server.enabled is true
+      serverUrl: ""
+      timeout: 10m
+      concurrency: 2
+      # Images are scanned again after this delay, to find newly published CVEs
+      rescanInterval: 24h
+      ignoreUnfixed: false
+      # Java DB (~1.5 GB more in the cache) to scan Java archives (jar, war...), skipped when disabled
+      javaDb: false
+    # Images never scanned (fnmatch patterns on registry/repository)
+    ignore: []
 
 # Remote clusters to register (see docs/clusters.md). Each entry either:
 #  - creates a Secret in the kube-tower cluster format (ArgoCD layout or kubeconfig), or
@@ -135,6 +154,29 @@ grafanaDashboard:
   # e.g. grafana_folder: Kubernetes (with sidecar.dashboards.folderAnnotation=grafana_folder)
   annotations: {}
 
+trivy:
+  # emptyDir holding the Trivy vulnerability database in standalone mode (no server)
+  cacheSizeLimit: 3Gi
+  # Trivy server (client/server mode): it holds and refreshes the vulnerability database, kube-tower
+  # only sends the image layers analysis. Use it to keep the kube-tower pod small.
+  server:
+    enabled: false
+    image:
+      repository: aquasec/trivy
+      tag: "0.75.0"
+      pullPolicy: IfNotPresent
+    port: 4954
+    cacheSizeLimit: 3Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+
 podAnnotations: {}
 podSecurityContext:
   runAsNonRoot: true
@@ -165,12 +207,13 @@ readinessProbe:
   timeoutSeconds: 3
   failureThreshold: 3
 
+# Trivy scans (standalone mode) need more memory than the inventory alone
 resources:
   requests:
     cpu: 50m
-    memory: 128Mi
+    memory: 256Mi
   limits:
-    memory: 512Mi
+    memory: 1536Mi
 
 nodeSelector: {}
 tolerations: []
