@@ -1,0 +1,18 @@
+{{- if .Values.grafanaDashboard.enabled }}
+# Picked up by the Grafana dashboard sidecar (e.g. kube-prometheus-stack, grafana chart sidecar.dashboards.enabled).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-dashboard
+  namespace: {{ .Values.grafanaDashboard.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    {{- toYaml .Values.grafanaDashboard.labels | nindent 4 }}
+  {{- with .Values.grafanaDashboard.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  kube-tower.json: |-
+    {{- .Files.Get "dashboards/kube-tower.json" | nindent 4 }}
+{{- end }}

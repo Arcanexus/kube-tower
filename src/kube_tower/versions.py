@@ -86,3 +86,14 @@ def is_newer(candidate: str | None, current: str) -> bool:
     if a is None or b is None:
         return False
     return (a.numbers, _semver_suffix_key(a.suffix)) > (b.numbers, _semver_suffix_key(b.suffix))
+
+
+def update_kind(current: str | None, latest: str | None) -> str:
+    """Classify an update as `major`, `minor` or `patch` (empty when there is none or it cannot be told)."""
+    if not current or not latest or not is_newer(latest, current):
+        return ""
+    a, b = parse(latest), parse(current)
+    for kind, i in (("major", 0), ("minor", 1)):
+        if a.numbers[i : i + 1] != b.numbers[i : i + 1]:
+            return kind
+    return "patch"

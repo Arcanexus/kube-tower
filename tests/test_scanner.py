@@ -64,6 +64,7 @@ async def test_trigger_runs_once_at_a_time(fakes):
     assert scanner.running and scanner.trigger() is False
     await scanner._task
     assert scanner.snapshot.finished_at is not None
+    assert scanner.scans_total == {"success": 1, "failure": 0}
 
 
 async def test_failed_scan_keeps_previous_snapshot():
@@ -75,6 +76,7 @@ async def test_failed_scan_keeps_previous_snapshot():
     previous = scanner.snapshot
     await scanner._safe_scan()
     assert scanner.snapshot is previous and not scanner.running
+    assert scanner.scans_total == {"success": 0, "failure": 1}
 
 
 async def test_run_forever_loops(monkeypatch, fakes):

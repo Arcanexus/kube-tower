@@ -52,6 +52,8 @@ registries:
 
 serviceMonitor:
   enabled: true                  # needs the Prometheus operator
+grafanaDashboard:
+  enabled: true                  # ConfigMap for the Grafana dashboard sidecar
 ```
 
 kube-tower has no authentication of its own: put it behind your ingress authentication
@@ -155,6 +157,8 @@ spec:
 
         serviceMonitor:
           enabled: true   # needs the Prometheus operator CRDs
+        grafanaDashboard:
+          enabled: true   # picked up by the Grafana sidecar (kube-prometheus-stack)
   syncPolicy:
     automated:
       prune: true
@@ -228,7 +232,10 @@ To follow the development version, point `source` at the git repository instead:
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | ServiceAccount |
 | `service.type` / `service.port` | `ClusterIP` / `80` | Service |
 | `ingress.*` | disabled | Standard ingress settings |
-| `serviceMonitor.enabled` / `.interval` | `false` / `5m` | Prometheus operator ServiceMonitor |
+| `serviceMonitor.enabled` / `.interval` / `.scrapeTimeout` | `false` / `5m` / `""` | Prometheus operator ServiceMonitor (`honorLabels: true`) |
+| `serviceMonitor.labels` / `.metricRelabelings` | `{}` / `[]` | Extra labels (e.g. `release: kube-prometheus-stack`) and relabelings |
+| `grafanaDashboard.enabled` | `false` | ConfigMap holding the [Grafana dashboard](metrics.md#grafana-dashboard) |
+| `grafanaDashboard.namespace` / `.labels` / `.annotations` | release ns / `grafana_dashboard: "1"` / `{}` | Where and how the Grafana sidecar finds it |
 | `resources`, `nodeSelector`, `tolerations`, `affinity`, `podAnnotations` | | Usual pod settings |
 | `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
 

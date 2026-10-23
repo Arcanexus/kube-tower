@@ -1,6 +1,6 @@
 import pytest
 
-from kube_tower.versions import is_newer, latest_matching, latest_semver, parse
+from kube_tower.versions import is_newer, latest_matching, latest_semver, parse, update_kind
 
 
 def test_parse():
@@ -40,3 +40,21 @@ def test_is_newer():
     assert is_newer("1.0.0", "1.0.0-rc1")
     assert not is_newer("1.2.3", "1.2.3")
     assert not is_newer(None, "1.2.3")
+
+
+@pytest.mark.parametrize(
+    ("current", "latest", "expected"),
+    [
+        ("1.2.3", "2.0.0", "major"),
+        ("v1.2.3", "v1.3.0", "minor"),
+        ("1.25", "1.27", "minor"),
+        ("1.2.3", "1.2.4", "patch"),
+        ("1.0.0-rc1", "1.0.0", "patch"),
+        ("1.2.3", "1.2.3", ""),
+        ("latest", "1.0", ""),
+        (None, "1.0", ""),
+        ("1.0", None, ""),
+    ],
+)
+def test_update_kind(current, latest, expected):
+    assert update_kind(current, latest) == expected

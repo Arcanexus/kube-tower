@@ -108,7 +108,7 @@ jobs:
       - name: Lint chart
         run: |
           helm lint charts/kube-tower
-          helm lint charts/kube-tower --set ingress.enabled=true --set serviceMonitor.enabled=true \
+          helm lint charts/kube-tower --set ingress.enabled=true --set serviceMonitor.enabled=true --set grafanaDashboard.enabled=true \
             --set config.clusters.useArgocdSecrets=true --set registries.existingSecret=regcreds \
             --set git.existingSecret=git --set 'clusters[0].name=prod' --set 'clusters[0].server=https://prod:6443' \
             --set 'registries.credentials[0].registry=docker.io' --set 'registries.credentials[0].existingSecret=dockerhub' \
@@ -122,3 +122,8 @@ jobs:
           # The rendered config must reference the mounted secret files
           grep -q 'passwordFile: /etc/kube-tower/registries/0/password' rendered.yaml
           grep -q 'usernameFile: /etc/kube-tower/registries/0/username' rendered.yaml
+          # The Grafana dashboard ConfigMap must embed the dashboard JSON
+          helm template kube-tower charts/kube-tower --set grafanaDashboard.enabled=true --set serviceMonitor.enabled=true \
+            > monitoring.yaml
+          grep -q '"uid": "kube-tower"' monitoring.yaml
+          grep -q 'honorLabels: true' monitoring.yaml

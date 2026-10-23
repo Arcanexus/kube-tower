@@ -17,7 +17,13 @@ All notable changes to this project are documented here. The format follows
 - Web UI (Images, Helm charts, Clusters, Settings), JSON API and Prometheus metrics.
 - Helm chart, multi-arch image (amd64, arm64, arm/v7), CI with coverage.
 - Documentation: complete ArgoCD `Application` example (OCI chart, ingress, ArgoCD clusters, registry credentials).
+- Prometheus exporter: update type (`major`/`minor`/`patch`/`digest`), workloads and node counts per image,
+  subcharts, cluster info, scan duration, errors and counters, build info.
+- Grafana dashboard (`charts/kube-tower/dashboards/kube-tower.json`), optionally deployed as a ConfigMap for the
+  Grafana sidecar (`grafanaDashboard.enabled`); ServiceMonitor `honorLabels`, extra labels and relabelings.
 
 ### Changed
 
+- `kube_tower_image_outdated` gains an `update` label; `kube_tower_chart_outdated` gains `destination_namespace`,
+  `source` and `update` labels.
 - License changed from GPL-3.0 to Apache-2.0.

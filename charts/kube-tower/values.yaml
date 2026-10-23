@@ -94,9 +94,25 @@ ingress:
   tls: []
 
 serviceMonitor:
-  # Requires the Prometheus operator CRDs
+  # Requires the Prometheus operator CRDs. See docs/metrics.md for the exported metrics.
   enabled: false
   interval: 5m
+  scrapeTimeout: ""
+  # Extra labels, e.g. to match the serviceMonitorSelector of your Prometheus (release: kube-prometheus-stack)
+  labels: {}
+  metricRelabelings: []
+
+# Grafana dashboard (dashboards/kube-tower.json) shipped as a ConfigMap for the Grafana sidecar
+# (kube-prometheus-stack, or the grafana chart with sidecar.dashboards.enabled=true).
+grafanaDashboard:
+  enabled: false
+  # Namespace watched by the sidecar; defaults to the release namespace
+  namespace: ""
+  # Label the sidecar looks for (sidecar.dashboards.label / labelValue)
+  labels:
+    grafana_dashboard: "1"
+  # e.g. grafana_folder: Kubernetes (with sidecar.dashboards.folderAnnotation=grafana_folder)
+  annotations: {}
 
 podAnnotations: {}
 podSecurityContext:

@@ -5,6 +5,9 @@ metadata:
   name: {{ include "kube-tower.fullname" . }}
   labels:
     {{- include "kube-tower.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   selector:
     matchLabels:
@@ -13,4 +16,14 @@ spec:
     - port: http
       path: /metrics
       interval: {{ .Values.serviceMonitor.interval }}
+      {{- with .Values.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      # kube-tower exports the namespace/container of the scanned workloads:
+      # keep them instead of the labels of the kube-tower pod.
+      honorLabels: true
+      {{- with .Values.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 {{- end }}

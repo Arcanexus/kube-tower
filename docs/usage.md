@@ -76,39 +76,10 @@ curl -s http://kube-tower/api/snapshot \
   | jq -r '.images[] | select(.status=="outdated") | "\(.image.ref) -> \(.latest_tag // .latest_digest)"'
 ```
 
-## Prometheus metrics
+## Prometheus metrics and Grafana
 
-`GET /metrics` exposes the result of the last scan:
+`GET /metrics` is a Prometheus exporter for the result of the last scan: current and latest
+version of every image and chart, update type (major, minor, patch), workloads and clusters,
+scan duration and errors. A ready-made Grafana dashboard ships with the chart.
 
-| Metric | Labels | Value |
-| --- | --- | --- |
-| `kube_tower_image_outdated` | `image`, `tag`, `latest`, `status` | 1 if outdated, else 0 |
-| `kube_tower_chart_outdated` | `cluster`, `application`, `chart`, `version`, `latest`, `status` | 1 if the chart or a subchart is outdated |
-| `kube_tower_cluster_reachable` | `cluster` | 1 if the cluster answered |
-| `kube_tower_last_scan_timestamp_seconds` | | end of the last scan |
-
-Enable `serviceMonitor.enabled` in the chart to have them scraped by the Prometheus operator.
-Example alerts:
-
-```yaml
-groups:
-  - name: kube-tower
-    rules:
-      - alert: KubeTowerScanStale
-        expr: time() - kube_tower_last_scan_timestamp_seconds > 2 * 6 * 3600
-        for: 30m
-        annotations:
-          summary: kube-tower has not finished a scan for 12h
-      - alert: KubeTowerClusterUnreachable
-        expr: kube_tower_cluster_reachable == 0
-        for: 1h
-        annotations:
-          summary: "kube-tower cannot reach cluster {{ $labels.cluster }}"
-      - alert: OutdatedHelmCharts
-        expr: sum(kube_tower_chart_outdated) > 0
-        for: 1d
-        labels:
-          severity: info
-        annotations:
-          summary: "{{ $value }} Helm chart(s) have a newer version"
-```
+See [Metrics and Grafana](metrics.md) for the metric reference, PromQL examples, alerts and the dashboard.
