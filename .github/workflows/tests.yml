@@ -66,7 +66,9 @@ jobs:
           name: coverage-badge
           path: coverage-badge.json
 
-  # Publishes coverage-badge.json on the "badges" branch, read by the README badge through shields.io.
+  # Commits the coverage badge data to main (.github/badges/coverage.json), read by the README
+  # badge through shields.io. Only commits when the value changes. Pushes made with GITHUB_TOKEN
+  # never trigger workflows, so this cannot loop; [skip ci] makes it explicit.
   coverage-badge:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.workflow == 'Tests'
     needs: python
@@ -74,19 +76,28 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
       - uses: actions/download-artifact@v8
         with:
           name: coverage-badge
-      - name: Push badge to the badges branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit badge to main
         run: |
-          git init -q badges && mv coverage-badge.json badges/coverage.json && cd badges
+          mkdir -p .github/badges
+          mv coverage-badge.json .github/badges/coverage.json
+          if git diff --quiet -- .github/badges/coverage.json && git ls-files --error-unmatch .github/badges/coverage.json >/dev/null 2>&1; then
+            echo "Coverage unchanged, nothing to commit"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -q --orphan badges && git add coverage.json
-          git commit -q -m "Update coverage badge (${GITHUB_SHA::7})"
-          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
+          git add .github/badges/coverage.json
+          git commit -q -m "Update coverage badge [skip ci]"
+          # main may have moved while the tests were running
+          git pull -q --rebase origin main
+          git push -q origin HEAD:main
 
   helm:
     runs-on: ubuntu-latest

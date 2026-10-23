@@ -61,7 +61,7 @@ docs/                  documentation and ADRs
 
 | Workflow | When | What |
 | --- | --- | --- |
-| `tests.yml` | push on `main`, pull requests | ruff, pytest with coverage (summary + HTML artifact), helm lint/template; updates the coverage badge on `main` |
+| `tests.yml` | push on `main`, pull requests | ruff, pytest with coverage (summary + HTML artifact), helm lint/template; commits the coverage badge data (`.github/badges/coverage.json`) to `main` when it changes |
 | `docker-publish.yml` | push on `main`, tags, pull requests | runs the tests, builds the multi-arch image, pushes it to ghcr.io except for pull requests |
 | `helm-publish.yml` | tags | packages the chart with the tag version and pushes it to `oci://ghcr.io/arcanexus/charts` |
 
