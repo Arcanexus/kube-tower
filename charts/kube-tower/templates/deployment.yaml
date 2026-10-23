@@ -27,6 +27,25 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if include "kube-tower.trivyBinary" . }}
+      initContainers:
+        # Copies the Trivy CLI from the official image, so the kube-tower image stays small
+        - name: trivy
+          image: "{{ .Values.trivy.image.repository }}:{{ .Values.trivy.image.tag }}"
+          imagePullPolicy: {{ .Values.trivy.image.pullPolicy }}
+          command: ["cp", "/usr/local/bin/trivy", "/opt/trivy/bin/trivy"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: trivy-bin
+              mountPath: /opt/trivy/bin
+      {{- end }}
       containers:
         - name: kube-tower
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -79,6 +98,11 @@ spec:
               mountPath: /tmp
             - name: trivy-cache
               mountPath: /tmp/trivy
+            {{- if include "kube-tower.trivyBinary" . }}
+            - name: trivy-bin
+              mountPath: /opt/trivy/bin
+              readOnly: true
+            {{- end }}
             {{- if include "kube-tower.dockerConfigSecretName" . }}
             - name: dockerconfig
               mountPath: /etc/kube-tower/dockerconfig
@@ -95,6 +119,10 @@ spec:
             name: {{ include "kube-tower.fullname" . }}
         - name: tmp
           emptyDir: {}
+        {{- if include "kube-tower.trivyBinary" . }}
+        - name: trivy-bin
+          emptyDir: {}
+        {{- end }}
         - name: trivy-cache
           emptyDir:
             {{- with .Values.trivy.cacheSizeLimit }}

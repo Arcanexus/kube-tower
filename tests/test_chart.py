@@ -193,6 +193,14 @@ def test_vulnerabilities_standalone_by_default(tmp_path):
     assert volumes(docs)["trivy-cache"]["emptyDir"]["sizeLimit"] == "3Gi"
     assert {"name": "trivy-cache", "mountPath": settings.trivy.cache_dir} in container(docs)["volumeMounts"]
     assert not [k for k in docs if k[1] == "kt-kube-tower-trivy"]
+    # The Trivy CLI is copied from the official image by an init container
+    assert settings.trivy.binary == "/opt/trivy/bin/trivy"
+    pod = docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["spec"]
+    (init,) = pod["initContainers"]
+    assert init["image"] == "ghcr.io/aquasecurity/trivy:0.75.0"
+    assert init["command"] == ["cp", "/usr/local/bin/trivy", "/opt/trivy/bin/trivy"]
+    assert {"name": "trivy-bin", "mountPath": "/opt/trivy/bin", "readOnly": True} in container(docs)["volumeMounts"]
+    assert volumes(docs)["trivy-bin"] == {"name": "trivy-bin", "emptyDir": {}}
     rules = docs[("ClusterRole", "kt-kube-tower")]["rules"]
     assert {"apiGroups": ["aquasecurity.github.io"], "resources": ["vulnerabilityreports"], "verbs": ["get", "list"]} in rules
 
@@ -210,10 +218,37 @@ def test_trivy_server(tmp_path):
     assert docs[("Deployment", "kt-kube-tower")]["spec"]["selector"]["matchLabels"] == kube_tower_selector
     trivy = server["spec"]["template"]["spec"]["containers"][0]
     assert trivy["args"] == ["server", "--listen", "0.0.0.0:4954", "--cache-dir", "/cache"]
-    assert trivy["image"] == "aquasec/trivy:0.75.0" and trivy["securityContext"]["readOnlyRootFilesystem"]
+    assert trivy["image"] == "ghcr.io/aquasecurity/trivy:0.75.0" and trivy["securityContext"]["readOnlyRootFilesystem"]
 
     docs = render(
         tmp_path,
         {"trivy": {"server": {"enabled": True}}, "config": {"vulnerabilities": {"trivy": {"serverUrl": "http://other:4954"}}}},
     )
     assert app_settings(tmp_path, docs).vulnerabilities.trivy.server_url == "http://other:4954"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"trivy": {"enabled": False}},  # e.g. linux/arm/v7 nodes: no official Trivy image
+        {"config": {"vulnerabilities": {"enabled": False}}},
+        {"config": {"vulnerabilities": {"trivy": {"enabled": False}}}},
+    ],
+)
+def test_no_trivy_init_container(tmp_path, values):
+    docs = render(tmp_path, values)
+    assert "initContainers" not in docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["spec"]
+    assert "trivy-bin" not in volumes(docs)
+    assert app_settings(tmp_path, docs).vulnerabilities.trivy.binary == "trivy"
+
+
+def test_trivy_images_and_custom_binary(tmp_path):
+    values = {
+        "trivy": {"image": {"tag": "0.76.1"}, "server": {"enabled": True, "image": {"repository": "mirror/trivy"}}},
+        "config": {"vulnerabilities": {"trivy": {"binary": "/usr/bin/trivy"}}},
+    }
+    docs = render(tmp_path, values)
+    assert docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["spec"]["initContainers"][0]["image"].endswith(":0.76.1")
+    server = docs[("Deployment", "kt-kube-tower-trivy")]["spec"]["template"]["spec"]["containers"][0]
+    assert server["image"] == "mirror/trivy:0.76.1"
+    assert app_settings(tmp_path, docs).vulnerabilities.trivy.binary == "/usr/bin/trivy"

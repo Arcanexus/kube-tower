@@ -1,16 +1,3 @@
-# Trivy CLI, used to scan images for vulnerabilities (see docs/vulnerabilities.md).
-# Built from source (checked against the Go checksum database) for every platform of the image
-# (linux/amd64, linux/arm64, linux/arm/v7).
-FROM --platform=$BUILDPLATFORM golang:1.25 AS trivy
-ARG TRIVY_VERSION=0.75.0
-ARG TARGETOS TARGETARCH TARGETVARIANT
-# Trivy needs a newer Go than the base image: let go download the toolchain it asks for
-ENV GOTOOLCHAIN=auto CGO_ENABLED=0
-RUN GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} go install -trimpath \
-      -ldflags "-s -w -X github.com/aquasecurity/trivy/pkg/version/app.ver=${TRIVY_VERSION}" \
-      github.com/aquasecurity/trivy/cmd/trivy@v${TRIVY_VERSION} \
-    && find "$(go env GOPATH)/bin" -name trivy -type f -exec cp {} /usr/local/bin/trivy \;
-
 FROM python:3.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -27,7 +14,6 @@ WORKDIR /app
 COPY src/requirements.txt src/requirements.txt
 RUN pip install -r src/requirements.txt
 
-COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY src/ src/
 
 # Version shown by the UI and the metrics, given by the CI from the image tag

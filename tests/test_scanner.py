@@ -251,7 +251,7 @@ async def test_vulnerabilities_from_operator_then_trivy(fakes, monkeypatch):
 
 async def test_vulnerabilities_without_trivy_binary(fakes):
     snap = await Scanner(Settings(), FakeRegistry()).scan()
-    assert snap.images[0].vulnerabilities.message == "trivy binary 'trivy' not found"
+    assert snap.images[0].vulnerabilities.message == "trivy binary 'trivy' not found (Helm chart: set trivy.enabled=true)"
 
 
 async def test_vulnerabilities_disabled(fakes):

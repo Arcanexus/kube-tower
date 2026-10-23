@@ -23,8 +23,9 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: trivy
-          image: "{{ .Values.trivy.server.image.repository }}:{{ .Values.trivy.server.image.tag }}"
-          imagePullPolicy: {{ .Values.trivy.server.image.pullPolicy }}
+          {{- $image := mergeOverwrite (deepCopy .Values.trivy.image) (.Values.trivy.server.image | default dict) }}
+          image: "{{ $image.repository }}:{{ $image.tag }}"
+          imagePullPolicy: {{ $image.pullPolicy }}
           args: ["server", "--listen", "0.0.0.0:{{ .Values.trivy.server.port }}", "--cache-dir", "/cache"]
           env:
             - name: HOME

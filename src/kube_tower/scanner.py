@@ -177,7 +177,7 @@ class Scanner:
             if self.trivy.available:
                 snap.errors += await self.trivy.scan_all(todo)
             else:
-                message = f"trivy binary {settings.trivy.binary!r} not found"
+                message = f"trivy binary {settings.trivy.binary!r} not found (Helm chart: set trivy.enabled=true)"
                 log.warning("vulnerability scan skipped: %s", message)
                 for r in todo:
                     r.vulnerabilities = VulnerabilityReport("trivy", message=message)

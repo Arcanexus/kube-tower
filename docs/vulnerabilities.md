@@ -9,10 +9,9 @@ from two sources, for each image:
    Nothing is scanned by kube-tower for these images. Reports of every cluster are merged per image
    reference; the newest report of a digest that actually runs wins.
 2. **Trivy, run by kube-tower**: the other images (no operator, images only cached on nodes, a
-   workload the operator has not scanned yet) are scanned with the [Trivy](https://trivy.dev) CLI
-   shipped in the kube-tower image. Trivy pulls the image layers from the registry itself (no
-   container runtime needed), with the [registry credentials](configuration.md#registry-authentication)
-   of kube-tower.
+   workload the operator has not scanned yet) are scanned with the [Trivy](https://trivy.dev) CLI.
+   Trivy pulls the image layers from the registry itself (no container runtime needed), with the
+   [registry credentials](configuration.md#registry-authentication) of kube-tower.
 
 ![Vulnerabilities](images/vulnerabilities.png)
 
@@ -32,6 +31,19 @@ vulnerability of each severity; click one to show only those images. An image wh
 Clicking an image opens the list of its vulnerabilities: ID (linked to its advisory), severity and
 CVSS score, package, installed version and the version that fixes it.
 
+## Where the Trivy CLI comes from
+
+The kube-tower image does not contain Trivy (it would add ~170 MB). With the Helm chart, an init
+container copies the `trivy` binary from the official image (`trivy.image`, default
+`ghcr.io/aquasecurity/trivy:0.75.0`) into an `emptyDir` at pod start, and the chart points
+`config.vulnerabilities.trivy.binary` to it. Trivy is upgraded by changing `trivy.image.tag`,
+without a new kube-tower release.
+
+The official Trivy image exists for `linux/amd64` and `linux/arm64` only. On `linux/arm/v7` nodes,
+set `trivy.enabled: false` (Trivy Operator reports are still read) or set `trivy.image` to an
+image of yours holding `/usr/local/bin/trivy`. Without the chart, install Trivy next to kube-tower
+and set `vulnerabilities.trivy.binary`.
+
 ## Trivy modes
 
 | Mode | When | Database |
@@ -44,7 +56,7 @@ With the Helm chart:
 ```yaml
 trivy:
   server:
-    enabled: true        # deploys aquasec/trivy as a server, kube-tower scans in client mode
+    enabled: true        # deploys the Trivy image as a server, kube-tower scans in client mode
 ```
 
 `config.vulnerabilities.trivy.serverUrl` is set automatically to the chart's server; set it yourself
@@ -100,8 +112,10 @@ kube_tower_image_vulnerabilities_fixable{severity="critical"} > 0
 
 ## Troubleshooting
 
-- **`trivy binary 'trivy' not found`**: the image does not ship Trivy (custom image): install it or
-  set `vulnerabilities.trivy.binary`.
+- **`trivy binary 'trivy' not found`**: Trivy is not installed: with the chart, set `trivy.enabled: true`;
+  otherwise install it and set `vulnerabilities.trivy.binary`.
+- **The pod stays in `Init` (`ImagePullBackOff` on the `trivy` init container)**: the node cannot pull
+  `trivy.image` (no `arm/v7` variant, registry not reachable): use a mirror or set `trivy.enabled: false`.
 - **`cannot download the Trivy database`**: the pod cannot reach `mirror.gcr.io` / `ghcr.io`
   (database registries). Allow them, or use a Trivy server that can.
 - **`remote error: ... UNAUTHORIZED` / `DENIED`**: private image: add credentials for its registry.
