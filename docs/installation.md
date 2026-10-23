@@ -60,6 +60,11 @@ data and never shows secret values.
 
 ## With ArgoCD
 
+The chart is a Helm OCI chart: in the `Application`, `repoURL` is the registry path **without**
+the `oci://` prefix and `chart` is the chart name.
+
+### Minimal Application
+
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -67,10 +72,40 @@ metadata:
   name: kube-tower
   namespace: argocd
 spec:
-  project: default
   destination:
     name: in-cluster
     namespace: kube-tower
+  project: default
+  source:
+    repoURL: ghcr.io/arcanexus/charts
+    chart: kube-tower
+    targetRevision: 0.1.0
+  syncPolicy:
+    automated: {}
+    syncOptions:
+      - CreateNamespace=true
+```
+
+This scans the cluster ArgoCD runs in and the ArgoCD `Application` objects of the `argocd`
+namespace, with the UI reachable only through `kubectl port-forward -n kube-tower svc/kube-tower 8080:80`.
+
+### Complete example
+
+A typical homelab setup: the UI behind Traefik with a cert-manager certificate and an
+authentication middleware, every cluster ArgoCD manages scanned too, Docker Hub and GitHub
+credentials to avoid rate limits, and Prometheus metrics.
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-tower
+  namespace: argocd
+spec:
+  destination:
+    name: in-cluster
+    namespace: kube-tower
+  project: default
   source:
     repoURL: ghcr.io/arcanexus/charts
     chart: kube-tower
@@ -78,13 +113,101 @@ spec:
     helm:
       valuesObject:
         config:
+          refreshInterval: 6h
           clusters:
+            # Scan every cluster registered in ArgoCD, reusing its cluster Secrets
             useArgocdSecrets: true
+            argocdNamespace: argocd
+          images:
+            ignore:
+              - registry.k8s.io/pause*
+          helm:
+            # Namespaces holding ArgoCD Application objects
+            applicationNamespaces:
+              - argocd
+
+        # Each Secret must exist in the kube-tower namespace (see below)
+        registries:
+          credentials:
+            - registry: docker.io
+              existingSecret: dockerhub-credentials
+              usernameKey: username
+              passwordKey: password
+            - registry: ghcr.io
+              existingSecret: ghcr-token
+              passwordKey: token
+
+        ingress:
+          enabled: true
+          className: traefik
+          annotations:
+            cert-manager.io/cluster-issuer: le-wildcard-issuer
+            # kube-tower has no authentication of its own: protect the UI
+            traefik.ingress.kubernetes.io/router.middlewares: authentik-ak-outpost-authentik-embedded-outpost@kubernetescrd
+          hosts:
+            - host: kube-tower.example.com
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - hosts: [kube-tower.example.com]
+              secretName: kube-tower-tls
+
+        serviceMonitor:
+          enabled: true   # needs the Prometheus operator CRDs
   syncPolicy:
-    automated: {}
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ```
+
+Adapt the host, the cluster issuer and the middleware to your cluster, and drop the blocks you
+do not need.
+
+**Credential Secrets.** Keep tokens out of git: create the Secrets referenced in
+`registries.credentials` by hand, with ExternalSecrets or Sealed Secrets, in the `kube-tower`
+namespace. For example:
+
+```sh
+kubectl create namespace kube-tower
+kubectl -n kube-tower create secret generic dockerhub-credentials \
+  --from-literal=username=<docker-hub-user> --from-literal=password=<access-token>
+kubectl -n kube-tower create secret generic ghcr-token --from-literal=token=<github-pat-read-packages>
+```
+
+A missing Secret keeps the pod in `ContainerCreating`: create the Secrets before the first sync,
+or remove the matching entries.
+
+**ArgoCD clusters.** With `useArgocdSecrets: true`, the chart adds a Role in the `argocd`
+namespace so kube-tower can read the ArgoCD cluster Secrets: every remote cluster ArgoCD deploys
+to appears in the dashboards without registering it twice. The credentials ArgoCD uses must be
+allowed to list pods, nodes, workloads and Applications, see [clusters](clusters.md).
+
+**OCI repository in ArgoCD.** Depending on your ArgoCD version, an OCI Helm source may need a
+repository declared with OCI enabled. The chart is public, so no credentials are needed:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-ghcr-arcanexus-charts
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: helm
+  name: arcanexus-charts
+  url: ghcr.io/arcanexus/charts
+  enableOCI: "true"
+```
+
+**Upgrades.** Bump `targetRevision` to the new chart version: kube-tower is stateless, so the
+upgrade only triggers a new scan. kube-tower itself shows when a new chart version is available
+in its Helm charts dashboard.
+
+### Development version
 
 To follow the development version, point `source` at the git repository instead:
 `repoURL: https://github.com/Arcanexus/kube-tower.git`, `path: charts/kube-tower`,
