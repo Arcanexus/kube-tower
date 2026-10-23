@@ -26,6 +26,7 @@ import yaml
 from kubernetes import client, config
 
 from kube_tower.config import ClustersSettings
+from kube_tower.errors import cluster_unreachable_message
 from kube_tower.models import ClusterStatus
 
 log = logging.getLogger(__name__)
@@ -122,7 +123,10 @@ class ClusterRegistry:
                     config.load_kube_config()
                     log.debug("using the local kubeconfig")
                 except (config.ConfigException, FileNotFoundError):
-                    log.warning("no in-cluster config nor kubeconfig found")
+                    log.warning(
+                        "no in-cluster configuration nor kubeconfig found: the local cluster is not scanned "
+                        "(set clusters.inCluster=false if this is expected)"
+                    )
                     return None
             self._local = client.ApiClient()
         return self._local
@@ -146,7 +150,14 @@ class ClusterRegistry:
                 if secret := self._read_secret(namespace, name):
                     secrets.append(secret)
             except client.ApiException as exc:
-                log.warning("cannot read cluster secret %s/%s: %s %s", namespace, name, exc.status, exc.reason)
+                log.warning(
+                    "cannot read cluster secret %s/%s listed in clusters.secretNames: %s %s%s",
+                    namespace,
+                    name,
+                    exc.status,
+                    exc.reason,
+                    " (does it exist in this namespace?)" if exc.status == 404 else "",
+                )
                 statuses.append(ClusterStatus(name, "", "secret", message=exc.reason))
         return secrets
 
@@ -169,7 +180,14 @@ class ClusterRegistry:
             try:
                 secrets = self._list_secrets(namespace, selector)
             except client.ApiException as exc:
-                log.warning("cannot list %s cluster secrets in %s: %s %s", source, namespace, exc.status, exc.reason)
+                log.warning(
+                    "cannot list %s cluster secrets in namespace %s: %s %s%s",
+                    source,
+                    namespace,
+                    exc.status,
+                    exc.reason,
+                    " (kube-tower needs read access to secrets there)" if exc.status == 403 else "",
+                )
                 statuses.append(ClusterStatus(f"<{source}s in {namespace}>", "", source, message=exc.reason))
                 secrets = []
             log.debug("%d %s cluster secret(s) in namespace %s (selector %s)", len(secrets), source, namespace, selector)
@@ -180,7 +198,12 @@ class ClusterRegistry:
                 try:
                     cluster = cluster_from_secret(secret, source)
                 except Exception as exc:  # noqa: BLE001 - one bad secret must not break discovery
-                    log.warning("invalid cluster secret %s/%s: %s", namespace, secret.metadata.name, exc)
+                    log.warning(
+                        "invalid cluster secret %s/%s, cluster ignored: %s (expected keys: name, server, config, or kubeconfig)",
+                        namespace,
+                        secret.metadata.name,
+                        exc,
+                    )
                     statuses.append(ClusterStatus(secret.metadata.name, "", source, message=str(exc)))
                     continue
                 if cluster.server.rstrip("/") in seen_servers:
@@ -197,9 +220,7 @@ class ClusterRegistry:
                     "cluster %s (%s, %s): reachable, Kubernetes %s", cluster.name, cluster.source, cluster.server, status.version
                 )
             else:
-                log.warning(
-                    "cluster %s (%s, %s) is unreachable: %s", cluster.name, cluster.source, cluster.server, status.message
-                )
+                log.warning("cluster %s (%s) skipped: %s", cluster.name, cluster.source, status.message)
         return clusters, statuses
 
     def probe(self, cluster: Cluster) -> ClusterStatus:
@@ -209,5 +230,5 @@ class ClusterRegistry:
             status.reachable = True
             status.version = info.git_version
         except Exception as exc:  # noqa: BLE001
-            status.message = str(exc).splitlines()[0][:300]
+            status.message = cluster_unreachable_message(exc, cluster.server)
         return status

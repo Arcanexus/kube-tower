@@ -7,6 +7,7 @@ import logging
 from collections import Counter
 
 from kube_tower.config import HelmSettings, ImagesSettings
+from kube_tower.errors import explain
 from kube_tower.models import ChartDependency, ChartReport, ImageReport, Status
 from kube_tower.registry.helm import HelmClient, normalize_dependency_repository
 from kube_tower.registry.oci import OCIClient
@@ -16,10 +17,6 @@ log = logging.getLogger(__name__)
 
 # Subcharts of subcharts are read down to this depth (direct subcharts are depth 1).
 MAX_DEPENDENCY_DEPTH = 3
-
-
-def _short(exc: Exception) -> str:
-    return (str(exc) or exc.__class__.__name__).splitlines()[0][:300]
 
 
 def _dependencies(metadata: dict) -> list[ChartDependency]:
@@ -100,7 +97,7 @@ class ImageChecker:
             else:
                 report.status, report.message = Status.OUTDATED, f"a newer image is published under '{ref.tag}'"
         except Exception as exc:  # noqa: BLE001 - one registry failure must not stop the others
-            report.status, report.message = Status.ERROR, _short(exc)
+            report.status, report.message = Status.ERROR, explain(exc)
             log.warning("cannot check image %s: %s", ref, report.message)
 
     async def _fetch_digests(self, report: ImageReport) -> None:
@@ -114,7 +111,7 @@ class ImageChecker:
             if report.status == Status.OUTDATED and report.latest_tag:
                 report.latest_digest = await self._digest(ref.registry, ref.repository, report.latest_tag)
         except Exception as exc:  # noqa: BLE001 - informative only, the status is already known
-            log.debug("cannot read digests of %s: %s", ref, _short(exc))
+            log.debug("cannot read digests of %s: %s", ref, explain(exc))
 
     async def check_all(self, reports: list[ImageReport]) -> None:
         log.info("checking %d image(s) against their registries", len(reports))
@@ -168,7 +165,7 @@ class ChartChecker:
                 return
             dep.status = Status.OUTDATED if is_newer(dep.latest_version, dep.version) else Status.UP_TO_DATE
         except Exception as exc:  # noqa: BLE001
-            dep.status, dep.message = Status.ERROR, _short(exc)
+            dep.status, dep.message = Status.ERROR, explain(exc)
             log.warning("cannot check subchart %s %s (%s): %s", dep.name, dep.version, dep.repository, dep.message)
             return
         log.debug("subchart %s %s: %s (latest %s)", dep.name, dep.version, dep.status.value, dep.latest_version)
@@ -177,7 +174,7 @@ class ChartChecker:
         try:
             metadata = await self._metadata(repository, dep.name, dep.version)
         except Exception as exc:  # noqa: BLE001 - the subchart itself is checked, only its tree is missing
-            log.debug("cannot read subcharts of %s %s: %s", dep.name, dep.version, _short(exc))
+            log.debug("cannot read subcharts of %s %s: %s", dep.name, dep.version, explain(exc))
             return
         dep.dependencies = _dependencies(metadata)
         await asyncio.gather(*(self.check_dependency(d, depth + 1) for d in dep.dependencies))
@@ -214,7 +211,7 @@ class ChartChecker:
                     if self.settings.check_dependencies:
                         metadata = await self._metadata(report.repository, report.chart, report.version)
         except Exception as exc:  # noqa: BLE001
-            report.status, report.message = Status.ERROR, _short(exc)
+            report.status, report.message = Status.ERROR, explain(exc)
             log.warning(
                 "[%s] cannot check chart %s of application %s (%s): %s",
                 report.cluster,

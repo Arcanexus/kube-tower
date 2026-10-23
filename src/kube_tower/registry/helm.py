@@ -13,6 +13,7 @@ import httpx
 import yaml
 
 from kube_tower.config import GitSettings
+from kube_tower.errors import GIT_CREDENTIALS, http_error_message
 from kube_tower.registry.auth import normalize_host
 from kube_tower.registry.oci import OCIClient, RegistryError
 
@@ -59,7 +60,7 @@ class HelmClient:
         if repository not in self._indexes:
             resp = await self.http.get(f"{repository}/index.yaml", auth=self._auth(repository), follow_redirects=True)
             if resp.status_code != 200:
-                raise RegistryError(f"index.yaml fetch failed ({resp.status_code}) for {repository}")
+                raise RegistryError(http_error_message(f"cannot read the index.yaml of the Helm repository {repository}", resp))
             self._indexes[repository] = yaml.safe_load(resp.text) or {}
         return self._indexes[repository]
 
@@ -69,7 +70,7 @@ class HelmClient:
             return await self.oci.list_tags(registry, path)
         entries = (await self._index(repository)).get("entries", {}).get(chart)
         if entries is None:
-            raise RegistryError(f"chart {chart} not found in {repository}")
+            raise RegistryError(f"chart {chart} is not published in the Helm repository {repository}: check the chart name")
         return [e["version"] for e in entries]
 
     async def chart_metadata(self, repository: str, chart: str, version: str) -> dict:
@@ -79,16 +80,16 @@ class HelmClient:
             manifest = await self.oci.get_manifest(registry, path, version, HELM_MANIFEST_ACCEPT)
             layer = next((layer for layer in manifest.get("layers", []) if layer.get("mediaType") == HELM_CHART_LAYER), None)
             if layer is None:
-                raise RegistryError(f"{repository}/{chart}:{version} is not a helm chart")
+                raise RegistryError(f"{repository}/{chart}:{version} is an OCI artifact but not a Helm chart")
             return chart_yaml_from_archive(await self.oci.get_blob(registry, path, layer["digest"]))
         entries = (await self._index(repository)).get("entries", {}).get(chart, [])
         entry = next((e for e in entries if e.get("version") == version), None)
         if entry is None:
-            raise RegistryError(f"version {version} of {chart} not found in {repository}")
+            raise RegistryError(f"version {version} of chart {chart} is not published in {repository} (removed from the index?)")
         url = urljoin(f"{repository.rstrip('/')}/", entry["urls"][0])
         resp = await self.http.get(url, auth=self._auth(url), follow_redirects=True)
         if resp.status_code != 200:
-            raise RegistryError(f"chart download failed ({resp.status_code}) for {url}")
+            raise RegistryError(http_error_message(f"cannot download chart {chart} {version}", resp))
         return chart_yaml_from_archive(resp.content)
 
     async def git_chart_metadata(self, repo_url: str, ref: str, path: str) -> dict:
@@ -96,7 +97,7 @@ class HelmClient:
         parsed = urlparse(repo_url if "://" in repo_url else f"https://{repo_url.split('@')[-1].replace(':', '/', 1)}")
         template = self.git.raw_url_templates.get(parsed.hostname or "")
         if template is None:
-            raise RegistryError(f"no raw URL template configured for git host {parsed.hostname}")
+            raise RegistryError(f"no raw URL template for git host {parsed.hostname}: add one in git.rawUrlTemplates")
         owner, _, repo = parsed.path.strip("/").removesuffix(".git").partition("/")
         ref = "HEAD" if ref in ("", "HEAD") else ref
         url = template.format(owner=owner, repo=repo, ref=ref, path=f"{path.strip('/')}/Chart.yaml".lstrip("/"))
@@ -105,7 +106,9 @@ class HelmClient:
             headers["Authorization"] = f"Bearer {token}"
         resp = await self.http.get(url, headers=headers, follow_redirects=True)
         if resp.status_code != 200:
-            raise RegistryError(f"Chart.yaml fetch failed ({resp.status_code}) for {url}")
+            raise RegistryError(
+                http_error_message(f"cannot read {path.strip('/')}/Chart.yaml at {ref} in {repo_url}", resp, GIT_CREDENTIALS)
+            )
         return yaml.safe_load(resp.text) or {}
 
 

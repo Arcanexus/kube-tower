@@ -12,6 +12,7 @@ from kubernetes import client
 
 from kube_tower.clusters import Cluster
 from kube_tower.config import ImagesSettings
+from kube_tower.errors import kubernetes_hint
 from kube_tower.models import ImageRef, ImageReport, Usage
 from kube_tower.registry.oci import parse_image_ref
 
@@ -83,8 +84,11 @@ class ImageInventory:
                         counts[what] = len(items)
                         return items
             except client.ApiException as exc:
-                errors.append(f"[{cluster.name}] cannot list {what}: {exc.status} {exc.reason}")
-                log.warning("[%s] cannot list %s: %s %s", cluster.name, what, exc.status, exc.reason)
+                message = f"[{cluster.name}] cannot list {what}: {exc.status} {exc.reason}"
+                if hint := kubernetes_hint(exc.status, what):
+                    message += f" - {hint}"
+                errors.append(message)
+                log.warning("%s", message)
                 return items
 
         for pod in safe("pods", core.list_pod_for_all_namespaces):

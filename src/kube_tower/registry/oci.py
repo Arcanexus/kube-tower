@@ -14,6 +14,7 @@ from pathlib import Path
 
 import httpx
 
+from kube_tower.errors import http_error_message
 from kube_tower.models import ImageRef
 
 log = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ def load_docker_credentials(path: str) -> dict[str, tuple[str, str]]:
 
 
 class RegistryError(Exception):
-    pass
+    """A registry, Helm repository or git host answered, but not with what was asked: the message says why."""
 
 
 class OCIClient:
@@ -112,7 +113,7 @@ class OCIClient:
         log.debug("requesting a %s token for %s (%s)", "authenticated" if auth else "anonymous", registry, query["scope"])
         resp = await self.http.get(fields["realm"], params=query, auth=auth)
         if resp.status_code != 200:
-            raise RegistryError(f"token request failed ({resp.status_code}) for {registry}")
+            raise RegistryError(http_error_message(f"cannot get a pull token for {registry}", resp))
         body = resp.json()
         token = body.get("token") or body.get("access_token")
         self._tokens[key] = token
@@ -145,7 +146,7 @@ class OCIClient:
                 break
             resp = await self._request("GET", registry, repository, url)
             if resp.status_code != 200:
-                raise RegistryError(f"tags list failed ({resp.status_code}) for {registry}/{repository}")
+                raise RegistryError(http_error_message(f"cannot list the tags of {registry}/{repository}", resp))
             tags.extend(resp.json().get("tags") or [])
             log.debug("%s/%s: %d tag(s) so far", registry, repository, len(tags))
             match = _LINK_RE.search(resp.headers.get("link", ""))
@@ -157,7 +158,7 @@ class OCIClient:
         url = f"https://{host}/v2/{repository}/manifests/{reference}"
         resp = await self._request("HEAD", registry, repository, url, headers={"Accept": MANIFEST_ACCEPT})
         if resp.status_code != 200:
-            raise RegistryError(f"manifest HEAD failed ({resp.status_code}) for {registry}/{repository}:{reference}")
+            raise RegistryError(http_error_message(f"cannot read the digest of {registry}/{repository}:{reference}", resp))
         return resp.headers.get("docker-content-digest")
 
     async def get_manifest(self, registry: str, repository: str, reference: str, accept: str) -> dict:
@@ -165,7 +166,7 @@ class OCIClient:
         url = f"https://{host}/v2/{repository}/manifests/{reference}"
         resp = await self._request("GET", registry, repository, url, headers={"Accept": accept})
         if resp.status_code != 200:
-            raise RegistryError(f"manifest GET failed ({resp.status_code}) for {registry}/{repository}:{reference}")
+            raise RegistryError(http_error_message(f"cannot read the manifest of {registry}/{repository}:{reference}", resp))
         return resp.json()
 
     async def get_blob(self, registry: str, repository: str, digest: str) -> bytes:
@@ -173,5 +174,5 @@ class OCIClient:
         url = f"https://{host}/v2/{repository}/blobs/{digest}"
         resp = await self._request("GET", registry, repository, url, follow_redirects=True)
         if resp.status_code != 200:
-            raise RegistryError(f"blob GET failed ({resp.status_code}) for {registry}/{repository}@{digest}")
+            raise RegistryError(http_error_message(f"cannot download {registry}/{repository}@{digest}", resp))
         return resp.content
