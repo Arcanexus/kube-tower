@@ -27,6 +27,11 @@ class ImageRef:
     def name(self) -> str:
         return f"{self.registry}/{self.repository}"
 
+    @property
+    def is_latest(self) -> bool:
+        """`latest` (explicit, or implied by an image without tag): a bad practice, highlighted in the UI."""
+        return self.tag == "latest"
+
     def __str__(self) -> str:
         out = self.name
         if self.tag:
@@ -55,6 +60,7 @@ class ImageReport:
     status: Status = Status.UNKNOWN
     latest_tag: str | None = None
     latest_digest: str | None = None
+    tag_digest: str | None = None  # digest published in the registry for the current tag
     message: str | None = None
 
     @property
@@ -70,6 +76,20 @@ class ChartDependency:
     status: Status = Status.UNKNOWN
     latest_version: str | None = None
     message: str | None = None
+    dependencies: list[ChartDependency] = field(default_factory=list)  # subcharts of the subchart
+
+    def walk(self, depth: int = 0):
+        """Yield (depth, dependency) for this subchart and its own subcharts, depth first."""
+        yield depth, self
+        for d in self.dependencies:
+            yield from d.walk(depth + 1)
+
+
+def _worst(statuses: set[Status]) -> Status:
+    for s in (Status.OUTDATED, Status.ERROR, Status.UNKNOWN):
+        if s in statuses:
+            return s
+    return Status.UP_TO_DATE
 
 
 @dataclass
@@ -88,13 +108,14 @@ class ChartReport:
     message: str | None = None
     dependencies: list[ChartDependency] = field(default_factory=list)
 
+    def walk(self):
+        """Yield (depth, dependency) for the whole subchart tree, depth first (direct subcharts at depth 1)."""
+        for d in self.dependencies:
+            yield from d.walk(1)
+
     @property
     def worst_status(self) -> Status:
-        statuses = {self.status, *(d.status for d in self.dependencies)}
-        for s in (Status.OUTDATED, Status.ERROR, Status.UNKNOWN):
-            if s in statuses:
-                return s
-        return Status.UP_TO_DATE
+        return _worst({self.status, *(d.status for _, d in self.walk())})
 
 
 @dataclass

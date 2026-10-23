@@ -1,42 +1,40 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, counters, filters, icon, page_title %}
 {% block content %}
-{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.") }}
+{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subchart tree. Click a chart for its details.") }}
 {{ filters("charts", q, status, cluster, snapshot) }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
-{{ counters(rows, "worst_status") }}
+{{ counters(matching, "worst_status", status) }}
 <p><small>{{ rows | length }} chart(s)</small></p>
 <div class="overflow-auto">
-<table class="striped">
-  <thead><tr><th>Application</th><th>Chart</th><th>Current</th><th>Latest</th><th>Status</th><th>Subcharts</th></tr></thead>
-  <tbody>
+<table class="chart-table">
+  <thead><tr><th>Application</th><th>Chart</th><th>Current</th><th>Latest</th><th>Status</th></tr></thead>
   {% for c in rows %}
+  {# One tbody per chart: the chart row and its subchart tree, all opening the same detail panel. #}
+  <tbody class="clickable" tabindex="0" hx-trigger="click, keyup[key=='Enter']" hx-target="#detail"
+         hx-get="charts/detail?cluster={{ c.cluster | urlencode }}&namespace={{ c.app_namespace | urlencode }}&app={{ c.application | urlencode }}&chart={{ c.chart | urlencode }}">
     <tr>
       <td>{{ c.application }}<br><small>{{ c.cluster }}{% if c.destination_namespace %} → {{ c.destination_namespace }}{% endif %}</small></td>
       <td><code>{{ c.chart }}</code><br><small>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }} · {{ c.repository }}</small></td>
       <td>{{ c.version }}</td>
       <td>{{ c.latest_version or "" }}</td>
       <td>{{ badge(c.status) }}{% if c.message %}<br><small>{{ c.message }}</small>{% endif %}</td>
-      <td>
-        {% if c.dependencies %}
-        <details {% if c.worst_status == Status.OUTDATED and c.status != Status.OUTDATED %}open{% endif %}>
-          <summary>{{ c.dependencies | length }} subchart(s) {{ badge(c.worst_status) }}</summary>
-          <table>
-            {% for d in c.dependencies %}
-            <tr><td><code>{{ d.name }}</code></td><td>{{ d.version }}</td><td>{{ d.latest_version or "" }}</td>
-                <td>{{ badge(d.status) }}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</td></tr>
-            {% endfor %}
-          </table>
-        </details>
-        {% else %}<small>none</small>{% endif %}
-      </td>
     </tr>
-  {% else %}
-    <tr><td colspan="6">No chart.</td></tr>
-  {% endfor %}
+    {% for connector, d in dependency_tree(c.dependencies) %}
+    <tr class="subchart">
+      <td></td>
+      <td><span class="tree">{{ connector }}</span><code>{{ d.name }}</code></td>
+      <td>{{ d.version }}</td>
+      <td>{{ d.latest_version or "" }}</td>
+      <td>{{ badge(d.status) }}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</td>
+    </tr>
+    {% endfor %}
   </tbody>
+  {% else %}
+  <tbody><tr><td colspan="5">No chart.</td></tr></tbody>
+  {% endfor %}
 </table>
 </div>
 {% endblock %}

@@ -25,6 +25,9 @@ All notable changes to this project are documented here. The format follows
   created by the chart from the values or taken from existing Secrets; existing cluster Secrets
   are referenced by name (`clusters[].existingSecret`, new `clusters.secretNames` setting).
 - Helm chart rendering tests.
+- UI: Logs page following the application and scanner logs; light/dark theme switch; status counters
+  filter the results; detail panels for images (digest comparison, registry links, usages) and charts;
+  subcharts shown as an expanded tree, with the subcharts of subcharts; `latest` tags highlighted in red.
 
 ### Fixed
 
@@ -36,7 +39,7 @@ All notable changes to this project are documented here. The format follows
 - The UI works however it is exposed (http, https behind an ingress terminating TLS, port-forward,
   sub-path): every UI link is relative (no more mixed content errors), and uvicorn trusts the
   `X-Forwarded-*` headers.
-- Version check errors (image, chart, subchart) are logged as warnings and listed with the scan
+- Version check errors (image, chart, subchart) are logged as warnings (Logs page, pod logs) and listed with the scan
   errors in the UI and the `kube_tower_last_scan_errors` metric; they were only shown in the tables.
 
 ### Changed

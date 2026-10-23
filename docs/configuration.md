@@ -23,6 +23,7 @@ images:
   includeNodeImages: true      # images cached on nodes (node.status.images)
   includePrerelease: false
   checkFloatingDigests: true   # compare digests for latest/stable tags
+  fetchTagDigests: true        # published digests of the current/latest tags (image details)
   ignore:                      # fnmatch patterns on registry/repository[:tag]
     - registry.k8s.io/pause*
   maxTagPages: 10              # 1000 tags per page
@@ -30,7 +31,7 @@ helm:
   enabled: true
   applicationNamespaces: [argocd]   # [] = all namespaces
   includePrerelease: false
-  checkDependencies: true
+  checkDependencies: true     # subcharts, and their own subcharts (3 levels)
 registries:
   dockerConfigPath: /etc/kube-tower/dockerconfig/config.json
   credentials:                 # per registry, override the docker config.json

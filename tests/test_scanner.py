@@ -168,9 +168,13 @@ def test_check_errors():
     chart = ChartReport("c1", "app", "argocd", "app", "https://charts.example.com", "1.0.0", "helm")
     chart.status, chart.message = Status.ERROR, "404 Not Found"
     parent = ChartReport("c1", "mon", "argocd", "mon", "https://charts.example.com", "1.0.0", "helm", status=Status.UP_TO_DATE)
-    parent.dependencies = [ChartDependency("redis", "18.0.0", "https://x", status=Status.ERROR, message="timeout")]
+    nested = ChartDependency("common", "2.0.0", "https://x", status=Status.ERROR, message="404")
+    parent.dependencies = [
+        ChartDependency("redis", "18.0.0", "https://x", status=Status.ERROR, message="timeout", dependencies=[nested])
+    ]
     assert scanner_module.check_errors(Snapshot(images=[image, ok], charts=[chart, parent])) == [
         "image docker.io/library/nginx:1.25: 401 Unauthorized",
         "[c1] chart app of application app: 404 Not Found",
         "[c1] subchart redis 18.0.0 of application mon: timeout",
+        "[c1] subchart common 2.0.0 of application mon: 404",
     ]

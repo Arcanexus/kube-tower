@@ -13,9 +13,19 @@ from kube_tower.versions import is_newer, latest_matching, latest_semver, parse
 
 log = logging.getLogger(__name__)
 
+# Subcharts of subcharts are read down to this depth (direct subcharts are depth 1).
+MAX_DEPENDENCY_DEPTH = 3
+
 
 def _short(exc: Exception) -> str:
     return (str(exc) or exc.__class__.__name__).splitlines()[0][:300]
+
+
+def _dependencies(metadata: dict) -> list[ChartDependency]:
+    return [
+        ChartDependency(name=d.get("name", ""), version=str(d.get("version", "")), repository=d.get("repository", ""))
+        for d in metadata.get("dependencies") or []
+    ]
 
 
 class _Memo:
@@ -61,6 +71,7 @@ class ImageChecker:
                 tags = await self._tags(ref.registry, ref.repository)
                 report.latest_tag = latest_matching(ref.tag, tags, self.settings.include_prerelease)
                 report.status = Status.OUTDATED if is_newer(report.latest_tag, ref.tag) else Status.UP_TO_DATE
+                await self._fetch_digests(report)
                 return
             # Floating tag (latest, stable, ...): compare digests like watchtower does.
             if not self.settings.check_floating_digests or not report.running_digests:
@@ -74,6 +85,19 @@ class ImageChecker:
         except Exception as exc:  # noqa: BLE001 - one registry failure must not stop the others
             report.status, report.message = Status.ERROR, _short(exc)
             log.warning("cannot check image %s: %s", ref, report.message)
+
+    async def _fetch_digests(self, report: ImageReport) -> None:
+        """Best effort: published digests of the current and latest tags, shown in the image details."""
+        if not self.settings.fetch_tag_digests:
+            return
+        ref = report.image
+        try:
+            if report.running_digests:
+                report.tag_digest = await self._digest(ref.registry, ref.repository, ref.tag)
+            if report.status == Status.OUTDATED and report.latest_tag:
+                report.latest_digest = await self._digest(ref.registry, ref.repository, report.latest_tag)
+        except Exception as exc:  # noqa: BLE001 - informative only, the status is already known
+            log.debug("cannot read digests of %s: %s", ref, _short(exc))
 
     async def check_all(self, reports: list[ImageReport]) -> None:
         await asyncio.gather(*(self.check(r) for r in reports))
@@ -110,7 +134,7 @@ class ChartChecker:
     async def _latest(self, repository: str, chart: str) -> str | None:
         return latest_semver(await self._versions(repository, chart), self.settings.include_prerelease)
 
-    async def check_dependency(self, dep: ChartDependency) -> None:
+    async def check_dependency(self, dep: ChartDependency, depth: int = 1) -> None:
         repository = normalize_dependency_repository(dep.repository)
         if repository is None:
             dep.status, dep.message = Status.UNKNOWN, "local or aliased dependency"
@@ -120,11 +144,21 @@ class ChartChecker:
             if parse(dep.version) is None:
                 # Version constraint such as "~1.2" or "1.x": just display the latest one.
                 dep.status, dep.message = Status.UNKNOWN, "version is a constraint"
-            else:
-                dep.status = Status.OUTDATED if is_newer(dep.latest_version, dep.version) else Status.UP_TO_DATE
+                return
+            dep.status = Status.OUTDATED if is_newer(dep.latest_version, dep.version) else Status.UP_TO_DATE
         except Exception as exc:  # noqa: BLE001
             dep.status, dep.message = Status.ERROR, _short(exc)
             log.warning("cannot check subchart %s %s (%s): %s", dep.name, dep.version, dep.repository, dep.message)
+            return
+        if depth >= MAX_DEPENDENCY_DEPTH:
+            return
+        try:
+            metadata = await self._metadata(repository, dep.name, dep.version)
+        except Exception as exc:  # noqa: BLE001 - the subchart itself is checked, only its tree is missing
+            log.debug("cannot read subcharts of %s %s: %s", dep.name, dep.version, _short(exc))
+            return
+        dep.dependencies = _dependencies(metadata)
+        await asyncio.gather(*(self.check_dependency(d, depth + 1) for d in dep.dependencies))
 
     async def check(self, report: ChartReport) -> None:
         metadata: dict | None = None
@@ -155,10 +189,7 @@ class ChartChecker:
             )
             return
         if metadata and self.settings.check_dependencies:
-            report.dependencies = [
-                ChartDependency(name=d.get("name", ""), version=str(d.get("version", "")), repository=d.get("repository", ""))
-                for d in metadata.get("dependencies") or []
-            ]
+            report.dependencies = _dependencies(metadata)
             await asyncio.gather(*(self.check_dependency(d) for d in report.dependencies))
 
     async def check_all(self, reports: list[ChartReport]) -> None:

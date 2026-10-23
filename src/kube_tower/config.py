@@ -57,6 +57,8 @@ class ImagesSettings:
     include_prerelease: bool = False
     # Check the digest of floating tags (latest, stable...) against the registry.
     check_floating_digests: bool = True
+    # Read the published digests of the current and latest tags, shown in the image details.
+    fetch_tag_digests: bool = True
     # fnmatch patterns on the image name (registry/repository), e.g. "registry.k8s.io/pause*".
     ignore: list[str] = field(default_factory=list)
     max_tag_pages: int = 10

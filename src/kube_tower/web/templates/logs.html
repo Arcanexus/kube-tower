@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, page_title %}
+{% block content %}
+{{ page_title("logs", "Logs", "Last application and scanner logs, kept in memory (the level is set by logs.level in the configuration).") }}
+<form class="filters log-filters" action="logs" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Filter…" aria-label="Filter" onchange="this.form.submit()">
+  <select name="level" aria-label="Minimum level" onchange="this.form.submit()">
+    {% for l in levels %}<option {% if l == level %}selected{% endif %}>{{ l }}</option>{% endfor %}
+  </select>
+  <label class="log-follow"><input type="checkbox" id="log-pause" role="switch">Pause</label>
+</form>
+<div id="log-lines" class="log-lines">{% include "_log_lines.html" %}</div>
+{% with lines=[] %}{% include "_log_tail.html" %}{% endwith %}
+<script>
+  // Follow the end of the logs unless the user scrolled up; keep the page light.
+  (() => {
+    const box = document.getElementById("log-lines");
+    box.scrollTop = box.scrollHeight;
+    let follow = true;
+    box.addEventListener("scroll", () => { follow = box.scrollHeight - box.scrollTop - box.clientHeight < 40; });
+    document.body.addEventListener("htmx:afterSettle", () => {
+      while (box.children.length > 2000) box.firstElementChild.remove();
+      if (follow) box.scrollTop = box.scrollHeight;
+    });
+  })();
+</script>
+{% endblock %}
