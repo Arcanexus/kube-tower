@@ -93,7 +93,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - name: Lint chart
         run: |
           helm lint charts/kube-tower
