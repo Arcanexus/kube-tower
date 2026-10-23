@@ -21,6 +21,18 @@ All notable changes to this project are documented here. The format follows
   subcharts, cluster info, scan duration, errors and counters, build info.
 - Grafana dashboard (`charts/kube-tower/dashboards/kube-tower.json`), optionally deployed as a ConfigMap for the
   Grafana sidecar (`grafanaDashboard.enabled`); ServiceMonitor `honorLabels`, extra labels and relabelings.
+- Helm chart: cluster, registry (per registry and dockerconfigjson) and git credentials can be
+  created by the chart from the values or taken from existing Secrets; existing cluster Secrets
+  are referenced by name (`clusters[].existingSecret`, new `clusters.secretNames` setting).
+- Helm chart rendering tests.
+
+### Fixed
+
+- Pod restarting in a loop during long scans: scans run in a dedicated worker thread so the web
+  server and `/healthz` stay responsive, each cluster is collected in its own thread (in parallel),
+  Kubernetes lists are paginated, the chart adds a
+  `startupProbe` and longer probe timeouts (`startupProbe`, `livenessProbe`, `readinessProbe` values).
+- The UI reloads itself when the scan it shows as in progress is over.
 
 ### Changed
 

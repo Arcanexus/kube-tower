@@ -1,4 +1,6 @@
 import asyncio
+import threading
+import time
 
 import pytest
 
@@ -96,3 +98,65 @@ async def test_run_forever_loops(monkeypatch, fakes):
     with pytest.raises(asyncio.CancelledError):
         await scanner.run_forever()
     assert len(calls) == 2
+
+
+async def test_scan_does_not_block_the_web_loop(fakes, monkeypatch):
+    threads = []
+
+    async def slow_check(self, reports):
+        threads.append(threading.current_thread().name)
+        time.sleep(0.5)  # CPU bound / blocking work in the scan
+
+    monkeypatch.setattr(scanner_module.ImageChecker, "check_all", slow_check)
+    scanner = Scanner(Settings(), FakeRegistry())
+    assert scanner.trigger()
+    await asyncio.sleep(0.05)
+    # The web server's loop keeps serving while the scan blocks its own loop
+    start = time.monotonic()
+    for _ in range(10):
+        await asyncio.sleep(0.01)
+    assert time.monotonic() - start < 0.4
+    assert scanner.running
+    await scanner._task
+    assert threads == ["scanner"] and scanner.snapshot.finished_at is not None
+
+
+async def test_scan_error_is_raised_in_the_web_loop(monkeypatch):
+    class Broken:
+        def discover(self):
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await Scanner(Settings(), Broken()).scan()
+
+
+async def test_one_thread_per_cluster(monkeypatch):
+    class TwoClusters:
+        def discover(self):
+            names = ["a", "b"]
+            return [Cluster(n, f"https://{n}", "secret", None) for n in names], [
+                ClusterStatus(n, f"https://{n}", "secret", True) for n in names
+            ]
+
+    threads = []
+
+    def collect(self, cluster):
+        threads.append(threading.current_thread().name)
+        time.sleep(0.3)
+        self.add("nginx:1.25", Usage(cluster.name, "Pod", "default", "web"))
+        return [f"[{cluster.name}] error"]
+
+    async def check_all(self, reports):
+        pass
+
+    monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
+    monkeypatch.setattr(scanner_module, "collect_charts", lambda cluster, settings: ([], []))
+    monkeypatch.setattr(scanner_module.ImageChecker, "check_all", check_all)
+    monkeypatch.setattr(scanner_module.ChartChecker, "check_all", check_all)
+
+    start = time.monotonic()
+    snap = await Scanner(Settings(), TwoClusters()).scan()
+    assert time.monotonic() - start < 0.55  # both clusters collected in parallel
+    assert sorted(threads) == ["scan-a", "scan-b"]
+    assert snap.errors == ["[a] error", "[b] error"]
+    assert snap.images[0].clusters == ["a", "b"]

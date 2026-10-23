@@ -169,3 +169,13 @@ def test_grafana_dashboard_uses_exported_metrics():
     exported = {line.split("{")[0].split(" ")[0] for line in client.get("/metrics").text.splitlines() if not line.startswith("#")}
     used = set(re.findall(r"kube_tower_[a-z_]+", text))
     assert used and used <= exported, used - exported
+
+
+def test_status_reloads_page_when_scan_ends():
+    client, scanner = _client()
+    scanner.running = True
+    resp = client.get("/status?polling=1")
+    assert "Scan in progress" in resp.text and "HX-Refresh" not in resp.headers
+    scanner.running = False
+    assert client.get("/status?polling=1").headers["HX-Refresh"] == "true"
+    assert "HX-Refresh" not in client.get("/status").headers

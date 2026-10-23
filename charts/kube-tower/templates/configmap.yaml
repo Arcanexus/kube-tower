@@ -1,9 +1,11 @@
-{{- /* Per registry credentials are mounted from Secrets: only their file paths go in the config. */ -}}
+{{- /* Credentials are mounted from Secrets: only their file paths go in the config. */ -}}
 {{- $config := deepCopy .Values.config }}
 {{- $credentials := list }}
 {{- range $i, $c := .Values.registries.credentials }}
-{{- $entry := dict "registry" $c.registry "passwordFile" (printf "/etc/kube-tower/registries/%d/%s" $i ($c.passwordKey | default "password")) }}
-{{- if $c.usernameKey }}
+{{- /* Secrets created by the chart always store the password under "password" */ -}}
+{{- $passwordKey := ternary ($c.passwordKey | default "password") "password" (not (empty $c.existingSecret)) }}
+{{- $entry := dict "registry" (required (printf "registries.credentials[%d].registry is required" $i) $c.registry) "passwordFile" (printf "/etc/kube-tower/registries/%d/%s" $i $passwordKey) }}
+{{- if and $c.existingSecret $c.usernameKey }}
 {{- $_ := set $entry "usernameFile" (printf "/etc/kube-tower/registries/%d/%s" $i $c.usernameKey) }}
 {{- else if $c.username }}
 {{- $_ := set $entry "username" $c.username }}
@@ -13,6 +15,13 @@
 {{- $registries := deepCopy ($config.registries | default dict) }}
 {{- $_ := set $registries "credentials" $credentials }}
 {{- $_ := set $config "registries" $registries }}
+{{- /* Existing cluster Secrets referenced in .Values.clusters are read by name */ -}}
+{{- $clusters := deepCopy ($config.clusters | default dict) }}
+{{- $secretNames := concat ($clusters.secretNames | default list) (include "kube-tower.clusterSecretNames" . | fromJsonArray) | uniq }}
+{{- if $secretNames }}
+{{- $_ := set $clusters "secretNames" $secretNames }}
+{{- $_ := set $config "clusters" $clusters }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -15,6 +15,7 @@ spec:
         {{- include "kube-tower.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/credentials: {{ include (print $.Template.BasePath "/credential-secrets.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -37,24 +38,37 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            {{- if .Values.git.existingSecret }}
+            {{- with include "kube-tower.gitSecretName" . }}
             - name: GIT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.git.existingSecret }}
-                  key: {{ .Values.git.secretKey }}
+                  name: {{ . }}
+                  key: {{ ternary $.Values.git.secretKey "token" (not (empty $.Values.git.existingSecret)) }}
             {{- end }}
           ports:
             - name: http
               containerPort: 8080
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
           readinessProbe:
             httpGet:
               path: /healthz
               port: http
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
@@ -63,7 +77,7 @@ spec:
               subPath: config.yaml
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.registries.existingSecret }}
+            {{- if include "kube-tower.dockerConfigSecretName" . }}
             - name: dockerconfig
               mountPath: /etc/kube-tower/dockerconfig
               readOnly: true
@@ -79,10 +93,10 @@ spec:
             name: {{ include "kube-tower.fullname" . }}
         - name: tmp
           emptyDir: {}
-        {{- if .Values.registries.existingSecret }}
+        {{- with include "kube-tower.dockerConfigSecretName" . }}
         - name: dockerconfig
           secret:
-            secretName: {{ .Values.registries.existingSecret }}
+            secretName: {{ . }}
             items:
               - key: .dockerconfigjson
                 path: config.json
@@ -90,7 +104,7 @@ spec:
         {{- range $i, $c := .Values.registries.credentials }}
         - name: registry-{{ $i }}
           secret:
-            secretName: {{ required "registries.credentials[].existingSecret is required" $c.existingSecret }}
+            secretName: {{ include "kube-tower.registrySecretName" (dict "root" $ "index" $i) }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
