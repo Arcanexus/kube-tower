@@ -40,10 +40,21 @@ def http_error_message(what: str, response: httpx.Response, credentials: str = R
 
 def explain(exc: BaseException) -> str:
     """One explicit line for an exception raised while querying a registry, a Helm repository or git."""
+    if isinstance(exc, httpx.ConnectTimeout):
+        return (
+            f"cannot open a connection to {_host(exc)} before registries.timeout, even after registries.retries "
+            "retries: the pod has no working route to it (egress network policy, firewall, proxy, or broken IPv6)"
+        )
+    if isinstance(exc, httpx.PoolTimeout):
+        return (
+            f"too many requests to {_host(exc)} at the same time: no free connection before registries.timeout "
+            "(lower registries.concurrency)"
+        )
     if isinstance(exc, httpx.TimeoutException):
         return (
-            f"no answer from {_host(exc)} before registries.timeout: "
-            "the host is slow or unreachable from the pod (network policy, proxy?)"
+            f"{_host(exc)} accepted the connection but did not answer before registries.timeout, even after "
+            "registries.retries retries: the registry is slow or throttling (increase registries.timeout, "
+            "lower registries.concurrency, add credentials to avoid anonymous limits)"
         )
     if isinstance(exc, httpx.ProxyError):
         return f"the HTTP proxy refused or failed the connection to {_host(exc)}: {_first_line(exc)} (proxy allow list?)"
@@ -91,4 +102,4 @@ def _host(exc: httpx.HTTPError) -> str:
 
 
 def _first_line(exc: BaseException) -> str:
-    return (str(exc) or exc.__class__.__name__).strip().splitlines()[0][:300]
+    return (str(exc) or exc.__class__.__name__).strip().splitlines()[0][:500]

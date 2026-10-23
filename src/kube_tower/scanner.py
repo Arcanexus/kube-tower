@@ -29,6 +29,7 @@ from kube_tower.models import ImageRef, ImageReport, Snapshot, Status, Vulnerabi
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.registry.helm import HelmClient
 from kube_tower.registry.oci import OCIClient
+from kube_tower.registry.transport import RetryingClient
 from kube_tower.trivy import TrivyScanner
 
 log = logging.getLogger(__name__)
@@ -146,7 +147,9 @@ class Scanner:
 
         reg = self.settings.registries
         hooks = {"response": [_log_response]}
-        async with httpx.AsyncClient(timeout=reg.timeout, headers={"User-Agent": "kube-tower"}, event_hooks=hooks) as http:
+        async with RetryingClient(
+            timeout=reg.timeout, headers={"User-Agent": "kube-tower"}, event_hooks=hooks, retries=reg.retries
+        ) as http:
             credentials, _ = resolve_credentials(reg)
             log.info("registry credentials loaded for: %s", ", ".join(sorted(credentials)) or "none (anonymous access)")
             self.trivy.credentials = credentials  # Secrets may have been rotated

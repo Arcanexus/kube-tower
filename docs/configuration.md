@@ -55,7 +55,8 @@ registries:
       passwordFile: /etc/kube-tower/registries/0/password   # or passwordEnv
   mirrors: {}                  # e.g. {docker.io: mirror.example.com}
   concurrency: 8
-  timeout: 20
+  timeout: 20                  # seconds, per request (connect, read)
+  retries: 2                   # extra attempts after a timeout, a connection error or a 502/503/504
 git:
   rawUrlTemplates:
     github.com: https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}
