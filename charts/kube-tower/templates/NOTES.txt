@@ -8,5 +8,6 @@ UI: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kube-tower.
 {{- end }}
 
 To register another cluster, create on it the read-only ServiceAccount from
-deploy/remote-cluster-rbac.yaml and add a Secret labelled
-kube-tower.arcanexus.com/secret-type=cluster in namespace {{ .Release.Namespace }}.
+deploy/remote-cluster-rbac.yaml, then add an entry to the `clusters` value (inline credentials
+or existingSecret) or a Secret labelled kube-tower.arcanexus.com/secret-type=cluster
+in namespace {{ .Release.Namespace }}.

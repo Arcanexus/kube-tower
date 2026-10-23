@@ -168,7 +168,9 @@ do not need.
 
 **Credential Secrets.** Keep tokens out of git: create the Secrets referenced in
 `registries.credentials` by hand, with ExternalSecrets or Sealed Secrets, in the `kube-tower`
-namespace. For example:
+namespace. (The chart can also create them from inline values, `password:` instead of
+`existingSecret:`, see [Secrets](configuration.md#secrets), but the tokens then sit in the
+Application.) For example:
 
 ```sh
 kubectl create namespace kube-tower
@@ -220,10 +222,12 @@ To follow the development version, point `source` at the git repository instead:
 | `image.repository` | `ghcr.io/arcanexus/kube-tower` | Image (amd64, arm64, arm/v7) |
 | `image.tag` | chart `appVersion` | Image tag |
 | `config` | see [configuration](configuration.md) | Application settings, rendered into a ConfigMap |
-| `clusters` | `[]` | Remote clusters to register, see [clusters](clusters.md) |
-| `registries.credentials` | `[]` | Per registry credentials, see [configuration](configuration.md#registry-authentication) |
+| `clusters` | `[]` | Remote clusters: Secrets created by the chart or `existingSecret`, see [clusters](clusters.md#registering-clusters-with-the-helm-chart) |
+| `registries.credentials` | `[]` | Per registry credentials, existing Secret or inline password, see [configuration](configuration.md#registry-authentication) |
 | `registries.existingSecret` | `""` | A `kubernetes.io/dockerconfigjson` Secret |
-| `git.existingSecret` / `git.secretKey` | `""` / `token` | Token for private git repositories holding charts |
+| `registries.dockerConfigJson` | `{}` | Content of a `kubernetes.io/dockerconfigjson` Secret the chart creates |
+| `git.existingSecret` / `git.secretKey` | `""` / `token` | Existing Secret with a token for private git repositories holding charts |
+| `git.token` | `""` | The same token inline, the chart creates the Secret |
 | `rbac.create` | `true` | Read-only ClusterRole and Role for cluster Secrets |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | ServiceAccount |
 | `service.type` / `service.port` | `ClusterIP` / `80` | Service |
@@ -236,7 +240,8 @@ To follow the development version, point `source` at the git repository instead:
 
 On the cluster it runs in, kube-tower gets a ClusterRole with `get`/`list` on pods, nodes,
 deployments, statefulsets, daemonsets, cronjobs and `applications.argoproj.io`, plus `list` on
-Secrets **of its own namespace only** (cluster registration). With
+Secrets **of its own namespace only** (cluster registration), plus `get` on the existing cluster
+Secrets named in `clusters[].existingSecret`. With
 `config.clusters.useArgocdSecrets: true` it can also list Secrets in the ArgoCD namespace.
 Nothing is ever created, patched or deleted.
 
