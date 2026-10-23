@@ -94,6 +94,14 @@ vulnerabilities:
     - registry.k8s.io/pause*
 ```
 
+## Synthesis and Grafana
+
+The **Synthesis** page shows the images with critical vulnerabilities (tile and per cluster column),
+the images by worst severity (with the failed and not yet scanned ones) and the five most
+vulnerable images. The [Grafana dashboard](metrics.md#grafana-dashboard) has a **Vulnerabilities**
+row with the same figures, their evolution and the workloads running an image with critical
+vulnerabilities, filtered by cluster.
+
 ## Metrics
 
 | Metric | Labels | Value |

@@ -340,6 +340,27 @@ def test_synthesis_is_the_home_page():
     assert "1 unreachable" in page
 
 
+def test_synthesis_shows_vulnerabilities():
+    client, _ = _client()
+    page = client.get("/").text
+    # nginx: 1 critical with a fix (end of life OS); app: scan failed; redis: not scanned
+    assert re.search(r"Critical CVEs</span><strong class=\"danger\">1</strong>\s*<small>image\(s\) · 1 critical/high", page)
+    assert "(1 of 3 scanned)" in page
+    assert 'class="segment segment-sev-critical" style="flex-grow: 1"' in page
+    assert 'class="segment segment-sev-failed"' in page and 'class="segment segment-sev-not-scanned"' in page
+    assert "1 image(s) on an end of life OS release" in page
+    # Most vulnerable images open the vulnerability details
+    assert 'hx-get="vulnerabilities/detail?ref=docker.io/library/nginx%3A1.25"' in page
+    assert 'href="vulnerabilities?status=critical&amp;cluster=c1">1 image(s)</a>' in page
+
+
+def test_synthesis_without_vulnerabilities():
+    from kube_tower.web.summary import summarize
+
+    s = summarize(Snapshot(images=[ImageReport(ImageRef("docker.io", "library/redis", "7"))])).vulnerabilities
+    assert s.worst == {"not scanned": 1} and s.scanned == 0 and s.top == [] and not s.images_with["critical"]
+
+
 def test_summary_folds_small_registries():
     from kube_tower.web.summary import summarize
 

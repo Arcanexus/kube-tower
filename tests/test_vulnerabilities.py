@@ -201,6 +201,7 @@ async def test_trivy_scan_all(fake_trivy):
     alpine = next(c for c in scans if c["args"][-1] == "docker.io/library/alpine:3.18")
     assert alpine["user"] == "alex"  # credentials of the image registry only
     assert {"--skip-db-update", "--skip-java-db-update", "--skip-files=**/*.jar", "--image-src"} <= set(alpine["args"])
+    assert ["--cache-backend", "memory"] == alpine["args"][alpine["args"].index("--cache-backend") :][:2]
     assert next(c for c in scans if "broken" in c["args"][-1])["user"] is None
 
     # Results are reused until rescanInterval, failed scans are retried
@@ -232,6 +233,7 @@ async def test_trivy_server_mode_and_options(fake_trivy):
     assert ["--server", "http://trivy:4954"] == scan["args"][scan["args"].index("--server") :][:2]
     assert "--ignore-unfixed" in scan["args"] and "--debug" in scan["args"]
     assert "--skip-db-update" not in scan["args"] and "--skip-java-db-update" not in scan["args"]
+    assert "--cache-backend" not in scan["args"]
 
 
 async def test_trivy_java_db_download(fake_trivy):
