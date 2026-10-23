@@ -131,6 +131,22 @@ securityContext:
   capabilities:
     drop: ["ALL"]
 
+# Probes on /healthz (the httpGet part is set by the chart, set a probe to null to disable it).
+# The startup probe gives the application up to 5 minutes to start (slow nodes, e.g. ARM boards)
+# before the liveness probe takes over.
+startupProbe:
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 60
+livenessProbe:
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+readinessProbe:
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
 resources:
   requests:
     cpu: 50m

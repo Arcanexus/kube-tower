@@ -106,3 +106,13 @@ def test_settings_page_shows_credentials_without_secrets(monkeypatch):
     assert "docker.io" in page and "alex" in page and "loaded" in page and "invalid" in page
     assert "super-secret-token" not in page
     assert "passwordEnv: DOCKERHUB_TOKEN" in page  # camelCase like config.yaml
+
+
+def test_status_reloads_page_when_scan_ends():
+    client, scanner = _client()
+    scanner.running = True
+    resp = client.get("/status?polling=1")
+    assert "Scan in progress" in resp.text and "HX-Refresh" not in resp.headers
+    scanner.running = False
+    assert client.get("/status?polling=1").headers["HX-Refresh"] == "true"
+    assert "HX-Refresh" not in client.get("/status").headers

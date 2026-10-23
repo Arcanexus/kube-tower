@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import threading
 from collections.abc import Iterable
 
 from kubernetes import client
@@ -14,6 +15,8 @@ from kube_tower.models import ImageRef, ImageReport, Usage
 from kube_tower.registry.oci import parse_image_ref
 
 log = logging.getLogger(__name__)
+
+PAGE_SIZE = 250
 
 
 def _pod_spec_images(spec: client.V1PodSpec | None) -> Iterable[tuple[str, str]]:
@@ -37,6 +40,7 @@ class ImageInventory:
     def __init__(self, settings: ImagesSettings):
         self.settings = settings
         self.reports: dict[str, ImageReport] = {}
+        self._lock = threading.Lock()  # clusters are collected in parallel threads
 
     def ignored(self, ref: ImageRef) -> bool:
         return any(fnmatch.fnmatch(ref.name, pattern) or fnmatch.fnmatch(str(ref), pattern) for pattern in self.settings.ignore)
@@ -46,13 +50,14 @@ class ImageInventory:
         if self.ignored(ref):
             return
         key_ref = ImageRef(ref.registry, ref.repository, ref.tag, None if ref.tag else ref.digest)
-        report = self.reports.setdefault(str(key_ref), ImageReport(image=key_ref))
-        if usage not in report.usages:
-            report.usages.append(usage)
-        if running_digest:
-            report.running_digests.add(running_digest)
-        elif ref.digest:
-            report.running_digests.add(ref.digest)
+        with self._lock:
+            report = self.reports.setdefault(str(key_ref), ImageReport(image=key_ref))
+            if usage not in report.usages:
+                report.usages.append(usage)
+            if running_digest:
+                report.running_digests.add(running_digest)
+            elif ref.digest:
+                report.running_digests.add(ref.digest)
 
     def collect(self, cluster: Cluster) -> list[str]:
         """Read every image of a cluster. Returns non fatal error messages."""
@@ -62,11 +67,19 @@ class ImageInventory:
         batch = client.BatchV1Api(cluster.api_client)
 
         def safe(what: str, fn):
+            # Paginated lists: a single huge response holds the GIL while it is parsed and
+            # starves the event loop (/healthz times out and the liveness probe kills the pod).
+            items, token = [], None
             try:
-                return fn().items
+                while True:
+                    page = fn(limit=PAGE_SIZE, _continue=token) if token else fn(limit=PAGE_SIZE)
+                    items += page.items
+                    token = page.metadata._continue if page.metadata else None
+                    if not token:
+                        return items
             except client.ApiException as exc:
                 errors.append(f"[{cluster.name}] cannot list {what}: {exc.status} {exc.reason}")
-                return []
+                return items
 
         for pod in safe("pods", core.list_pod_for_all_namespaces):
             digests = {
