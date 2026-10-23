@@ -83,6 +83,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Smaller image: 31 MB compressed instead of 65 MB (amd64), 178 MB on disk instead of 373 MB. It is
+  based on `python:3.13-alpine` and leaves out the unused asyncio client of the `kubernetes` package
+  and its aiohttp dependencies. Dependencies are installed for each architecture without QEMU
+  emulation, so the multi-arch build is faster.
 - `kube_tower_image_outdated` gains an `update` label; `kube_tower_chart_outdated` gains `destination_namespace`,
   `source` and `update` labels.
 - License changed from GPL-3.0 to Apache-2.0.
