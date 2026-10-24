@@ -30,7 +30,7 @@ have buttons that check one item again, in the background.
 
 | Detail panel | Buttons |
 | --- | --- |
-| Image | **Check version** (registry query), **Scan vulnerabilities** |
+| Image | **Check version** (registry query) of every image with this name: all its tags, used by workloads or only cached on nodes (the button says how many); **Scan vulnerabilities** of this image only |
 | Vulnerabilities of an image | **Scan again** (or **Scan now** when it was never scanned) |
 | Helm chart | **Check versions** (the chart and its subcharts) |
 
@@ -163,7 +163,7 @@ credentials come from, the username and whether they could be read.
 | --- | --- |
 | `GET /api/snapshot` | The last scan: images, charts, clusters, errors, timestamps |
 | `POST /api/refresh` | Start a scan now (`{"started": false}` if one is already running) |
-| `POST /api/rescan/image?ref=…` | Check one image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`); `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
+| `POST /api/rescan/image?ref=…` | Check an image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`): the version check covers every image with its name (all tags), the vulnerability scan only this one; `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
 | `POST /api/rescan/chart?cluster=…&namespace=…&app=…&chart=…` | Check one Helm chart and its subcharts again (`namespace` is the Application's namespace) |
 | `POST /api/maintenance/retry-failed` | Check again everything that failed in the last scan (202, or 409 with a `reason`) |
 | `POST /api/maintenance/trivy-db` | Update the Trivy databases when a newer one is published (standalone mode) |

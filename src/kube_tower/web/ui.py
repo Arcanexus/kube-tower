@@ -170,7 +170,10 @@ def mount(app: FastAPI) -> None:
         if (report := scanner.snapshot.image(ref)) is None:
             return Response(status_code=404)
         can_scan = scanner.can_rescan_vulnerabilities(report)
-        return render_detail(request, "_image_detail", image_key(report), r=report, can_rescan_vulnerabilities=can_scan)
+        same_name = len(scanner.same_name_images(report))
+        return render_detail(
+            request, "_image_detail", image_key(report), r=report, can_rescan_vulnerabilities=can_scan, same_name=same_name
+        )
 
     @app.get("/vulnerabilities", response_class=HTMLResponse, include_in_schema=False)
     async def vulnerabilities(request: Request):

@@ -120,6 +120,9 @@ class FakeScanner:
     def can_rescan_vulnerabilities(self, report):
         return report.image.repository != "library/redis"
 
+    def same_name_images(self, report):
+        return [r for r in self.snapshot.images if r.image.name == report.image.name]
+
     def rescan_image(self, report, versions=True, vulnerabilities=True):
         self.rescans.append((str(report.image), versions, vulnerabilities))
         return self.rescan_error
@@ -601,3 +604,10 @@ def test_github_link_next_to_version():
     footer = page[page.index('class="version"') :]
     assert footer.index("<small>") < footer.index('href="https://github.com/Arcanexus/kube-tower"')
     assert 'href="static/icons.svg#i-github"' in footer
+
+
+def test_check_version_button_counts_the_tags():
+    client, scanner = _client()
+    scanner.snapshot.images.append(ImageReport(ImageRef("docker.io", "library/nginx", "1.27"), [Usage("c1", "Node", None, "n1")]))
+    assert "Check versions (2 tags)" in client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    assert ">Check version</button>" in client.get("/images/detail", params={"ref": "ghcr.io/org/app:2.0"}).text.replace("\n", "")

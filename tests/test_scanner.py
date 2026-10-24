@@ -513,3 +513,47 @@ async def test_exclusive_blocks_scans_and_rescans():
         assert scanner.rescan_image(image) == "the Trivy database is being updated: try again when it is over"
         assert scanner.retry_failed() == "the Trivy database is being updated: try again when it is over"
     assert scanner.busy is None and not scanner.locked
+
+
+async def test_version_rescan_covers_every_image_with_the_name(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="kube_tower")
+    listed = []
+
+    async def list_tags(self, registry, repository):
+        listed.append(repository)
+        return ["1.25", "1.26", "1.27"]
+
+    monkeypatch.setattr(scanner_module.OCIClient, "list_tags", list_tags)
+    settings = Settings()
+    settings.images.fetch_tag_digests = False
+    scanner = Scanner(settings, FakeRegistry())
+    nginx = [
+        ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), [Usage("up", "Pod", "default", "web")]),
+        ImageReport(ImageRef("docker.io", "library/nginx", "1.27"), [Usage("up", "Node", None, "n1")]),  # node only
+    ]
+    redis = ImageReport(ImageRef("docker.io", "library/redis", "7"), status=Status.ERROR, message="timeout")
+    scanner.snapshot = Snapshot(images=[*nginx, redis])
+    assert scanner.same_name_images(nginx[0]) == nginx
+    assert scanner.rescan_image(nginx[0], vulnerabilities=False) is None
+    assert scanner.rescanning == {("image", "docker.io/library/nginx:1.25"), ("image", "docker.io/library/nginx:1.27")}
+    assert scanner.rescan_image(nginx[1]) == "1 image(s) named docker.io/library/nginx are already being rescanned"
+    await _rescanned(scanner)
+    assert [(r.status, r.latest_tag) for r in nginx] == [(Status.OUTDATED, "1.27"), (Status.UP_TO_DATE, "1.27")]
+    assert listed == ["library/nginx"]  # one tag list for both
+    assert (redis.status, redis.message) == (Status.ERROR, "timeout")  # other names untouched
+    assert "checking the version of 2 image(s) with this name: 1.25, 1.27" in caplog.text
+
+
+async def test_version_rescan_refused_while_an_image_with_the_name_is_rescanned():
+    scanner = Scanner(Settings(), FakeRegistry())
+    a = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"))
+    b = ImageReport(ImageRef("docker.io", "library/nginx", "1.27"))
+    scanner.snapshot = Snapshot(images=[a, b])
+    scanner.rescanning.add(("image", "docker.io/library/nginx:1.27"))
+    assert (
+        scanner.rescan_image(a, vulnerabilities=False) == "1 image(s) named docker.io/library/nginx are already being rescanned"
+    )
+    # the vulnerability scan alone only concerns this image
+    assert scanner.same_name_images(ImageReport(ImageRef("ghcr.io", "o/x", "1"))) == [
+        ImageReport(ImageRef("ghcr.io", "o/x", "1"))
+    ]

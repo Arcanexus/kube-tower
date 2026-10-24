@@ -2,7 +2,9 @@
 {% set ref = r.image | string | urlencode %}
 {% call drawer(r.image.name, r.image.registry) %}
 <p>{{ badge(r.status) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
-{% set buttons = [("Check version", "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false")] %}
+{# The version check covers every image with this name (all tags, used or not), see Scanner.rescan_image. #}
+{% set check_label = "Check version" if same_name < 2 else "Check versions (" ~ same_name ~ " tags)" %}
+{% set buttons = [(check_label, "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false")] %}
 {% if can_rescan_vulnerabilities %}{% set buttons = buttons + [("Scan vulnerabilities", "api/rescan/image?ref=" ~ ref ~ "&versions=false")] %}{% endif %}
 {{ rescan(buttons, "images/detail?ref=" ~ ref, rescanning, scanning) }}
 {% if r.image.is_latest %}

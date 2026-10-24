@@ -229,14 +229,30 @@ class Scanner:
         from_operator = report.vulnerabilities is not None and report.vulnerabilities.source == "trivy-operator"
         return settings.trivy.enabled or (from_operator and settings.trivy_operator)
 
+    def same_name_images(self, report: ImageReport) -> list[ImageReport]:
+        """The images of the snapshot with the name (registry/repository) of this one: every tag, used or not."""
+        return [r for r in self.snapshot.images if r.image.name == report.image.name] or [report]
+
     def rescan_image(self, report: ImageReport, versions: bool = True, vulnerabilities: bool = True) -> str | None:
-        """Check one image again in the background. Returns why it cannot start, None when started."""
+        """Check an image again in the background. The version check covers every image with its name (all
+        tags, used by workloads or only on nodes: they share one tag list); the vulnerability scan only this one.
+        Returns why it cannot start, None when started.
+        """
         vulnerabilities = vulnerabilities and self.can_rescan_vulnerabilities(report)
         if not versions and not vulnerabilities:
             return "nothing to rescan (vulnerability scans are disabled or ignored for this image)"
-        return self._start_rescan(
-            image_key(report), f"image {report.image}", partial(self._rescan_image, report, versions, vulnerabilities)
+        group = self.same_name_images(report) if versions else [report]
+        others = {image_key(r) for r in group} - {image_key(report)}
+        if busy := others & self.rescanning:
+            return f"{len(busy)} image(s) named {report.image.name} are already being rescanned"
+        error = self._start_rescan(
+            image_key(report),
+            f"image {report.image}",
+            partial(self._rescan_image, report, group if versions else [], vulnerabilities, others),
         )
+        if error is None:
+            self.rescanning |= others  # their detail panels show the rescan
+        return error
 
     def rescan_chart(self, report: ChartReport) -> str | None:
         """Check one chart (and its subcharts) again in the background. Returns why it cannot start, None when started."""
@@ -331,22 +347,35 @@ class Scanner:
         finally:
             self.rescanning.discard(key)
 
-    async def _rescan_image(self, report: ImageReport, versions: bool, vulnerabilities: bool) -> None:
-        """Run in a worker thread's event loop. Results are computed apart, then set at once (no half-updated row)."""
+    async def _rescan_image(
+        self, report: ImageReport, versions: list[ImageReport], vulnerabilities: bool, others: set[tuple]
+    ) -> None:
+        """Run in a worker thread's event loop. `versions`: the images whose version is checked again.
+        Results are computed apart, then set at once (no half-updated row).
+        """
+        try:
+            await self._rescan_image_work(report, versions, vulnerabilities)
+        finally:
+            self.rescanning -= others
+
+    async def _rescan_image_work(self, report: ImageReport, versions: list[ImageReport], vulnerabilities: bool) -> None:
         snap = self.snapshot
         before = check_errors(snap)
         if versions:
-            log.info("rescan of image %s: checking its version", report.image)
-            fresh = _fresh_image(report)
-            async with self._clients() as (oci, _, _):
-                await ImageChecker(oci, self.settings.images, self.settings.registries.concurrency).check(fresh)
-            _apply_image(report, fresh)
             log.info(
-                "rescan of image %s: %s%s",
-                report.image,
-                report.status.value,
-                f" (latest {report.latest_tag})" if report.latest_tag else "",
+                "rescan of image %s: checking the version of %d image(s) with this name: %s",
+                report.image.name,
+                len(versions),
+                ", ".join(r.image.tag or r.image.digest or "" for r in versions),
             )
+            fresh = [_fresh_image(r) for r in versions]
+            async with self._clients() as (oci, _, _):
+                # One checker: the tag list of the repository is read once for all of them.
+                checker = ImageChecker(oci, self.settings.images, self.settings.registries.concurrency)
+                await asyncio.gather(*(checker.check(f) for f in fresh))
+            for r, f in zip(versions, fresh, strict=True):
+                _apply_image(r, f)
+                log.info("rescan of image %s: %s%s", r.image, r.status.value, f" (latest {r.latest_tag})" if r.latest_tag else "")
         if vulnerabilities:
             log.info("rescan of image %s: scanning its vulnerabilities", report.image)
             report.vulnerabilities = await self._rescan_vulnerabilities(report)
