@@ -1,19 +1,33 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, icon, page_title %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("clusters", "Clusters", "Clusters registered through Secrets (ArgoCD format) and the local cluster.") }}{% endblock %}
+{% block heading %}{{ page_title("clusters", "Clusters", "Local cluster and clusters registered through Secrets.", "Clusters come from Secrets in the ArgoCD format (or with a kubeconfig key) and the cluster kube-tower runs in. The numbers link to the filtered lists.") }}{% endblock %}
 {% block content %}
+{% set unknown %}<small class="muted-text">unknown</small>{% endset %}
 <div class="overflow-auto table-wrap">
-<table class="striped">
-  <thead><tr><th data-sort>Name</th><th data-sort>Server</th><th data-sort>Source</th><th data-sort>Version</th><th data-sort>Status</th></tr></thead>
+<table class="striped stack-sm">
+  <thead><tr><th data-sort>Name</th><th data-sort>Status</th><th data-sort>Version</th>
+    <th data-sort="desc">Images</th><th data-sort="desc">Outdated images</th><th data-sort="desc">Charts</th><th data-sort="desc">Outdated charts</th>
+    <th data-sort="desc">With critical CVEs</th><th data-sort class="hide-sm">Server</th><th data-sort class="hide-sm">Source</th></tr></thead>
   <tbody>
   {% for c in snapshot.clusters %}
+    {% set s = summaries.get(c.name) %}
+    {% set ni = s.images.values() | sum if s else 0 %}
+    {% set nc = s.charts.values() | sum if s else 0 %}
+    {% set q = c.name | urlencode %}
     <tr>
-      <td>{{ icon("clusters", "muted") }}{{ c.name }}</td><td><code>{{ c.server }}</code></td><td>{{ c.source }}</td><td>{{ c.version or "" }}</td>
+      <td class="cell-name">{{ icon("clusters", "muted") }}<strong>{{ c.name }}</strong></td>
       <td data-sort="{{ 1 if c.reachable else 0 }}">{% if c.reachable %}<span class="badge badge-up-to-date">{{ icon("ok") }}reachable</span>{% else %}<span class="badge badge-error">{{ icon("error") }}unreachable</span><br><small>{{ c.message }}</small>{% endif %}</td>
+      <td>{{ c.version or unknown }}</td>
+      <td data-sort="{{ ni }}"><a href="images?cluster={{ q }}">{{ ni }}</a></td>
+      <td data-sort="{{ s.images['outdated'] if s else 0 }}">{% if s and s.images["outdated"] %}<a href="images?cluster={{ q }}&amp;status=outdated">{{ s.images["outdated"] }}</a>{% else %}0{% endif %}</td>
+      <td data-sort="{{ nc }}"><a href="charts?cluster={{ q }}">{{ nc }}</a></td>
+      <td data-sort="{{ s.charts['outdated'] if s else 0 }}">{% if s and s.charts["outdated"] %}<a href="charts?cluster={{ q }}&amp;status=outdated">{{ s.charts["outdated"] }}</a>{% else %}0{% endif %}</td>
+      <td data-sort="{{ s.critical_images if s else 0 }}">{% if s and s.critical_images %}<a class="danger" href="vulnerabilities?status=critical&amp;cluster={{ q }}">{{ s.critical_images | plural("image") }}</a>{% else %}0{% endif %}</td>
+      <td class="hide-sm"><code>{{ c.server }}</code></td><td class="hide-sm">{{ c.source }}</td>
     </tr>
   {% else %}
-    <tr><td colspan="5">No cluster discovered yet.</td></tr>
+    <tr><td colspan="10">No cluster discovered yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>

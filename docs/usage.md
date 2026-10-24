@@ -5,23 +5,39 @@
 The left sidebar gives access to eight pages, and its bottom button switches the theme between
 auto (follows the system), light and dark; the choice is remembered by the browser.
 
-The scan status sits at the top right of every page: a dot (green when the last scan had no
-error, orange with errors, pulsing blue while a scan runs), the age of the last scan (its exact
-date on hover) and its duration, the number of errors of the last scan and a **Refresh** button
-that starts a full scan immediately. Click the error count to read them: collection errors (e.g.
-a missing permission on a cluster) and version check errors (e.g. a registry that cannot be
-queried). Each error is also logged as a warning, visible on the Logs page and in the pod logs.
+The scan status sits at the top right of every page: a dot (green when there is no problem,
+orange with problems, pulsing blue while a scan runs), the age of the last scan (its exact date on
+hover) and how long it took, the number of problems and a **Scan now** button that starts a full
+scan immediately. Click the problem count to read them: problems of kube-tower itself (e.g. the
+Trivy binary is missing, so images without a Trivy Operator report are not scanned), collection
+errors (e.g. a missing permission on a cluster) and version check errors (e.g. a registry that
+cannot be queried). A Trivy problem is also shown at the top of the Vulnerabilities page. Each error is also logged as a warning, visible on the Logs page and in the pod logs.
 
 On the list pages (Images, Helm charts, Vulnerabilities, Clusters), only the list scrolls: the
 title, the filters, the counters and the column headers stay in place. Click a column header to
 sort the list on it, click again to reverse the order (the arrow shows the current sort); the
-sort is kept when the filters change. Status columns sort what needs attention first (`outdated`,
+sort is kept when the filters change. Headers can also be sorted with the keyboard (Tab, then Enter
+or Space), and a "Skip to content" link (first Tab) jumps over the sidebar. The ⓘ icon after a page
+subtitle explains the page. Status columns sort what needs attention first (`outdated`,
 `error`, `unknown`, then `up-to-date`), counts sort the largest first.
 
 On the Images, Helm charts and Vulnerabilities pages, the counters at the top are buttons: clicking one shows only
 that status (click it again to show everything). Filters are kept in the URL, so a filtered view
 can be bookmarked or shared. Clicking a line opens a detail panel on the right; close it with its
-button, a click outside or `Esc`.
+button, a click outside or `Esc`. The panel starts with what was found (status, current → latest
+version) and ends with the buttons that check the item again.
+
+The Images page shows the current and the latest version of each image, each with the start of its
+digest below (the running digest, else the one pinned or published for the tag), so they can be
+compared at a glance: a latest digest different from the current one is highlighted. The latest
+column says `unknown` when the registry could not tell (see the status). A Helm chart shows the
+worst status of the chart and its subcharts (the one the counters and the filter use), with
+"chart up-to-date, subchart outdated" when only a subchart is outdated. On the Vulnerabilities page
+and the Synthesis, the severity counters are numbers of **images** with at least one vulnerability
+of that severity.
+
+On a phone, the lists show each line as a block (name, then versions and status) and hide the
+secondary columns (Used by, Source).
 
 ### Rescan one image or chart
 
@@ -135,8 +151,9 @@ the matching vulnerabilities first. See [vulnerabilities](vulnerabilities.md).
 ### Clusters
 
 Every cluster kube-tower knows, where it comes from (`in-cluster`, `secret`, `argocd-secret`), its
-Kubernetes version and whether it answered. Unreachable clusters are skipped during the scan and
-show the connection error.
+Kubernetes version and whether it answered, with its figures from the last scan: images, outdated
+images, charts, outdated charts and images with critical CVEs (each number opens the filtered list).
+Unreachable clusters are skipped during the scan and show the connection error.
 
 ### Logs
 
@@ -163,16 +180,19 @@ Administration actions, run in the background (the page follows them and reloads
 | Section | Actions |
 | --- | --- |
 | In progress | First section: what runs now, each with its start time: the two phases of the full scan (clusters and versions, then vulnerabilities with Trivy), the scans waiting for the Trivy phase of another one, the rescans and the administration actions. The scan status at the top of every page links to it |
-| Scans | **Scan everything** (same as *Refresh*). A scan checks the versions first, then scans the vulnerabilities with Trivy: during this Trivy phase a new scan, *Retry what failed* and the rescans can already start (a new scan waits for the Trivy phase to end before its own one). **Retry what failed**: checks again only the image version checks, vulnerability scans and charts (or subcharts) in error in the last scan, e.g. after fixing credentials or a rate limit. One image or chart is rescanned from its detail panel (see above) |
+| Scans | **Scan now** (same as the button of the scan status). A scan checks the versions first, then scans the vulnerabilities with Trivy: during this Trivy phase a new scan, *Retry what failed* and the rescans can already start (a new scan waits for the Trivy phase to end before its own one). **Retry what failed**: checks again only the image version checks, vulnerability scans and charts (or subcharts) in error in the last scan, e.g. after fixing credentials or a rate limit. One image or chart is rescanned from its detail panel (see above) |
 | Trivy | Trivy version and vulnerability database (version, build date, next update, download date). **Update the database** downloads it when a newer one is published (standalone mode; with `trivy.server.enabled` the Trivy server updates its own). Scans wait for the update. **Clear** forgets the cached scan results (kept `vulnerabilities.trivy.rescanInterval`), so the next scan scans every image again; **Clear and scan now** also starts it |
 | Connectivity | **Test the connectivity** of every cluster (Kubernetes API `/version`, cluster Secrets read again), every container registry of the last scan and every registry with credentials (`/v2/`, and a pull token for one of its repositories), every HTTP Helm repository (`index.yaml`) and the Trivy server (`/healthz`), with kube-tower's credentials. Failures say why (proxy, DNS, TLS, 401/403…) |
+| API | Links to the API documentation (`api/docs`), the last scan as JSON (`api/snapshot`) and the Prometheus metrics (`metrics`) |
 | Unused node images | Images cached on nodes that no workload of their cluster uses, per cluster, with the `crictl rmi` command to run on the node. kube-tower stays read-only and does not remove them: the kubelet garbage collects unused images when a node's disk goes over `imageGCHighThresholdPercent` (85 % by default). Needs `images.includeNodeImages` |
 
 ### Settings
 
 ![Settings](images/settings.png)
 
-The effective configuration (with the same camelCase keys as `config.yaml`) and the registry
+The effective configuration, one table per section (with the same camelCase keys as `config.yaml`;
+durations in a readable form with their value in seconds; values changed from the defaults
+highlighted and counted; the whole configuration as YAML at the bottom), and the registry
 credentials that were loaded. Secret values are never displayed: only the registry, where the
 credentials come from, the username and whether they could be read.
 

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, page_title %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("logs", "Logs", "Last application and scanner logs, kept in memory (the level is set by logs.level in the configuration).") }}{% endblock %}
+{% block heading %}{{ page_title("logs", "Logs", "Last logs of kube-tower, kept in memory.", "Application and scanner logs. The lowest level kept is set by logs.level in the configuration.") }}{% endblock %}
 {% block content %}
 <form class="filters log-filters" action="logs" method="get">
   <input type="search" name="q" value="{{ q }}" placeholder="Filter…" aria-label="Filter" onchange="this.form.submit()">
