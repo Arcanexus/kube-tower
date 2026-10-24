@@ -17,6 +17,8 @@ All notable changes to this project are documented here. The format follows
   Administration links to the API documentation, the JSON snapshot and the metrics; keyboard sorting
   of the columns and a "Skip to content" link; lists readable on phones (one block per line,
   secondary columns hidden).
+- Docs: screenshots of the Clusters page, the vulnerabilities of an image, the dark theme and a
+  phone; all screenshots retaken after the UI/UX review.
 
 - Settings page: an **Authentication** column per registry credential, telling whether the registry
   accepted or refused it at the last request that sent it (scan, rescan or connectivity test), with
@@ -153,6 +155,9 @@ All notable changes to this project are documented here. The format follows
   registries, Helm repositories, git hosts, clusters and cluster secrets.
 
 ### Changed
+
+- Clusters page: the API server and the source under the cluster name, outdated images and charts
+  under their totals, so the table fits without scrolling sideways.
 
 - UI/UX review: a Helm chart row shows the worst status of the chart and its subcharts, like the
   counters and the filter ("chart up-to-date, subchart outdated"); vulnerability counters and the

@@ -36,8 +36,14 @@ worst status of the chart and its subcharts (the one the counters and the filter
 and the Synthesis, the severity counters are numbers of **images** with at least one vulnerability
 of that severity.
 
-On a phone, the lists show each line as a block (name, then versions and status) and hide the
-secondary columns (Used by, Source).
+### Dark theme and phones
+
+The theme follows the system (or the sidebar button). On a phone, the sidebar becomes a menu and the
+lists show each line as a block: name first, then the versions and the status.
+
+| Dark theme | Phone |
+| --- | --- |
+| ![Dark theme](images/dark.png) | <img src="images/mobile.png" alt="Phone" width="260"> |
 
 ### Rescan one image or chart
 
@@ -90,17 +96,18 @@ nodes). Hover it for the explanation.
 | Column | Meaning |
 | --- | --- |
 | Image | Normalized name: `nginx` becomes `docker.io/library/nginx` |
-| Current | Tag (and digest) used by the workloads |
-| Latest | Highest tag of the same shape and [versioning scheme](#versioning-schemes) published in the registry, or the published digest for floating tags |
+| Current | Tag used by the workloads, with the start of its digest below (the digest pinned in the manifest, else the one reported by the running pods, else the one published for the tag) |
+| Latest | Highest tag of the same shape and [versioning scheme](#versioning-schemes) published in the registry (the current tag again for a floating tag pushed again, or when up to date), with the start of its digest below, in orange when it differs from the current one; `unknown` when the registry could not tell |
 | Status | See [statuses](#statuses) |
-| Used by | Number of workloads, pods and nodes using the image, and their clusters |
+| Used by | Number of workloads, pods and nodes using the image, and their clusters (hidden on phones) |
 
-The detail panel of an image shows the upgrade target, links to the image page on its registry
+The detail panel of an image starts with its status and "current → latest" (with their digests),
+then the upgrade target, links to the image page on its registry
 (Docker Hub, GitHub Packages, Quay, ECR Public, Microsoft Artifact Registry), every place where it
 is used, and compares digests: the digests reported by the running pods, the digest currently
 published for the same tag (a difference means the tag was pushed again since the pods started),
 and the digest of the latest tag. Published digests are read with `images.fetchTagDigests`
-(enabled by default).
+(enabled by default). The rescan buttons are at the bottom (**Check again**).
 
 ![Image details](images/image-detail.png)
 
@@ -129,7 +136,8 @@ One line per Helm source of every ArgoCD Application (multi-source Applications 
 lines). The subcharts are shown as a tree under each chart, always expanded, including the
 subcharts of subcharts (down to 3 levels). The status used by the counters and filters is the
 worst one of the chart and its whole subchart tree, so a chart whose subchart is outdated shows up
-when filtering on `outdated`. The detail panel of a chart shows its source, the ArgoCD Application,
+when filtering on `outdated`; the badge of the chart line shows that same status, with
+"chart up-to-date, subchart outdated" when only a subchart is behind. The detail panel of a chart shows its source, the ArgoCD Application,
 links to the repository and Artifact Hub, and the subchart tree with each subchart repository.
 
 | Source type | Current version | Latest version |
@@ -146,13 +154,21 @@ Known vulnerabilities (CVE) of every image, from Trivy Operator reports or scann
 Filter by image, by severity, by cluster, and by **CVE**: type all or part of one or several
 vulnerability IDs (e.g. `CVE-2025-68121`, `2025-681` or `GHSA-`, separated by spaces or commas) to
 list only the images affected, with the matching IDs under their counts; their detail panel lists
-the matching vulnerabilities first. See [vulnerabilities](vulnerabilities.md).
+the matching vulnerabilities first. The severity counters at the top are numbers of images with at
+least one vulnerability of that severity. When Trivy cannot run (binary not found, status error), a
+notice at the top of the page says so, with a link to the Administration page. See
+[vulnerabilities](vulnerabilities.md).
+
+![Vulnerabilities of an image](images/vulnerability-detail.png)
 
 ### Clusters
 
-Every cluster kube-tower knows, where it comes from (`in-cluster`, `secret`, `argocd-secret`), its
-Kubernetes version and whether it answered, with its figures from the last scan: images, outdated
-images, charts, outdated charts and images with critical CVEs (each number opens the filtered list).
+![Clusters](images/clusters.png)
+
+Every cluster kube-tower knows, its API server and where it comes from (`in-cluster`, `secret`,
+`argocd-secret`), its Kubernetes version and whether it answered, with its figures from the last
+scan: images and Helm charts (with how many are outdated) and images with critical CVEs. Each
+number opens the filtered list.
 Unreachable clusters are skipped during the scan and show the connection error.
 
 ### Logs
