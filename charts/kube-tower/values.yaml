@@ -28,10 +28,17 @@ config:
   clusters:
     inCluster: true
     inClusterName: in-cluster
+    # Cluster Secrets of `clusters` below are read by name (get on these Secrets only). Set
+    # listSecrets to also find the Secrets of the namespace labelled with secretLabelSelector (e.g.
+    # created by ExternalSecrets): it needs `list` on secrets, which reads EVERY Secret of the namespace.
+    listSecrets: false
     secretLabelSelector: kube-tower.arcanexus.com/secret-type=cluster
-    # Reuse ArgoCD cluster secrets (needs read access to secrets in argocdNamespace)
+    # Reuse ArgoCD cluster secrets. Without argocdSecretNames they are listed, which gives read access
+    # to EVERY Secret of argocdNamespace (argocd-secret, repository credentials...): prefer listing the
+    # names of the ArgoCD cluster Secrets in argocdSecretNames.
     useArgocdSecrets: false
     argocdNamespace: argocd
+    argocdSecretNames: []
     # Commands that kubeconfig exec plugins may run, as written in the kubeconfig (e.g.
     # /opt/kube-tower/bin/kubelogin). Empty: exec plugins are refused. See docs/clusters.md.
     execCommands: []

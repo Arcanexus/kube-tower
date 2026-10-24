@@ -13,8 +13,11 @@ CA=$(kubectl --context prod -n kube-tower get secret kube-tower-reader-token -o 
 
 ## 2. Create the cluster Secret where kube-tower runs
 
-See [deploy/cluster-secret.example.yaml](../deploy/cluster-secret.example.yaml). The Secret must
-carry the label `kube-tower.arcanexus.com/secret-type: cluster` and contain:
+Install kube-tower in a namespace of its own: the cluster Secrets live there, and nothing else.
+
+See [deploy/cluster-secret.example.yaml](../deploy/cluster-secret.example.yaml). kube-tower reads
+the cluster Secrets **by name**: reference the Secret in the chart (`clusters[].existingSecret`,
+see below) or in `config.clusters.secretNames`. The Secret contains:
 
 | Key | Content |
 | --- | --- |
@@ -52,18 +55,51 @@ clusters:
 ```
 
 An existing Secret must live in the kube-tower namespace and hold the keys above (`name`,
-`server`, `config`, or `kubeconfig`); it does not need the label. The chart adds it to
-`config.clusters.secretNames` and grants `get` on that Secret only. Labelled Secrets of the
-namespace are always picked up, without listing them.
+`server`, `config`, or `kubeconfig`). The chart adds every cluster Secret, the ones it creates and
+the existing ones, to `config.clusters.secretNames`, and grants `get` on these Secrets only.
+
+### Finding cluster Secrets by label (optional)
+
+To register clusters without declaring each Secret, for example Secrets created by ExternalSecrets
+as they come, set `config.clusters.listSecrets: true`: kube-tower then also lists the Secrets of
+its namespace labelled `kube-tower.arcanexus.com/secret-type: cluster`
+(`config.clusters.secretLabelSelector`).
+
+Listing needs the `list` permission on Secrets, and Kubernetes RBAC cannot restrict it to a label:
+kube-tower can then read **every** Secret of its namespace. That is why it is off by default, and
+why kube-tower should have a namespace of its own.
 
 Inline tokens end up in your values, hence in git with ArgoCD: prefer `existingSecret` with
 ExternalSecrets or Sealed Secrets for anything but a lab.
 
 ## Reusing ArgoCD cluster Secrets
 
-If ArgoCD already knows your clusters, set `config.clusters.useArgocdSecrets: true`: the chart
-grants kube-tower read access to Secrets in the ArgoCD namespace and every ArgoCD cluster is
-scanned too. The ArgoCD credentials must allow listing pods, nodes, workloads and Applications.
+If ArgoCD already knows your clusters, set `config.clusters.useArgocdSecrets: true`: every
+ArgoCD cluster is scanned too. The ArgoCD credentials must allow listing pods, nodes, workloads
+and Applications.
+
+> **Warning:** by default the ArgoCD cluster Secrets are listed, which gives kube-tower read access
+> to **every** Secret of the ArgoCD namespace, including `argocd-secret` (the key signing ArgoCD
+> sessions, the admin password hash) and the credentials of the git and Helm repositories.
+
+Prefer naming the ArgoCD cluster Secrets: kube-tower then only gets `get` on these ones.
+
+```sh
+kubectl -n argocd get secret -l argocd.argoproj.io/secret-type=cluster -o name
+```
+
+```yaml
+config:
+  clusters:
+    useArgocdSecrets: true
+    argocdSecretNames:
+      - cluster-prod.example.com-1234567890
+      - cluster-lab.example.com-0987654321
+```
+
+A cluster added to ArgoCD later is then only scanned once its Secret is added to the list. For
+production, a dedicated read-only ServiceAccount token per cluster (above) remains the safest
+choice.
 
 The Clusters tab shows each cluster and whether it is reachable.
 

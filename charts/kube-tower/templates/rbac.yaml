@@ -38,6 +38,8 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "kube-tower.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- $names := concat (.Values.config.clusters.secretNames | default list) (include "kube-tower.clusterSecretNames" . | fromJsonArray) | uniq }}
+{{- if or $names .Values.config.clusters.listSecrets }}
 ---
 # Read the cluster registration Secrets of the release namespace
 apiVersion: rbac.authorization.k8s.io/v1
@@ -47,17 +49,19 @@ metadata:
   labels:
     {{- include "kube-tower.labels" . | nindent 4 }}
 rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["list"]
-  {{- $names := concat (.Values.config.clusters.secretNames | default list) (include "kube-tower.clusterSecretNames" . | fromJsonArray) | uniq }}
   {{- if $names }}
-  # Existing cluster Secrets referenced by name
+  # Cluster Secrets read by name: only these ones
   - apiGroups: [""]
     resources: ["secrets"]
     resourceNames:
       {{- toYaml $names | nindent 6 }}
     verbs: ["get"]
+  {{- end }}
+  {{- if .Values.config.clusters.listSecrets }}
+  # Labelled cluster Secrets (config.clusters.listSecrets): list reads every Secret of the namespace
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["list"]
   {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -74,6 +78,7 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "kube-tower.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- if .Values.config.clusters.useArgocdSecrets }}
 ---
 # Reuse ArgoCD cluster secrets
@@ -85,9 +90,20 @@ metadata:
   labels:
     {{- include "kube-tower.labels" . | nindent 4 }}
 rules:
+  {{- with .Values.config.clusters.argocdSecretNames }}
+  # ArgoCD cluster Secrets read by name: only these ones
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      {{- toYaml . | nindent 6 }}
+    verbs: ["get"]
+  {{- else }}
+  # Listing reads every Secret of the ArgoCD namespace (argocd-secret, repository credentials...):
+  # set config.clusters.argocdSecretNames to read only the cluster Secrets
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["list"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

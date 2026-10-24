@@ -185,23 +185,63 @@ class ClusterRegistry:
             return None
         return client.CoreV1Api(local).read_namespaced_secret(name, namespace)
 
-    def _named_secrets(self, namespace: str, statuses: list[ClusterStatus]) -> list[client.V1Secret]:
+    def _named_secrets(
+        self, namespace: str, names: list[str], setting: str, source: str, statuses: list[ClusterStatus]
+    ) -> list[client.V1Secret]:
         secrets = []
-        for name in self.settings.secret_names:
+        for name in names:
             try:
                 if secret := self._read_secret(namespace, name):
                     secrets.append(secret)
             except client.ApiException as exc:
                 log.warning(
-                    "cannot read cluster secret %s/%s listed in clusters.secretNames: %s %s%s",
+                    "cannot read cluster secret %s/%s listed in clusters.%s: %s %s%s",
                     namespace,
                     name,
+                    setting,
                     exc.status,
                     exc.reason,
                     " (does it exist in this namespace?)" if exc.status == 404 else "",
                 )
-                statuses.append(ClusterStatus(name, "", "secret", message=exc.reason))
+                statuses.append(ClusterStatus(name, "", source, message=exc.reason))
         return secrets
+
+    def _listed_secrets(self, namespace: str, selector: str, source: str, statuses: list[ClusterStatus]) -> list[client.V1Secret]:
+        try:
+            secrets = self._list_secrets(namespace, selector)
+        except client.ApiException as exc:
+            log.warning(
+                "cannot list %s cluster secrets in namespace %s: %s %s%s",
+                source,
+                namespace,
+                exc.status,
+                exc.reason,
+                " (kube-tower needs the list permission on secrets there)" if exc.status == 403 else "",
+            )
+            statuses.append(ClusterStatus(f"<{source}s in {namespace}>", "", source, message=exc.reason))
+            return []
+        log.debug("%d %s cluster secret(s) listed in namespace %s (selector %s)", len(secrets), source, namespace, selector)
+        return secrets
+
+    def _secrets(self, statuses: list[ClusterStatus]) -> list[tuple[str, str, client.V1Secret]]:
+        """(namespace, source, secret) of every declared cluster: read by name, and listed by label when enabled."""
+        s = self.settings
+        found = []
+        namespace = s.namespace or current_namespace()
+        # A named secret also matched by the label selector is skipped in discover (same server).
+        secrets = self._named_secrets(namespace, s.secret_names, "secretNames", "secret", statuses)
+        if s.list_secrets:
+            secrets += self._listed_secrets(namespace, s.secret_label_selector, "secret", statuses)
+        found += [(namespace, "secret", secret) for secret in secrets]
+        if s.use_argocd_secrets:
+            if s.argocd_secret_names:
+                secrets = self._named_secrets(
+                    s.argocd_namespace, s.argocd_secret_names, "argocdSecretNames", "argocd-secret", statuses
+                )
+            else:
+                secrets = self._listed_secrets(s.argocd_namespace, ARGOCD_SECRET_SELECTOR, "argocd-secret", statuses)
+            found += [(s.argocd_namespace, "argocd-secret", secret) for secret in secrets]
+        return found
 
     def discover(self) -> tuple[list[Cluster], list[ClusterStatus]]:
         """Return usable clusters and a status line for every declared cluster."""
@@ -213,46 +253,23 @@ class ClusterRegistry:
             clusters.append(Cluster(self.settings.in_cluster_name, local.configuration.host, "in-cluster", local))
             seen_servers.add(ARGOCD_IN_CLUSTER_SERVER)
 
-        namespace = self.settings.namespace or current_namespace()
-        sources = [(namespace, self.settings.secret_label_selector, "secret")]
-        if self.settings.use_argocd_secrets:
-            sources.append((self.settings.argocd_namespace, ARGOCD_SECRET_SELECTOR, "argocd-secret"))
-
-        for namespace, selector, source in sources:
+        for namespace, source, secret in self._secrets(statuses):
             try:
-                secrets = self._list_secrets(namespace, selector)
-            except client.ApiException as exc:
+                cluster = cluster_from_secret(secret, source, self.settings.exec_commands)
+            except Exception as exc:  # noqa: BLE001 - one bad secret must not break discovery
                 log.warning(
-                    "cannot list %s cluster secrets in namespace %s: %s %s%s",
-                    source,
+                    "invalid cluster secret %s/%s, cluster ignored: %s (expected keys: name, server, config, or kubeconfig)",
                     namespace,
-                    exc.status,
-                    exc.reason,
-                    " (kube-tower needs read access to secrets there)" if exc.status == 403 else "",
+                    secret.metadata.name,
+                    exc,
                 )
-                statuses.append(ClusterStatus(f"<{source}s in {namespace}>", "", source, message=exc.reason))
-                secrets = []
-            log.debug("%d %s cluster secret(s) in namespace %s (selector %s)", len(secrets), source, namespace, selector)
-            if source == "secret":
-                # A named secret also matched by the label selector is skipped below (same server).
-                secrets = secrets + self._named_secrets(namespace, statuses)
-            for secret in secrets:
-                try:
-                    cluster = cluster_from_secret(secret, source, self.settings.exec_commands)
-                except Exception as exc:  # noqa: BLE001 - one bad secret must not break discovery
-                    log.warning(
-                        "invalid cluster secret %s/%s, cluster ignored: %s (expected keys: name, server, config, or kubeconfig)",
-                        namespace,
-                        secret.metadata.name,
-                        exc,
-                    )
-                    statuses.append(ClusterStatus(secret.metadata.name, "", source, message=str(exc)))
-                    continue
-                if cluster.server.rstrip("/") in seen_servers:
-                    log.debug("cluster secret %s skipped: server %s already registered", secret.metadata.name, cluster.server)
-                    continue
-                seen_servers.add(cluster.server.rstrip("/"))
-                clusters.append(cluster)
+                statuses.append(ClusterStatus(secret.metadata.name, "", source, message=str(exc)))
+                continue
+            if cluster.server.rstrip("/") in seen_servers:
+                log.debug("cluster secret %s skipped: server %s already registered", secret.metadata.name, cluster.server)
+                continue
+            seen_servers.add(cluster.server.rstrip("/"))
+            clusters.append(cluster)
 
         for cluster in clusters:
             status = self.probe(cluster)

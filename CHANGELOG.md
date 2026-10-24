@@ -99,6 +99,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Security: cluster Secrets are read by name only by default (`get` on these Secrets), instead of
+  listing the Secrets of the namespace, which gave read access to all of them. The chart names
+  the Secrets it creates and the `existingSecret` ones itself. **Labelled cluster Secrets created
+  outside the chart are no longer found**: reference them with `clusters[].existingSecret` /
+  `config.clusters.secretNames`, or set `config.clusters.listSecrets: true` to list them as before.
+- New `config.clusters.argocdSecretNames`: with `useArgocdSecrets`, read only these ArgoCD cluster
+  Secrets instead of listing every Secret of the ArgoCD namespace (still the default, with a
+  warning in the docs and values.yaml).
 - Smaller image: 31 MB compressed instead of 65 MB (amd64), 178 MB on disk instead of 373 MB. It is
   based on `python:3.13-alpine` and leaves out the unused asyncio client of the `kubernetes` package
   and its aiohttp dependencies. Dependencies are installed for each architecture without QEMU

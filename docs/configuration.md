@@ -13,10 +13,12 @@ clusters:
   inCluster: true              # scan the cluster kube-tower runs in
   inClusterName: in-cluster
   namespace: ""                # where cluster Secrets live (default: pod namespace)
+  secretNames: []              # cluster Secrets of that namespace, read by name
+  listSecrets: false           # also list the labelled ones (reads every Secret of the namespace)
   secretLabelSelector: kube-tower.arcanexus.com/secret-type=cluster
-  secretNames: []              # extra cluster Secrets of that namespace, read by name
   useArgocdSecrets: false      # also use ArgoCD cluster Secrets
   argocdNamespace: argocd
+  argocdSecretNames: []        # ArgoCD cluster Secrets read by name; empty: listed (every Secret of argocd)
   requestTimeout: 30
   execCommands: []             # commands kubeconfig exec plugins may run (EKS, GKE, AKS), see clusters.md
 images:
@@ -167,6 +169,6 @@ existing Secrets (ExternalSecrets, Sealed Secrets) outside a lab.
 | Registry credentials, one Secret per registry | `registries.credentials[].existingSecret` (+ `usernameKey`, `passwordKey`) | `registries.credentials[].password` (+ `username`) | username / password or token |
 | Registry credentials, several at once | `registries.existingSecret` | `registries.dockerConfigJson` | a `kubernetes.io/dockerconfigjson` Secret |
 | Private git repositories holding charts | `git.existingSecret` / `git.secretKey` | `git.token` | a token |
-| Remote clusters | `clusters[].existingSecret`, or any Secret labelled `kube-tower.arcanexus.com/secret-type=cluster` | `clusters[]` with `server`/`config` or `kubeconfig` | see [clusters.md](clusters.md) |
+| Remote clusters | `clusters[].existingSecret` or `config.clusters.secretNames` (labelled Secrets with `config.clusters.listSecrets: true`) | `clusters[]` with `server`/`config` or `kubeconfig` | see [clusters.md](clusters.md) |
 
 A change to a Secret created by the chart restarts the pod.
