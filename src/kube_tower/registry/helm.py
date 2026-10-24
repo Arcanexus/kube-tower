@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import tarfile
+import threading
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -47,11 +48,52 @@ def chart_yaml_from_archive(data: bytes) -> dict:
     raise RegistryError("Chart.yaml not found in chart archive")
 
 
+def _trim_index(index: dict | None) -> dict:
+    """Keep only what kube-tower reads from an index.yaml (versions and archive URLs): a parsed index
+    kept between scans then takes a fraction of the memory of the full one (descriptions, digests...).
+    """
+    entries = (index or {}).get("entries") or {}
+    return {
+        "entries": {
+            chart: [{"version": e.get("version"), "urls": e.get("urls") or []} for e in versions or [] if isinstance(e, dict)]
+            for chart, versions in entries.items()
+        }
+    }
+
+
+class IndexCache:
+    """The parsed index.yaml of the HTTP Helm repositories with their ETag / Last-Modified, kept between
+    scans: the next scans download an index again only when the repository says it changed (HTTP 304).
+    Shared by the scans and rescans, which run in different threads.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._entries: dict[str, tuple[dict[str, str], dict]] = {}  # repository -> (validators, index)
+
+    def get(self, repository: str) -> tuple[dict[str, str], dict] | None:
+        with self._lock:
+            return self._entries.get(repository)
+
+    def put(self, repository: str, response: httpx.Response, index: dict) -> None:
+        validators = {}
+        if etag := response.headers.get("ETag"):
+            validators["If-None-Match"] = etag
+        if modified := response.headers.get("Last-Modified"):
+            validators["If-Modified-Since"] = modified
+        with self._lock:
+            if validators:
+                self._entries[repository] = (validators, index)
+            else:  # cannot be revalidated: downloaded again at each scan
+                self._entries.pop(repository, None)
+
+
 class HelmClient:
-    def __init__(self, http: httpx.AsyncClient, oci: OCIClient, git: GitSettings):
+    def __init__(self, http: httpx.AsyncClient, oci: OCIClient, git: GitSettings, index_cache: IndexCache | None = None):
         self.http = http
         self.oci = oci
         self.git = git
+        self.index_cache = index_cache or IndexCache()
         self._indexes: dict[str, asyncio.Future[dict]] = {}
 
     def _auth(self, url: str) -> tuple[str, str] | None:
@@ -70,19 +112,24 @@ class HelmClient:
         return await self._indexes[repository]
 
     async def _fetch_index(self, repository: str) -> dict:
-        resp = await self.http.get(f"{repository}/index.yaml", auth=self._auth(repository), follow_redirects=True)
+        cached = self.index_cache.get(repository)
+        resp = await self.http.get(
+            f"{repository}/index.yaml",
+            auth=self._auth(repository),
+            headers=cached[0] if cached else None,
+            follow_redirects=True,
+        )
+        if resp.status_code == 304 and cached:
+            log.debug("index.yaml of %s unchanged since the last scan", repository)
+            return cached[1]
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot read the index.yaml of the Helm repository {repository}", resp))
         # Big indexes (tens of MB) take seconds to minutes to parse on small nodes: parse them in a
         # thread, with libyaml when available, so the other requests of the scan keep being served.
-        index = await asyncio.to_thread(yaml.load, resp.content, Loader=YAML_LOADER)
-        log.debug(
-            "index.yaml of %s: %d KB, %d chart(s)",
-            repository,
-            len(resp.content) // 1024,
-            len(index.get("entries") or {}) if index else 0,
-        )
-        return index or {}
+        index = _trim_index(await asyncio.to_thread(yaml.load, resp.content, Loader=YAML_LOADER))
+        log.debug("index.yaml of %s: %d KB, %d chart(s)", repository, len(resp.content) // 1024, len(index["entries"]))
+        self.index_cache.put(repository, resp, index)
+        return index
 
     async def ping(self, repository: str) -> str:
         """Check that an HTTP Helm repository serves its index.yaml (without downloading it).

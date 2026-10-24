@@ -11,6 +11,7 @@ from kube_tower.config import GitSettings
 from kube_tower.registry.helm import (
     HELM_CHART_LAYER,
     HelmClient,
+    IndexCache,
     chart_yaml_from_archive,
     is_oci,
     normalize_dependency_repository,
@@ -166,3 +167,39 @@ async def test_credentials_never_sent_over_http(monkeypatch):
             await helm.git_chart_metadata("https://git.example.com/org/repo", "v2", "app")
     assert not index.called
     assert "authorization" not in raw.calls[0].request.headers
+
+
+@respx.mock
+async def test_index_revalidated_between_scans():
+    full = yaml.safe_load(INDEX)
+    full["entries"]["app"][0]["description"] = "x" * 1000
+    validators = {"ETag": '"v1"', "Last-Modified": "Sat, 24 Oct 2026 08:00:00 GMT"}
+    route = respx.get("https://charts.example.com/index.yaml")
+    route.side_effect = [
+        httpx.Response(200, text=yaml.safe_dump(full), headers=validators),
+        httpx.Response(304),
+        httpx.Response(200, text=INDEX.replace("1.1.0", "1.2.0"), headers={"ETag": '"v2"'}),
+    ]
+    cache = IndexCache()
+    async with httpx.AsyncClient() as http:
+        for expected in (["1.1.0", "1.0.0"], ["1.1.0", "1.0.0"], ["1.2.0", "1.0.0"]):
+            # A HelmClient per scan, the cache shared between them.
+            helm = HelmClient(http, OCIClient(http), GitSettings(), cache)
+            assert await helm.list_versions("https://charts.example.com", "app") == expected
+    first, second, third = (call.request.headers for call in route.calls)
+    assert "If-None-Match" not in first
+    assert second["If-None-Match"] == '"v1"' and second["If-Modified-Since"] == "Sat, 24 Oct 2026 08:00:00 GMT"
+    assert third["If-None-Match"] == '"v1"'
+    # Only the versions and URLs are kept.
+    assert cache.get("https://charts.example.com")[1]["entries"]["app"][0] == {"version": "1.2.0", "urls": ["app-1.2.0.tgz"]}
+
+
+@respx.mock
+async def test_index_without_validators_not_kept():
+    route = respx.get("https://charts.example.com/index.yaml").respond(200, text=INDEX)
+    cache = IndexCache()
+    async with httpx.AsyncClient() as http:
+        for _ in range(2):
+            await HelmClient(http, OCIClient(http), GitSettings(), cache).list_versions("https://charts.example.com", "app")
+    assert route.call_count == 2 and "If-None-Match" not in route.calls[1].request.headers
+    assert cache.get("https://charts.example.com") is None

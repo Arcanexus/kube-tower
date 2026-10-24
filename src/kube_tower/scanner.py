@@ -31,7 +31,7 @@ from kube_tower.collectors.vulnerabilities import collect_operator_reports, pick
 from kube_tower.config import Settings
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, VulnerabilityReport
 from kube_tower.registry.auth import resolve_credentials
-from kube_tower.registry.helm import HelmClient
+from kube_tower.registry.helm import HelmClient, IndexCache
 from kube_tower.registry.oci import OCIClient
 from kube_tower.registry.transport import RetryingClient
 from kube_tower.trivy import TrivyScanner, scan_target
@@ -98,6 +98,7 @@ class Scanner:
         self.scans_total = {"success": 0, "failure": 0}  # exported as kube_tower_scans_total
         # Keeps its results between scans; registry credentials are set at each scan.
         self.trivy = TrivyScanner(settings.vulnerabilities.trivy, {})
+        self.helm_indexes = IndexCache()  # index.yaml of the Helm repositories, revalidated at each scan
         # Keys (see image_key / chart_key) of the images and charts being rescanned on their own.
         self.rescanning: set[tuple] = set()
         self._rescans: set[asyncio.Task] = set()  # keeps the background rescans referenced
@@ -203,7 +204,7 @@ class Scanner:
             credentials, _ = resolve_credentials(reg)
             self.trivy.credentials = credentials
             oci = OCIClient(http, credentials, reg.mirrors, self.settings.images.max_tag_pages)
-            yield oci, HelmClient(http, oci, self.settings.git), credentials
+            yield oci, HelmClient(http, oci, self.settings.git, self.helm_indexes), credentials
 
     async def _scan_vulnerabilities(self, snap: Snapshot) -> None:
         """Scan with Trivy the images without a Trivy Operator report, run in a worker thread's event loop."""

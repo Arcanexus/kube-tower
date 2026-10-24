@@ -40,7 +40,7 @@ A single Python 3.13 process (FastAPI + uvicorn) packaged as one multi-arch imag
 | `collectors/images.py` | Lists images from Pods, Deployments, StatefulSets, DaemonSets, CronJobs and `node.status.images`, deduplicated by reference, with running digests. |
 | `collectors/helm.py` | Reads ArgoCD `Application` objects (single and multi-source) and extracts Helm sources. |
 | `registry/oci.py` | Minimal OCI distribution client (token auth, tag pagination, digests, blobs). |
-| `registry/helm.py` | Helm repositories (`index.yaml`), OCI charts, and `Chart.yaml` read from git through raw URLs. |
+| `registry/helm.py` | Helm repositories (`index.yaml`, kept between scans and revalidated with `ETag` / `Last-Modified`), OCI charts, and `Chart.yaml` read from git through raw URLs. |
 | `collectors/vulnerabilities.py`, `trivy.py` | Vulnerabilities: Trivy Operator `VulnerabilityReports`, else scans with the Trivy CLI (see [vulnerabilities](../vulnerabilities.md)). |
 | `checkers.py` | Computes the status of each image / chart / subchart, querying each repository once per scan. |
 | `scanner.py` | Runs a full scan periodically and keeps the last `Snapshot` in memory. |
