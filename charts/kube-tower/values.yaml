@@ -193,6 +193,26 @@ trivy:
     tolerations: []
     affinity: {}
 
+# NetworkPolicies for the kube-tower pod and the Trivy server (needs a CNI that enforces them).
+networkPolicy:
+  enabled: false
+  ingress:
+    # Who may reach the UI, API and /metrics (ingress controller, Prometheus...). Empty: any pod, port http only.
+    # e.g. - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: ingress-nginx}}
+    from: []
+  egress:
+    # Kubernetes API servers (in-cluster and remote), registries, Helm repositories, git hosts and the
+    # Trivy database registries. Add the ports of registries or API servers that use other ones.
+    ports:
+      - port: 443
+        protocol: TCP
+      - port: 6443
+        protocol: TCP
+    # Restrict these destinations (ipBlock...). Empty: anywhere.
+    to: []
+    # Extra egress rules of the kube-tower pod, as is
+    extra: []
+
 podAnnotations: {}
 # Extra pod labels, e.g. azure.workload.identity/use: "true" for Azure Workload Identity
 podLabels: {}

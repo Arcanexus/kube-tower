@@ -1,0 +1,84 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+# kube-tower pod: only its HTTP port is reachable; it only reaches DNS, the egress ports
+# (Kubernetes API servers, registries, Helm repositories, git hosts, Trivy database) and the Trivy server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kube-tower.fullname" . }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kube-tower.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: http
+          protocol: TCP
+      {{- with $np.ingress.from }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        {{- toYaml $np.egress.ports | nindent 8 }}
+      {{- with $np.egress.to }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if .Values.trivy.server.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.trivySelectorLabels" . | nindent 14 }}
+      ports:
+        - port: {{ .Values.trivy.server.port }}
+          protocol: TCP
+    {{- end }}
+    {{- with $np.egress.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- if .Values.trivy.server.enabled }}
+---
+# Trivy server: only kube-tower reaches it; it only reaches DNS and the egress ports (database download).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-trivy
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: trivy-server
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kube-tower.trivySelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: trivy
+          protocol: TCP
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        {{- toYaml $np.egress.ports | nindent 8 }}
+      {{- with $np.egress.to }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}
