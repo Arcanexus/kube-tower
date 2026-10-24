@@ -10,6 +10,7 @@ import base64
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -78,6 +79,8 @@ def load_docker_credentials(path: str) -> dict[str, tuple[str, str]]:
 
 
 MAX_REDIRECTS = 5
+# A token is renewed this long before the end of its lifetime (`expires_in`), so a request never sends it expired.
+TOKEN_EXPIRY_MARGIN = 30
 
 
 class RegistryError(Exception):
@@ -96,17 +99,34 @@ class OCIClient:
         self.credentials = credentials or {}
         self.mirrors = mirrors or {}
         self.max_tag_pages = max_tag_pages
-        self._tokens: dict[tuple[str, str], str] = {}
+        # (host, scope) -> (token, monotonic time it expires at, None when the registry gives no lifetime)
+        self._tokens: dict[tuple[str, str], tuple[str, float | None]] = {}
 
     def _api_host(self, registry: str) -> str:
         if registry in self.mirrors:
             return self.mirrors[registry]
         return DOCKER_HUB_API if registry == DOCKER_HUB else registry
 
+    def _cached_token(self, host: str, scope: str) -> str | None:
+        """The token got earlier for this host and scope, unless it has expired (or is about to)."""
+        cached = self._tokens.get((host, scope))
+        if cached is None:
+            return None
+        token, expires_at = cached
+        if expires_at is not None and time.monotonic() >= expires_at:
+            del self._tokens[(host, scope)]
+            return None
+        return token
+
+    async def _renew_token(self, registry: str, host: str, challenge: str, scope: str) -> str | None:
+        """A new token after a 401: the cached one (if any) was refused, e.g. it expired during a long scan."""
+        self._tokens.pop((host, scope), None)
+        return await self._token(registry, host, challenge, scope)
+
     async def _token(self, registry: str, host: str, challenge: str, scope: str) -> str | None:
         key = (host, scope)
-        if key in self._tokens:
-            return self._tokens[key]
+        if token := self._cached_token(host, scope):
+            return token
         scheme, _, params = challenge.partition(" ")
         if scheme.lower() != "bearer":
             return None
@@ -126,7 +146,10 @@ class OCIClient:
             raise RegistryError(http_error_message(f"cannot get a pull token for {registry}", resp))
         body = resp.json()
         token = body.get("token") or body.get("access_token")
-        self._tokens[key] = token
+        expires_at = None
+        if isinstance(expires_in := body.get("expires_in"), int | float) and expires_in > 0:
+            expires_at = time.monotonic() + max(expires_in - TOKEN_EXPIRY_MARGIN, expires_in / 2)
+        self._tokens[key] = (token, expires_at)
         return token
 
     async def _request(self, method: str, registry: str, repository: str, url: str, **kwargs) -> httpx.Response:
@@ -142,14 +165,14 @@ class OCIClient:
         for _ in range(MAX_REDIRECTS + 1):
             host = httpx.URL(url).host
             headers = dict(base_headers)
-            if token := self._tokens.get((host, scope)):
+            if token := self._cached_token(host, scope):
                 headers["Authorization"] = f"Bearer {token}"
             resp = await self.http.request(method, url, headers=headers, **kwargs)
             if resp.status_code == 401 and "www-authenticate" in resp.headers:
                 challenge = resp.headers["www-authenticate"]
                 if challenge.lower().startswith("basic") and registry in self.credentials:
                     resp = await self.http.request(method, url, headers=headers, auth=self.credentials[registry], **kwargs)
-                elif token := await self._token(registry, host, challenge, scope):
+                elif token := await self._renew_token(registry, host, challenge, scope):
                     headers["Authorization"] = f"Bearer {token}"
                     resp = await self.http.request(method, url, headers=headers, **kwargs)
             if not (manual_redirects and resp.is_redirect and "location" in resp.headers):
@@ -176,8 +199,7 @@ class OCIClient:
                 resp = await self.http.get(url, auth=self.credentials[registry])
             else:
                 # Getting a token proves that the credentials (if any) are accepted.
-                self._tokens.pop((host, scope), None)
-                if await self._token(registry, host, challenge, scope):
+                if await self._renew_token(registry, host, challenge, scope):
                     return f"pull token for {repository} obtained {auth}" if repository else f"token obtained {auth}"
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"{registry} refused the connection test", resp))

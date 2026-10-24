@@ -52,6 +52,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Registry tokens are renewed when they expire: a token refused with a 401 (e.g. a Docker Hub token,
+  valid 5 minutes, during a long scan) is no longer sent again, and tokens are renewed before the end
+  of the lifetime given by the registry (`expires_in`). Before, every later check of the repository
+  failed with HTTP 401 until the end of the scan.
 - Bursts of timeouts / disconnections in the middle of a scan: big Helm repository indexes
   (index.yaml) were parsed in the scan event loop, stalling every other request for up to minutes on
   small nodes. They are now parsed in a thread with libyaml, and downloaded once per repository
