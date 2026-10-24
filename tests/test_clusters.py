@@ -299,3 +299,22 @@ def test_current_namespace(monkeypatch, tmp_path):
     (tmp_path / "ns").write_text("kube-tower\n")
     monkeypatch.setattr(clusters_module, "SA_NAMESPACE_FILE", str(tmp_path / "ns"))
     assert clusters_module.current_namespace() == "kube-tower"
+
+
+def test_clusters_probed_in_parallel():
+    import threading
+
+    from kube_tower.models import ClusterStatus
+
+    secrets = {f"c{i}": _secret(f"c{i}", name=f"c{i}", server=f"https://c{i}", config="{}") for i in range(4)}
+    barrier = threading.Barrier(4, timeout=5)  # every probe waits for the 3 others: fails if run one by one
+
+    class Registry(NamedOnlyRegistry):
+        def probe(self, cluster):
+            barrier.wait()
+            return ClusterStatus(cluster.name, cluster.server, cluster.source, reachable=cluster.name != "c2")
+
+    settings = ClustersSettings(in_cluster=False, namespace="kube-tower", secret_names=list(secrets))
+    clusters, statuses = Registry(settings, secrets).discover()
+    assert [c.name for c in clusters] == ["c0", "c1", "c2", "c3"]
+    assert [(s.name, s.reachable) for s in statuses] == [("c0", True), ("c1", True), ("c2", False), ("c3", True)]
