@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import yaml
@@ -34,6 +35,7 @@ log = logging.getLogger(__name__)
 SA_NAMESPACE_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 ARGOCD_SECRET_SELECTOR = "argocd.argoproj.io/secret-type=cluster"
 ARGOCD_IN_CLUSTER_SERVER = "https://kubernetes.default.svc"
+PROBE_THREADS = 16  # clusters probed at the same time
 
 
 @dataclass
@@ -271,8 +273,10 @@ class ClusterRegistry:
             seen_servers.add(cluster.server.rstrip("/"))
             clusters.append(cluster)
 
-        for cluster in clusters:
-            status = self.probe(cluster)
+        # In parallel: an unreachable cluster costs requestTimeout once, not once per cluster after it.
+        with ThreadPoolExecutor(max_workers=min(PROBE_THREADS, len(clusters) or 1), thread_name_prefix="probe") as pool:
+            probed = list(pool.map(self.probe, clusters))
+        for cluster, status in zip(clusters, probed, strict=True):
             statuses.append(status)
             if status.reachable:
                 log.info(

@@ -57,6 +57,8 @@ All notable changes to this project are documented here. The format follows
 - Faster image collection on big clusters: an image used by thousands of pods or present on
   hundreds of nodes made each new usage slower to record (20,000 pods of one image: 30 s of CPU,
   now 0.1 s).
+- Clusters are probed in parallel at the start of each scan and connectivity test: an unreachable
+  cluster no longer delays the next ones by `clusters.requestTimeout` (30 s) each.
 - Security: registry credentials and tokens are never sent over plain `http://` any more. A token
   service (`realm`) or a registry redirect in `http://`, an `http://` Helm repository with
   credentials and an `http://` git raw URL template with a git token are refused with an explicit
