@@ -164,7 +164,8 @@ kubectl -n kube-tower create secret generic dockerhub-credentials \
 A `kubernetes.io/dockerconfigjson` Secret (`registries.existingSecret`) is also supported, e.g. an
 existing image pull secret, or its content in `registries.dockerConfigJson` (an object or a JSON
 string) for the chart to create it; per registry entries win when both define the same host.
-The Settings page lists the loaded credentials (never their values) and flags invalid ones.
+The Settings page lists the loaded credentials (never their values), flags invalid ones and tells
+whether each registry accepted them.
 
 Credentials and tokens are only sent over `https://`. kube-tower refuses a registry token service
 (`realm`) or a registry redirect in `http://`, an `http://` Helm repository that has credentials,

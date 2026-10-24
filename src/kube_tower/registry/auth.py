@@ -12,6 +12,7 @@ import re
 import time
 import weakref
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from kube_tower.config import RegistriesSettings, RegistryCredential
@@ -44,6 +45,39 @@ class CredentialStatus:
     username: str
     ok: bool
     message: str = ""
+
+
+@dataclass
+class AuthResult:
+    """The last time a registry accepted or refused kube-tower's credentials."""
+
+    host: str
+    ok: bool
+    at: datetime
+    message: str = ""
+
+
+class AuthResults:
+    """Whether each registry accepted the credentials, as seen by the scans and the connectivity tests.
+
+    Only requests that sent credentials count: an anonymous pull says nothing about them.
+    """
+
+    def __init__(self) -> None:
+        self._results: dict[str, AuthResult] = {}
+
+    def record(self, host: str, ok: bool, message: str = "") -> None:
+        if not ok:
+            log.warning("%s refused the credentials: %s", host, message)
+        self._results[host.lower()] = AuthResult(host.lower(), ok, datetime.now(UTC), message)
+
+    def get(self, registry: str) -> AuthResult | None:
+        """The result for a configured registry; for a pattern, the latest refusal of a matching host,
+        else its latest success."""
+        if not is_pattern(registry):
+            return self._results.get(registry.lower())
+        matching = [r for host, r in self._results.items() if fnmatch.fnmatch(host, registry.lower())]
+        return max(matching, key=lambda r: (not r.ok, r.at), default=None)
 
 
 class TokenCache:

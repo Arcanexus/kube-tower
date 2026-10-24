@@ -176,6 +176,12 @@ The effective configuration (with the same camelCase keys as `config.yaml`) and 
 credentials that were loaded. Secret values are never displayed: only the registry, where the
 credentials come from, the username and whether they could be read.
 
+The **Authentication** column tells whether the registry accepted the credentials, at the last
+request that sent them (a scan, a rescan or the connectivity test of the Administration page):
+**accepted**, **refused** (with the registry's answer, e.g. `HTTP 401 Unauthorized`) or **not tried
+yet** (no request with these credentials since kube-tower started). For a pattern
+(`*.dkr.ecr.*.amazonaws.com`), a refusal by any matching registry is shown first, with its host.
+
 ## Statuses
 
 | Status | Meaning |

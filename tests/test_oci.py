@@ -324,3 +324,34 @@ async def test_ping_insecure_anonymous_over_http():
     async with httpx.AsyncClient() as http:
         oci = OCIClient(http, insecure=["registry.local"])
         assert await oci.ping("registry.local") == "answers anonymously over plain http://"
+
+
+@respx.mock
+async def test_authentication_results_are_recorded():
+    challenge = 'Bearer realm="https://{0}/token",service="{0}"'
+    for host in ("good.example.com", "bad.example.com", "anon.example.com"):
+        respx.get(f"https://{host}/v2/app/tags/list?n=1000").mock(
+            side_effect=[httpx.Response(401, headers={"www-authenticate": challenge.format(host)}), httpx.Response(200, json={})]
+        )
+    respx.get("https://good.example.com/token").respond(200, json={"token": "t"})
+    respx.get("https://bad.example.com/token").respond(401, json={"details": "incorrect username or password"})
+    respx.get("https://anon.example.com/token").respond(200, json={"token": "t"})
+    basic = 'Basic realm="x"'
+    respx.get("https://basic.example.com/v2/app/tags/list?n=1000").mock(
+        side_effect=[httpx.Response(401, headers={"www-authenticate": basic}), httpx.Response(200, json={})]
+    )
+    respx.get("https://wrong.example.com/v2/app/tags/list?n=1000").respond(401, headers={"www-authenticate": basic})
+    credentials = {h: ("u", "p") for h in ("good.example.com", "bad.example.com", "basic.example.com", "wrong.example.com")}
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http, credentials)
+        for host in ("good.example.com", "anon.example.com", "basic.example.com"):
+            await oci.list_tags(host, "app")
+        for host in ("bad.example.com", "wrong.example.com"):
+            with pytest.raises(RegistryError):
+                await oci.list_tags(host, "app")
+    results = oci.auth_results
+    assert results.get("good.example.com").ok and results.get("basic.example.com").ok
+    assert results.get("anon.example.com") is None  # anonymous: says nothing about credentials
+    bad = results.get("bad.example.com")
+    assert not bad.ok and "bad.example.com refused the credentials: HTTP 401" in bad.message
+    assert not results.get("wrong.example.com").ok

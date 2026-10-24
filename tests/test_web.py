@@ -32,6 +32,9 @@ class FakeScanner:
     pull_secrets: dict = {}
 
     def __init__(self):
+        from kube_tower.registry.auth import AuthResults
+
+        self.registry_auth = AuthResults()
         self.running_activities = []
         now = datetime.now(UTC)
         self.snapshot = Snapshot(
@@ -253,8 +256,14 @@ def test_settings_page_shows_credentials_without_secrets(monkeypatch):
         RegistryCredential("docker.io", username="alex", password_env="DOCKERHUB_TOKEN"),
         RegistryCredential("ghcr.io", password_file="/nonexistent"),
     ]
-    page = TestClient(create_app(settings, FakeScanner(), background=False)).get("/settings").text
+    scanner = FakeScanner()
+    page = TestClient(create_app(settings, scanner, background=False)).get("/settings").text
     assert "docker.io" in page and "alex" in page and "loaded" in page and "invalid" in page
+    assert page.count("not tried yet") == 2
+    scanner.registry_auth.record("docker.io", True)
+    scanner.registry_auth.record("ghcr.io", False, "ghcr.io refused the credentials: HTTP 403 Forbidden")
+    page = TestClient(create_app(settings, scanner, background=False)).get("/settings").text
+    assert "not tried yet" not in page and "accepted" in page and "refused" in page and "HTTP 403 Forbidden" in page
     assert "super-secret-token" not in page
     assert "passwordEnv: DOCKERHUB_TOKEN" in page  # camelCase like config.yaml
 

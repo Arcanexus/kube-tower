@@ -50,3 +50,17 @@ def test_invalid_docker_config(tmp_path):
     docker.write_text("not json")
     creds, statuses = resolve_credentials(RegistriesSettings(docker_config_path=str(docker)))
     assert not creds and statuses[0].ok is False
+
+
+def test_auth_results_of_a_pattern():
+    from kube_tower.registry.auth import AuthResults
+
+    results = AuthResults()
+    assert results.get("*.dkr.ecr.*.amazonaws.com") is None
+    results.record("1.dkr.ecr.eu-west-1.amazonaws.com", True)
+    assert results.get("*.dkr.ecr.*.amazonaws.com").ok
+    results.record("2.dkr.ecr.eu-west-1.amazonaws.com", False, "expired")
+    results.record("3.dkr.ecr.eu-west-1.amazonaws.com", True)
+    refused = results.get("*.dkr.ecr.*.amazonaws.com")
+    assert not refused.ok and refused.host == "2.dkr.ecr.eu-west-1.amazonaws.com"  # a refusal shows first
+    assert results.get("Ghcr.io") is None and results.get("1.DKR.ecr.eu-west-1.amazonaws.com").ok

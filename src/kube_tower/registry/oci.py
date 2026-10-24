@@ -22,7 +22,7 @@ from kube_tower.errors import http_error_message
 from kube_tower.models import ImageRef
 
 if TYPE_CHECKING:
-    from kube_tower.registry.auth import Credentials
+    from kube_tower.registry.auth import AuthResults, Credentials
 
 log = logging.getLogger(__name__)
 
@@ -125,8 +125,9 @@ class OCIClient:
         max_tag_pages: int = 10,
         insecure: list[str] | None = None,
         insecure_http: httpx.AsyncClient | None = None,
+        auth_results: AuthResults | None = None,
     ):
-        from kube_tower.registry.auth import Credentials
+        from kube_tower.registry.auth import AuthResults, Credentials
 
         self.http = http
         self.credentials = credentials if isinstance(credentials, Credentials) else Credentials(credentials)
@@ -138,6 +139,8 @@ class OCIClient:
         self._schemes: dict[str, str] = {}  # insecure hosts found to answer in plain http://
         # (host, scope) -> (token, monotonic time it expires at, None when the registry gives no lifetime)
         self._tokens: dict[tuple[str, str], tuple[str, float | None]] = {}
+        # Whether each registry accepted the credentials (shown on the Settings page), kept between scans.
+        self.auth_results = auth_results if auth_results is not None else AuthResults()
 
     def is_insecure(self, host: str) -> bool:
         return any(fnmatch.fnmatch(host.lower(), pattern) for pattern in self.insecure)
@@ -168,17 +171,32 @@ class OCIClient:
             return self.mirrors[registry]
         return DOCKER_HUB_API if registry == DOCKER_HUB else registry
 
-    async def _credentials_for(self, registry: str, host: str) -> tuple[str, str] | None:
-        """Credentials for a request to `host`, chosen by that host like Docker and containerd do.
+    def _credentials_host(self, registry: str, host: str) -> str:
+        """The registry whose credentials go to `host`, chosen by that host like Docker and containerd do.
 
         The registry's own credentials go to its API host (or its mirror) only. After a redirect to
         another host (e.g. registry.k8s.io to Artifact Registry), that host gets the credentials
         configured for it, or none: the registry's credentials are never sent elsewhere.
         """
         if host in (registry, self._api_host(registry)):
-            return await self.credentials.get(registry)
+            return registry
         host = host.lower()
-        return await self.credentials.get(DOCKER_HUB if host in DOCKER_HUB_ALIASES else host)
+        return DOCKER_HUB if host in DOCKER_HUB_ALIASES else host
+
+    async def _credentials_for(self, registry: str, host: str) -> tuple[str, str] | None:
+        """Credentials for a request to `host` (see _credentials_host)."""
+        target = self._credentials_host(registry, host)
+        try:
+            return await self.credentials.get(target)
+        except RegistryError as exc:  # a cloud provider that cannot get a token
+            self.auth_results.record(target, False, str(exc))
+            raise
+
+    def _record_auth(self, registry: str, host: str, resp: httpx.Response) -> None:
+        """Note whether a request that sent credentials was accepted (401 and 403 mean refused)."""
+        ok = resp.status_code not in (401, 403)
+        message = "" if ok else http_error_message(f"{registry} refused the credentials", resp)
+        self.auth_results.record(self._credentials_host(registry, host), ok, message)
 
     def _cached_token(self, host: str, scope: str) -> str | None:
         """The token got earlier for this host and scope, unless it has expired (or is about to)."""
@@ -220,6 +238,8 @@ class OCIClient:
             query.get("scope", "no scope"),
         )
         resp = await self.client_for(httpx.URL(fields["realm"]).host).get(fields["realm"], params=query, auth=auth)
+        if auth:
+            self._record_auth(registry, host, resp)
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot get a pull token for {registry}", resp))
         body = resp.json()
@@ -253,6 +273,7 @@ class OCIClient:
                     # Basic auth sends the password itself: only over https://.
                     if resp.request.url.scheme == "https" and (auth := await self._credentials_for(registry, host)):
                         resp = await self._send(method, url, headers=headers, auth=auth, **kwargs)
+                        self._record_auth(registry, host, resp)
                 elif token := await self._renew_token(registry, host, challenge, scope):
                     headers["Authorization"] = f"Bearer {token}"
                     resp = await self._send(method, url, headers=headers, **kwargs)
@@ -281,7 +302,8 @@ class OCIClient:
                 if registry not in self.credentials:
                     raise RegistryError(f"{registry} requires credentials and none are configured (registries.credentials)")
                 require_https(resp.request.url, f"{registry}, which asks for a password,")
-                resp = await self._send("GET", str(resp.request.url), auth=await self.credentials.get(registry))
+                resp = await self._send("GET", str(resp.request.url), auth=await self._credentials_for(registry, host))
+                self._record_auth(registry, host, resp)
             else:
                 # Getting a token proves that the credentials (if any) are accepted.
                 if await self._renew_token(registry, host, challenge, scope):

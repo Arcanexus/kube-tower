@@ -34,7 +34,7 @@ from kube_tower.collectors.images import ImageInventory
 from kube_tower.collectors.vulnerabilities import collect_operator_reports, pick_report
 from kube_tower.config import Settings
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, VulnerabilityReport
-from kube_tower.registry.auth import Credentials, TokenCache, resolve_credentials
+from kube_tower.registry.auth import AuthResults, Credentials, TokenCache, resolve_credentials
 from kube_tower.registry.helm import HelmClient, IndexCache
 from kube_tower.registry.oci import OCIClient
 from kube_tower.registry.transport import RetryingClient
@@ -143,6 +143,8 @@ class Scanner:
         self.trivy = TrivyScanner(settings.vulnerabilities.trivy, {})
         # Short-lived tokens of cloud registries (ECR, Artifact Registry, ACR), kept until shortly before they expire.
         self.registry_tokens = TokenCache()
+        # Whether each registry accepted the credentials at the last request that sent them (Settings page).
+        self.registry_auth = AuthResults()
         # Credentials of the image pull secrets read at the last scan (registries.useImagePullSecrets).
         self.pull_secrets: dict[str, tuple[str, str]] = {}
         self.helm_indexes = IndexCache()  # index.yaml of the Helm repositories, revalidated at each scan
@@ -308,7 +310,9 @@ class Scanner:
             http = await stack.enter_async_context(RetryingClient(verify=ssl_context(reg.ca_file), **options))
             # TLS certificates of registries.insecure hosts are not verified.
             insecure = await stack.enter_async_context(RetryingClient(verify=False, **options)) if reg.insecure else None
-            oci = OCIClient(http, credentials, reg.mirrors, self.settings.images.max_tag_pages, reg.insecure, insecure)
+            oci = OCIClient(
+                http, credentials, reg.mirrors, self.settings.images.max_tag_pages, reg.insecure, insecure, self.registry_auth
+            )
             yield oci, HelmClient(http, oci, self.settings.git, self.helm_indexes), credentials
 
     async def _scan_vulnerabilities(self, snap: Snapshot) -> None:
