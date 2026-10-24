@@ -3,7 +3,7 @@
 {% call drawer(c.chart, c.application ~ " · " ~ c.cluster) %}
 <p>{{ badge(c.status) }}{% if c.message %} <small>{{ c.message }}</small>{% endif %}
   {% if c.worst_status != c.status %}<br><small>Subcharts: </small>{{ badge(c.worst_status) }}{% endif %}</p>
-{{ rescan([("Check versions", "api/rescan/chart?" ~ query)], "charts/detail?" ~ query, rescanning, scanning) }}
+{{ rescan([("Check versions", "api/rescan/chart?" ~ query)], "charts/detail?" ~ query, rescanning, checking_versions) }}
 {{ links(chart_links(c)) }}
 
 <h4>Chart</h4>

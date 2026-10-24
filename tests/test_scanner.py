@@ -629,3 +629,95 @@ async def test_rescan_without_image_collection(monkeypatch):
     scanner, image, _ = _snapshot_scanner(settings)
     scanner._clusters = {"up": Cluster("up", "https://up", "in-cluster", None)}
     assert await scanner._collect_images_named(scanner.snapshot, image.image.name) == []
+
+
+async def _until(condition, timeout: float = 5) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        await asyncio.sleep(0.01)
+
+
+async def test_trivy_phase_has_its_own_lock(fakes, monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="kube_tower")
+    release = threading.Event()
+    scanned: list[Snapshot] = []
+
+    async def scan_vulnerabilities(self, snap):
+        scanned.append(snap)
+        await asyncio.to_thread(release.wait, 5)
+
+    monkeypatch.setattr(Scanner, "_scan_vulnerabilities", scan_vulnerabilities)
+    scanner = Scanner(Settings(), FakeRegistry())
+    assert scanner.trigger()
+    first = scanner._task
+    await _until(lambda: scanned)
+    # Trivy phase of the first scan: shown as running, but scans and rescans can start.
+    assert scanner.running and scanner.locked and not scanner.checking_versions
+    snap1 = scanner.snapshot
+    tasks = [first]
+    for _ in range(2):  # two more scans: both check their versions, then wait for the Trivy lock
+        previous = scanner.snapshot
+        assert scanner.trigger()
+        tasks.append(scanner._task)
+        await _until(lambda previous=previous: scanner.snapshot is not previous and not scanner.checking_versions)
+    snap3 = scanner.snapshot
+    # A maintenance action waits for the Trivy phase too.
+    entered = []
+
+    async def maintenance():
+        async with scanner.exclusive("the Trivy database is being updated"):
+            entered.append(scanner.busy)
+
+    tasks.append(asyncio.create_task(maintenance()))
+    await asyncio.sleep(0.05)
+    assert not entered and len(scanned) == 1
+    release.set()
+    await asyncio.gather(*tasks)
+    # The second scan was replaced by the third before its Trivy phase: skipped.
+    assert scanned == [snap1, snap3] and entered == ["the Trivy database is being updated"]
+    assert "vulnerability scan skipped: a newer scan replaced this one" in caplog.text
+    assert scanner.scans_total == {"success": 3, "failure": 0} and not scanner.locked
+
+
+async def test_activities_list_what_runs(fakes, monkeypatch):
+    release = threading.Event()
+
+    async def scan_vulnerabilities(self, snap):
+        await asyncio.to_thread(release.wait, 5)
+
+    async def check_all(self, reports):
+        await asyncio.to_thread(release.wait, 5)
+
+    async def quick(self, reports):
+        return None
+
+    monkeypatch.setattr(Scanner, "_scan_vulnerabilities", scan_vulnerabilities)
+    scanner = Scanner(Settings(), FakeRegistry())
+    assert scanner.activities() == []
+    monkeypatch.setattr(scanner_module.ImageChecker, "check_all", check_all)
+    assert scanner.trigger()
+    await _until(lambda: scanner.activities())
+    [versions] = scanner.activities()
+    assert versions.name == "Full scan: clusters and versions" and versions.state == "running" and versions.started_at
+    release.set()
+    await scanner._task
+    release.clear()
+    monkeypatch.setattr(scanner_module.ImageChecker, "check_all", quick)
+    tasks = []
+    for _ in range(2):
+        assert scanner.trigger()
+        tasks.append(scanner._task)
+        await _until(lambda: not scanner.checking_versions and scanner.trivy_started_at)
+    await _until(lambda: scanner.trivy_waiting == 1)
+    names = [(a.name, a.state) for a in scanner.activities()]
+    assert names == [
+        ("Full scan: vulnerabilities (Trivy)", "running"),
+        ("Full scan: vulnerabilities (Trivy) of 1 newer scan(s)", "waiting"),
+    ]
+    scanner._rescan_started[("chart", "c")] = ("chart app of application app", datetime.now(UTC))
+    assert scanner.activities()[-1].name == "Rescan of chart app of application app"
+    release.set()
+    await asyncio.gather(*tasks)
+    del scanner._rescan_started[("chart", "c")]
+    assert scanner.activities() == []

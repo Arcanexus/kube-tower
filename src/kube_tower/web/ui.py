@@ -128,7 +128,13 @@ def mount(app: FastAPI) -> None:
         return templates.TemplateResponse(
             request,
             f"{name}.html",
-            {"snapshot": scanner.snapshot, "scanning": scanner.running, "partial": partial, **context},
+            {
+                "snapshot": scanner.snapshot,
+                "scanning": scanner.running,
+                "checking_versions": scanner.checking_versions,
+                "partial": partial,
+                **context,
+            },
         )
 
     def render_detail(request: Request, name: str, key: tuple, **context) -> HTMLResponse:
@@ -298,6 +304,7 @@ def mount(app: FastAPI) -> None:
                 "tab": "maintenance",
                 "snapshot": scanner.snapshot,
                 "scanning": scanner.running,
+                "checking_versions": scanner.checking_versions,
                 "partial": False,
                 "scanner": scanner,
                 "m": maintenance,

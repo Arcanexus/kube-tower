@@ -1,5 +1,7 @@
+import asyncio
 import json
 import stat
+import threading
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -305,3 +307,23 @@ async def test_trivy_status(tmp_path, monkeypatch):
     assert (await scanner.status()).message == "trivy version failed: boom"
     missing = await TrivyScanner(TrivySettings(binary=str(tmp_path / "none")), {}).status()
     assert missing.message.endswith("not found")
+
+
+def test_trivy_database_downloaded_once_at_a_time(monkeypatch):
+    """The Trivy phase of a scan and the rescans prepare the database from different threads."""
+    active, overlaps = [], []
+
+    async def download(self):
+        active.append(1)
+        overlaps.append(len(active))
+        await asyncio.sleep(0.05)
+        active.pop()
+
+    monkeypatch.setattr(TrivyScanner, "_download_db", download)
+    scanner = TrivyScanner(TrivySettings(), {})
+    threads = [threading.Thread(target=lambda: asyncio.run(scanner.prepare())) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert overlaps == [1, 1, 1]
