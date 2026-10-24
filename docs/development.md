@@ -42,7 +42,8 @@ src/kube_tower/
                        vulnerabilities.py (Trivy Operator VulnerabilityReports)
   trivy.py             vulnerability scans with the Trivy CLI
   registry/            oci.py (OCI distribution API), helm.py (Helm repos, OCI charts, git), auth.py
-                       (credentials), transport.py (HTTP client, timeouts, retries)
+                       (credentials), cloud.py (ECR / Artifact Registry / ACR tokens), transport.py
+                       (HTTP client, timeouts, retries)
   checkers.py          version comparison, one lookup per repository per scan
   versions.py          tag parsing and ordering
   scanner.py           full scan, rescans and in-memory snapshot

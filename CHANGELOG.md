@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Any registry: cloud registries get short-lived tokens from the identity of the pod with
+  `provider: aws` (Amazon ECR, IRSA or EKS Pod Identity), `gcp` (Artifact Registry and gcr.io, GKE
+  Workload Identity) or `azure` (ACR, AKS Workload Identity), without cloud SDK. Credentials can match
+  several hosts with a pattern (`*.dkr.ecr.*.amazonaws.com`). Opt-in reuse of the image pull secrets of
+  the workloads (`config.registries.useImagePullSecrets`). Private CAs (`registries.ca` in the chart,
+  `registries.caFile`) and insecure registries with plain `http://` fallback (`registries.insecure`),
+  for the version checks, the OCI Helm charts and the Trivy scans. Docker `config.json` identity
+  tokens (`az acr login`) and legacy `.dockercfg` pull secrets are read. New page docs/registries.md
+  with the method for each kind of registry (Docker Hub, ECR, Artifact Registry, ACR, Harbor,
+  Artifactory, Nexus...).
+
 - Chart: optional NetworkPolicies (`networkPolicy.enabled`) for the kube-tower pod and the Trivy
   server: only the `http` port is reachable (from `networkPolicy.ingress.from`), egress limited to DNS,
   the Trivy server and `networkPolicy.egress.ports` (443, 6443).

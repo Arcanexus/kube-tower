@@ -53,10 +53,15 @@ vulnerabilities:               # see "Vulnerabilities (Trivy)" below
 registries:
   dockerConfigPath: /etc/kube-tower/dockerconfig/config.json
   credentials:                 # per registry, override the docker config.json
-    - registry: docker.io
+    - registry: docker.io      # a host, or an fnmatch pattern of hosts
       usernameFile: /etc/kube-tower/registries/0/username   # or username / usernameEnv
       passwordFile: /etc/kube-tower/registries/0/password   # or passwordEnv
+    - registry: "*.dkr.ecr.*.amazonaws.com"
+      provider: aws            # static (default), aws, gcp or azure: tokens from the pod identity
   mirrors: {}                  # e.g. {docker.io: mirror.example.com}
+  useImagePullSecrets: false   # also use the image pull secrets of the workloads
+  caFile: ""                   # PEM CA certificates trusted in addition to the public ones
+  insecure: []                 # registries whose TLS is not verified (plain http:// fallback)
   concurrency: 8
   timeout: 20                  # seconds, per request (connect, read)
   retries: 2                   # extra attempts after a timeout, a connection error or a 502/503/504
@@ -122,7 +127,10 @@ vulnerabilities:
 ## Registry authentication
 
 Each registry can have its own credentials, used for private images, private Helm charts and to
-raise the Docker Hub rate limits, which are much lower for anonymous clients. They apply to:
+raise the Docker Hub rate limits, which are much lower for anonymous clients. Cloud registries (ECR,
+Artifact Registry, ACR) can use the identity of the pod instead, and the image pull secrets of the
+clusters can be reused: [registries.md](registries.md) explains the method for each kind of registry
+(Harbor, Artifactory, Nexus, private CAs...). Credentials apply to:
 
 - container registries and OCI Helm registries (token exchange or basic auth),
 - classic HTTP Helm repositories (`index.yaml` and chart downloads, basic auth).

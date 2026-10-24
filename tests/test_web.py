@@ -29,6 +29,7 @@ class FakeScanner:
     checking_versions = False
     locked = False
     busy = None
+    pull_secrets: dict = {}
 
     def __init__(self):
         self.running_activities = []

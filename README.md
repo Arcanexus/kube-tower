@@ -31,14 +31,14 @@ never updates anything, you stay in control of your GitOps workflow.
 | | |
 | --- | --- |
 | 📦 **Every image** | Pods, Deployments, StatefulSets, DaemonSets and CronJobs (running or not) plus the images cached on nodes. |
-| 🔎 **Checked at the source** | Each image is compared with the registry referenced in the manifest: Docker Hub, ghcr.io, quay.io, Harbor, GitLab or any OCI registry. |
+| 🔎 **Checked at the source** | Each image is compared with the registry referenced in the manifest: Docker Hub, ghcr.io, quay.io, Amazon ECR, Artifact Registry, ACR, Harbor, Artifactory, Nexus or any OCI registry. |
 | 🏷️ **Smart tag matching** | `1.25.3-alpine` is only compared with `x.y.z-alpine` tags, semver with semver, calendar or date versions with their own kind; pre-releases are ignored unless you ask for them. |
 | 🔁 **Floating tags too** | `latest`, `stable`… are checked by digest, like watchtower: you know when a newer image was pushed under the same tag. |
 | ⎈ **Helm charts and subcharts** | Charts deployed by ArgoCD Applications, from Helm repositories, OCI registries or git paths, with every dependency checked. |
 | 🌐 **Multi-cluster** | Register clusters ArgoCD-style with a Secret, or reuse the cluster Secrets ArgoCD already has. |
 | 🛡️ **Vulnerabilities (CVE)** | Read from Trivy Operator reports when the cluster has them, else scanned with Trivy (copied into the pod by the chart, standalone or client/server). Find the images affected by a CVE in one search. |
 | 🖥️ **A UI made for triage** | Synthesis home page, filters kept in the URL, sortable columns with fixed headers, detail panels (digests, registry links, subchart tree, CVE list), per item rescan, live logs, light and dark themes. |
-| 🔐 **Registry authentication** | Per registry credentials for private registries, private Helm repositories and Docker Hub rate limits. |
+| 🔐 **Registry authentication** | Per registry credentials, cloud identities (IRSA / EKS Pod Identity, GKE and AKS Workload Identity), reuse of the clusters' image pull secrets, private CAs. |
 | 🧰 **Maintenance** | Rescan one item or what failed, update the Trivy database, test the connectivity to clusters and registries, list unused node images. Read-only: nothing is ever changed in the clusters. |
 | 🪶 **Stateless** | No database. One small pod, rebuilt inventory every few hours or on demand. |
 | 📈 **Observable** | JSON API and Prometheus metrics, ready for Grafana dashboards and alerts. |
@@ -63,7 +63,7 @@ Open http://localhost:8080: the first scan of the local cluster starts right awa
 Then, as needed:
 
 - [register other clusters](docs/clusters.md),
-- [add registry credentials](docs/configuration.md#registry-authentication),
+- [connect private registries](docs/registries.md),
 - [expose the UI with an ingress or deploy with ArgoCD](docs/installation.md).
 
 ## How it works
@@ -92,6 +92,7 @@ Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md).
 | [Installation](docs/installation.md) | Helm, ArgoCD, ingress, upgrades, requirements |
 | [Configuration](docs/configuration.md) | every setting, registry authentication, secrets |
 | [Clusters](docs/clusters.md) | registering remote clusters, reusing ArgoCD clusters |
+| [Registries](docs/registries.md) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: authentication, private CAs |
 | [Usage](docs/usage.md) | the pages, filters and sorting, rescans, maintenance, statuses, JSON API |
 | [Vulnerabilities](docs/vulnerabilities.md) | CVE detection with Trivy Operator reports or Trivy |
 | [Metrics and Grafana](docs/metrics.md) | Prometheus exporter, PromQL examples, alerts, Grafana dashboard |

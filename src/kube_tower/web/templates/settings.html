@@ -10,7 +10,7 @@
   {% for c in credentials %}
     <tr>
       <td><code>{{ c.registry }}</code></td><td>{{ c.source }}</td><td>{{ c.username }}</td>
-      <td>{% if c.ok %}<span class="badge badge-up-to-date">{{ icon("ok") }}loaded</span>{% else %}<span class="badge badge-error">{{ icon("error") }}invalid</span><br><small>{{ c.message }}</small>{% endif %}</td>
+      <td>{% if c.ok %}<span class="badge badge-up-to-date">{{ icon("ok") }}loaded</span>{% else %}<span class="badge badge-error">{{ icon("error") }}invalid</span>{% endif %}{% if c.message %}<br><small>{{ c.message }}</small>{% endif %}</td>
     </tr>
   {% else %}
     <tr><td colspan="4">No credentials: registries are queried anonymously (Docker Hub rate limits apply).</td></tr>

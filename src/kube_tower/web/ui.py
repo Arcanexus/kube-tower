@@ -289,7 +289,7 @@ def mount(app: FastAPI) -> None:
         # Settings only hold references to secrets (paths, env var names), never their values.
         settings = request.app.state.settings
         rendered = yaml.safe_dump(_camel(dataclasses.asdict(settings)), sort_keys=False)
-        _, credentials = resolve_credentials(settings.registries)
+        _, credentials = resolve_credentials(settings.registries, pull_secrets=request.app.state.scanner.pull_secrets)
         return render(request, "settings", tab="settings", settings_yaml=rendered, credentials=credentials)
 
     def render_maintenance(request: Request, notice: str = "", error: str = "", full: bool = False) -> HTMLResponse:

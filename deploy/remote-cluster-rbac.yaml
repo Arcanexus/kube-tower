@@ -44,6 +44,11 @@ rules:
   - apiGroups: ["aquasecurity.github.io"]
     resources: ["vulnerabilityreports"]
     verbs: ["get", "list"]
+  # Image pull secrets of the workloads, only with registries.useImagePullSecrets: true (reads any
+  # Secret whose name is known, see docs/registries.md)
+  # - apiGroups: [""]
+  #   resources: ["secrets"]
+  #   verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

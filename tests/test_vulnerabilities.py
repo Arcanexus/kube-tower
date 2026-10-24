@@ -11,6 +11,8 @@ from kube_tower.clusters import Cluster
 from kube_tower.collectors import vulnerabilities as operator
 from kube_tower.config import TrivySettings
 from kube_tower.models import ImageRef, ImageReport, Severity, Vulnerability, VulnerabilityReport
+from kube_tower.registry.auth import Credentials
+from kube_tower.registry.oci import RegistryError
 from kube_tower.trivy import TrivyScanner, _error_message, parse_trivy_output, parse_trivy_version, scan_target
 
 OPERATOR_REPORT = {
@@ -169,7 +171,8 @@ def fake_trivy(tmp_path):
     script.write_text(
         "#!/usr/bin/env python3\n"
         "import json, os, sys\n"
-        f"open({str(log)!r}, 'a').write(json.dumps({{'args': sys.argv[1:], 'user': os.environ.get('TRIVY_USERNAME')}}) + '\\n')\n"
+        "env = {'user': os.environ.get('TRIVY_USERNAME'), 'ssl': os.environ.get('SSL_CERT_FILE')}\n"
+        f"open({str(log)!r}, 'a').write(json.dumps({{'args': sys.argv[1:], **env}}) + '\\n')\n"
         "target = sys.argv[-1]\n"
         "if 'broken' in target or ('--download-db-only' in sys.argv and os.environ.get('FAIL_DB')):\n"
         "    print('2026-10-23T00:00:00Z\\tFATAL\\tFatal error\\tboom', file=sys.stderr); sys.exit(1)\n"
@@ -336,3 +339,28 @@ async def test_trivy_refuses_option_like_target(fake_trivy, monkeypatch):
     monkeypatch.setattr("kube_tower.trivy.scan_target", lambda r: ("--output=/tmp/x", None))
     result = await scanner.scan(ImageReport(ImageRef("docker.io", "x", "1")))
     assert result.message == "invalid image reference '--output=/tmp/x'" and calls() == []
+
+
+async def test_trivy_insecure_ca_and_cloud_credentials(fake_trivy):
+    binary, calls = fake_trivy
+
+    class Failing:
+        name = "aws"
+
+        async def fetch(self, registry):
+            raise RegistryError("no AWS identity for provider aws")
+
+    ecr = "123456789012.dkr.ecr.eu-west-1.amazonaws.com"
+    scanner = TrivyScanner(TrivySettings(binary=binary, server_url="http://trivy:4954"), Credentials(providers={ecr: Failing()}))
+    scanner.insecure = ["registry.local*"]
+    scanner.ca_bundle = "/tmp/bundle.pem"
+    local = ImageReport(ImageRef("registry.local:5000", "app", "1"))
+    public = ImageReport(ImageRef("docker.io", "library/alpine", "3.18"))
+    private = ImageReport(ImageRef(ecr, "team/app", "1"))
+    await scanner.scan_all([local, public, private])
+    by_target = {c["args"][-1]: c for c in calls()}
+    assert "--insecure" in by_target["registry.local:5000/app:1"]["args"]
+    assert "--insecure" not in by_target["docker.io/library/alpine:3.18"]["args"]
+    assert by_target["docker.io/library/alpine:3.18"]["ssl"] == "/tmp/bundle.pem"
+    assert f"{ecr}/team/app:1" not in by_target  # not scanned: no token
+    assert private.vulnerabilities.message == "no AWS identity for provider aws"

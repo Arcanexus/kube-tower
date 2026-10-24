@@ -118,9 +118,13 @@ class RegistryCredential:
 
     Values are read from files (mounted Secrets) or env vars, never written in the ConfigMap.
     A token-only registry (e.g. ghcr.io with a PAT) only needs `passwordFile`/`passwordEnv`.
+    `registry` is a host, or an fnmatch pattern of hosts (e.g. `*.dkr.ecr.*.amazonaws.com`).
     """
 
     registry: str
+    # static: the username/password below. aws (Amazon ECR), gcp (Artifact Registry, gcr.io), azure (ACR):
+    # short-lived tokens from the cloud identity of the pod (IRSA / EKS Pod Identity, GKE or AKS Workload Identity).
+    provider: str = "static"
     username: str = ""
     username_file: str = ""
     username_env: str = ""
@@ -136,6 +140,14 @@ class RegistriesSettings:
     credentials: list[RegistryCredential] = field(default_factory=list)
     # Registry host aliases, e.g. {"docker.io": "registry-1.docker.io"}.
     mirrors: dict[str, str] = field(default_factory=dict)
+    # Also use the image pull secrets of the pods and workloads (kubernetes.io/dockerconfigjson Secrets read
+    # in their namespace): needs `get` on Secrets in every namespace of the scanned clusters. Off by default.
+    use_image_pull_secrets: bool = False
+    # CA certificates (PEM file) trusted in addition to the public ones, e.g. for an internal Harbor or Artifactory.
+    ca_file: str = ""
+    # Hosts (or fnmatch patterns) whose TLS certificate is not verified, reached over plain http:// when
+    # they do not answer in https://. Credentials are never sent over plain http://.
+    insecure: list[str] = field(default_factory=list)
     concurrency: int = 8
     timeout: int = 20
     # Extra attempts for a request that timed out, failed to connect or got a 502/503/504.
