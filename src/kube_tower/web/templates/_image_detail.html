@@ -21,6 +21,7 @@
 <table>
   <tr><th scope="row">Reference</th><td><code>{{ r.image }}</code></td></tr>
   <tr><th scope="row">Current tag</th><td>{{ tag(r.image.tag) }}</td></tr>
+  {% if versioning(r.image.tag) %}<tr><th scope="row">Versioning</th><td>{{ versioning(r.image.tag) }} <small>(only tags of the same scheme are compared)</small></td></tr>{% endif %}
   <tr><th scope="row">Latest tag</th><td>{{ r.latest_tag or "n/a" }}</td></tr>
   {% if r.latest_tag and r.status == Status.OUTDATED %}
   <tr><th scope="row">Upgrade to</th><td><code>{{ r.image.name }}:{{ r.latest_tag }}</code></td></tr>

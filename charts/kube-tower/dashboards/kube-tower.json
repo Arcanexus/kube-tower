@@ -716,6 +716,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "newer"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "digest"
             },
             "properties": [
@@ -1039,10 +1054,15 @@
                         "color": "yellow",
                         "index": 2
                       },
+                      "newer": {
+                        "text": "newer",
+                        "color": "purple",
+                        "index": 3
+                      },
                       "digest": {
                         "text": "digest",
                         "color": "blue",
-                        "index": 3
+                        "index": 4
                       }
                     }
                   }
@@ -1191,10 +1211,15 @@
                         "color": "yellow",
                         "index": 2
                       },
+                      "newer": {
+                        "text": "newer",
+                        "color": "purple",
+                        "index": 3
+                      },
                       "digest": {
                         "text": "digest",
                         "color": "blue",
-                        "index": 3
+                        "index": 4
                       }
                     }
                   }
@@ -1402,10 +1427,15 @@
                         "color": "yellow",
                         "index": 2
                       },
+                      "newer": {
+                        "text": "newer",
+                        "color": "purple",
+                        "index": 3
+                      },
                       "digest": {
                         "text": "digest",
                         "color": "blue",
-                        "index": 3
+                        "index": 4
                       }
                     }
                   }
@@ -1545,10 +1575,15 @@
                         "color": "yellow",
                         "index": 2
                       },
+                      "newer": {
+                        "text": "newer",
+                        "color": "purple",
+                        "index": 3
+                      },
                       "digest": {
                         "text": "digest",
                         "color": "blue",
-                        "index": 3
+                        "index": 4
                       }
                     }
                   }

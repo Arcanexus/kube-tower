@@ -17,6 +17,7 @@ from kube_tower.maintenance import unused_node_images
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.scanner import chart_key, image_key
+from kube_tower.versions import versioning
 from kube_tower.web.summary import UPDATE_KINDS, WORST_ORDER, summarize
 
 HERE = Path(__file__).parent
@@ -116,6 +117,7 @@ def vulnerability_score(report: ImageReport) -> int:
 
 templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
+templates.env.globals.update(versioning=versioning)
 
 
 def mount(app: FastAPI) -> None:
