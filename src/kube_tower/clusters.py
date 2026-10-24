@@ -79,13 +79,55 @@ def api_client_from_argocd_config(server: str, raw_config: dict) -> client.ApiCl
     if tls.get("serverName"):
         cfg.tls_server_name = tls["serverName"]
     if "execProviderConfig" in raw_config or "awsAuthConfig" in raw_config:
-        raise ValueError("exec / AWS auth is not supported, use a bearer token")
+        raise ValueError(
+            "exec / AWS auth is not supported in the ArgoCD format: use a bearer token, "
+            "or a kubeconfig key with an exec plugin allowed in clusters.execCommands"
+        )
     return client.ApiClient(cfg)
 
 
-def api_client_from_kubeconfig(kubeconfig: str) -> tuple[client.ApiClient, str]:
+# kubeconfig keys that read a file of the pod: a cluster Secret must hold the data itself (`*-data`, `token`).
+KUBECONFIG_FILE_KEYS = {
+    "cluster": ("certificate-authority",),
+    "user": ("tokenFile", "client-certificate", "client-key"),
+}
+
+
+def check_kubeconfig(data: dict, exec_commands: list[str]) -> None:
+    """Refuse what a kubeconfig could make kube-tower run or read in its pod: exec plugins whose
+    command is not in `clusters.execCommands`, auth providers, and paths of local files.
+    Anyone who can write a cluster Secret would otherwise run a command with kube-tower's identity.
+    """
+    for kind, keys in KUBECONFIG_FILE_KEYS.items():
+        for entry in data.get(f"{kind}s") or []:
+            for key in keys:
+                if (entry.get(kind) or {}).get(key):
+                    raise ValueError(
+                        f"kubeconfig {kind} {entry.get('name')!r}: {key} (a file path) is not supported, "
+                        f"put the content in {'token' if key == 'tokenFile' else key + '-data'}"
+                    )
+    for entry in data.get("users") or []:
+        user = entry.get("user") or {}
+        if "auth-provider" in user:
+            raise ValueError(
+                f"kubeconfig user {entry.get('name')!r}: auth-provider is not supported, use a token or an exec plugin"
+            )
+        if exec_config := user.get("exec"):
+            command = exec_config.get("command", "")
+            if command not in exec_commands:
+                raise ValueError(
+                    f"kubeconfig user {entry.get('name')!r}: exec command {command!r} is not allowed, "
+                    "add it to clusters.execCommands to run it (or use a ServiceAccount token)"
+                )
+
+
+def api_client_from_kubeconfig(kubeconfig: str, exec_commands: list[str] | None = None) -> tuple[client.ApiClient, str]:
     cfg = client.Configuration()
-    loader = config.kube_config.KubeConfigLoader(config_dict=yaml.safe_load(kubeconfig))
+    data = yaml.safe_load(kubeconfig)
+    if not isinstance(data, dict):
+        raise ValueError("kubeconfig is not a YAML mapping")
+    check_kubeconfig(data, exec_commands or [])
+    loader = config.kube_config.KubeConfigLoader(config_dict=data)
     loader.load_and_set(cfg)
     return client.ApiClient(cfg), cfg.host
 
@@ -95,10 +137,10 @@ def _decode(secret: client.V1Secret, key: str) -> str | None:
     return base64.b64decode(value).decode() if value else None
 
 
-def cluster_from_secret(secret: client.V1Secret, source: str) -> Cluster:
+def cluster_from_secret(secret: client.V1Secret, source: str, exec_commands: list[str] | None = None) -> Cluster:
     name = _decode(secret, "name") or secret.metadata.name
     if kubeconfig := _decode(secret, "kubeconfig"):
-        api, server = api_client_from_kubeconfig(kubeconfig)
+        api, server = api_client_from_kubeconfig(kubeconfig, exec_commands)
         return Cluster(name=name, server=server, source=source, api_client=api)
     server = _decode(secret, "server")
     if not server:
@@ -196,7 +238,7 @@ class ClusterRegistry:
                 secrets = secrets + self._named_secrets(namespace, statuses)
             for secret in secrets:
                 try:
-                    cluster = cluster_from_secret(secret, source)
+                    cluster = cluster_from_secret(secret, source, self.settings.exec_commands)
                 except Exception as exc:  # noqa: BLE001 - one bad secret must not break discovery
                     log.warning(
                         "invalid cluster secret %s/%s, cluster ignored: %s (expected keys: name, server, config, or kubeconfig)",

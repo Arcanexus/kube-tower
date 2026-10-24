@@ -259,3 +259,31 @@ def test_trivy_images_and_custom_binary(tmp_path):
     server = docs[("Deployment", "kt-kube-tower-trivy")]["spec"]["template"]["spec"]["containers"][0]
     assert server["image"] == "mirror/trivy:0.76.1"
     assert app_settings(tmp_path, docs).vulnerabilities.trivy.binary == "/usr/bin/trivy"
+
+
+def test_exec_plugin_from_extra_init_container(tmp_path):
+    docs = render(
+        tmp_path,
+        {
+            "trivy": {"enabled": False},
+            "config": {"clusters": {"execCommands": ["/opt/kube-tower/bin/kubelogin"]}},
+            "extraInitContainers": [
+                {"name": "kubelogin", "image": "plugins:1", "command": ["cp", "/kubelogin", "/opt/kube-tower/bin/"]}
+            ],
+            "extraEnv": [{"name": "AWS_REGION", "value": "eu-west-1"}],
+            "extraVolumes": [{"name": "plugins", "emptyDir": {}}],
+            "extraVolumeMounts": [{"name": "plugins", "mountPath": "/opt/kube-tower/bin", "readOnly": True}],
+        },
+    )
+    spec = docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["spec"]
+    assert [c["name"] for c in spec["initContainers"]] == ["kubelogin"]
+    assert {"name": "AWS_REGION", "value": "eu-west-1"} in container(docs)["env"]
+    assert "plugins" in volumes(docs)
+    assert {"name": "plugins", "mountPath": "/opt/kube-tower/bin", "readOnly": True} in container(docs)["volumeMounts"]
+    assert app_settings(tmp_path, docs).clusters.exec_commands == ["/opt/kube-tower/bin/kubelogin"]
+
+
+def test_extra_init_containers_after_trivy(tmp_path):
+    docs = render(tmp_path, {"extraInitContainers": [{"name": "plugin", "image": "plugins:1"}]})
+    names = [c["name"] for c in docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["spec"]["initContainers"]]
+    assert names == ["trivy", "plugin"]

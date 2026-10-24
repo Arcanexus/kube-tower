@@ -18,6 +18,7 @@ clusters:
   useArgocdSecrets: false      # also use ArgoCD cluster Secrets
   argocdNamespace: argocd
   requestTimeout: 30
+  execCommands: []             # commands kubeconfig exec plugins may run (EKS, GKE, AKS), see clusters.md
 images:
   enabled: true
   includeNodeImages: true      # images cached on nodes (node.status.images)

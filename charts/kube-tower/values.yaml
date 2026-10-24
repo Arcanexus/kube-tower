@@ -32,6 +32,9 @@ config:
     # Reuse ArgoCD cluster secrets (needs read access to secrets in argocdNamespace)
     useArgocdSecrets: false
     argocdNamespace: argocd
+    # Commands that kubeconfig exec plugins may run, as written in the kubeconfig (e.g.
+    # /opt/kube-tower/bin/kubelogin). Empty: exec plugins are refused. See docs/clusters.md.
+    execCommands: []
   images:
     includeNodeImages: true
     includePrerelease: false
@@ -184,6 +187,14 @@ trivy:
     affinity: {}
 
 podAnnotations: {}
+
+# Extra init containers, env vars, volumes and mounts of the kube-tower pod, e.g. to copy the
+# exec plugin of a managed cluster (kubelogin, aws-iam-authenticator...), see docs/clusters.md.
+extraInitContainers: []
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 10001
