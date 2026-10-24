@@ -40,9 +40,18 @@ def parse(tag: str) -> Version | None:
     return Version(numbers=numbers, prefix=match["prefix"], suffix=match["suffix"], raw=tag)
 
 
-def _semver_suffix_key(suffix: str) -> tuple[int, str]:
-    # A release (no suffix) sorts after any pre-release of the same numbers.
-    return (1, "") if not suffix else (0, suffix)
+_IDENTIFIER_RE = re.compile(r"\d+|[^\d.\-+]+")
+
+
+def _semver_suffix_key(suffix: str) -> tuple:
+    """Order pre-releases like semver: identifiers compared one by one, numbers as numbers (`rc.9` <
+    `rc.10`, also `rc9` < `rc10`), numbers before words, fewer identifiers first. Build metadata (`+...`)
+    is ignored. A release (no suffix) sorts after any pre-release of the same numbers.
+    """
+    suffix = suffix.partition("+")[0]
+    if not suffix:
+        return (1, ())
+    return (0, tuple((0, int(i), "") if i.isdigit() else (1, 0, i) for i in _IDENTIFIER_RE.findall(suffix)))
 
 
 def latest_matching(current: str, candidates: list[str], include_prerelease: bool = False) -> str | None:
