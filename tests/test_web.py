@@ -641,3 +641,30 @@ def test_check_version_button_counts_the_tags():
     assert "and the new ones found on the clusters" in detail
     assert "Scan again (2 tags)" in client.get("/vulnerabilities/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
     assert ">Check version</button>" in client.get("/images/detail", params={"ref": "ghcr.io/org/app:2.0"}).text.replace("\n", "")
+
+
+def test_cross_site_requests_refused(caplog):
+    client, scanner = _client()
+    refused = [
+        {"Sec-Fetch-Site": "cross-site"},
+        {"Sec-Fetch-Site": "same-site"},  # another subdomain
+        {"Origin": "https://evil.example.com"},
+        {"Origin": "null"},
+        {"Origin": "http://testserver", "X-Forwarded-Host": "kube-tower.example.com"},
+    ]
+    for headers in refused:
+        resp = client.post("/api/refresh", headers=headers)
+        assert resp.status_code == 403 and resp.json() == {"detail": "cross-site request refused"}, headers
+        assert client.post("/maintenance/scan", headers=headers).status_code == 403
+    assert scanner.triggered == 0 and "cross-site POST /api/refresh refused" in caplog.text
+    allowed = [
+        {},  # curl, scripts
+        {"Sec-Fetch-Site": "same-origin"},  # the UI
+        {"Sec-Fetch-Site": "none"},  # typed in the address bar
+        {"Origin": "http://testserver"},
+        {"Origin": "https://kube-tower.example.com", "X-Forwarded-Host": "kube-tower.example.com, proxy"},
+    ]
+    for headers in allowed:
+        assert client.post("/api/refresh", headers=headers).status_code == 202, headers
+    # Reading stays open to other sites' links
+    assert client.get("/images", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
