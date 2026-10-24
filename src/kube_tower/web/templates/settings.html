@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, icon, page_title %}
+{% block heading %}{{ page_title("settings", "Settings", "Effective configuration, read from the kube-tower ConfigMap and environment. Secrets are only referenced, never displayed.") }}{% endblock %}
 {% block content %}
-{{ page_title("settings", "Settings", "Effective configuration, read from the kube-tower ConfigMap and environment. Secrets are only referenced, never displayed.") }}
 
 <h3>{{ icon("key") }}Registry credentials</h3>
 <table class="striped">

@@ -36,15 +36,21 @@ intercepted with [respx](https://lundberg.github.io/respx/).
 src/kube_tower/
   main.py              FastAPI app factory, background scan loop
   config.py            settings (config.yaml + env)
+  models.py            data exchanged between collectors, checkers, the snapshot and the UI
   clusters.py          cluster discovery (in-cluster, Secrets, ArgoCD Secrets)
   collectors/          inventory: images.py (workloads, nodes), helm.py (ArgoCD Applications),
                        vulnerabilities.py (Trivy Operator VulnerabilityReports)
   trivy.py             vulnerability scans with the Trivy CLI
   registry/            oci.py (OCI distribution API), helm.py (Helm repos, OCI charts, git), auth.py
+                       (credentials), transport.py (HTTP client, timeouts, retries)
   checkers.py          version comparison, one lookup per repository per scan
   versions.py          tag parsing and ordering
-  scanner.py           full scan and in-memory snapshot
-  web/                 ui.py + templates/ (Jinja2, htmx), api.py, metrics.py, static/
+  scanner.py           full scan, rescans and in-memory snapshot
+  maintenance.py       Maintenance page actions (Trivy database, connectivity tests, unused node images)
+  errors.py            explicit error messages (what failed, status, what to do)
+  logger.py            log formats; logbuffer.py keeps the last lines for the Logs page
+  web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Synthesis figures), api.py,
+                       metrics.py, static/ (Pico CSS, htmx, kube-tower.css/.js, icons)
 charts/kube-tower/     Helm chart
 deploy/                manifests for remote clusters
 docs/                  documentation and ADRs
@@ -55,9 +61,16 @@ docs/                  documentation and ADRs
 - New kind of workload or inventory (e.g. Flux `HelmRelease`): add a collector in `collectors/`
   returning `ImageReport` / `ChartReport` objects, and call it from `scanner.py`.
 - New kind of registry: add a client in `registry/` and use it from `checkers.py`.
-- New page: add a route in `web/ui.py`, a template in `web/templates/` extending `base.html`, and
-  a link in the sidebar of `base.html`. Icons come from the sprite `static/icons.svg`
-  ([Lucide](https://lucide.dev) icons, add a `<symbol id="i-name">` to use `icon("name")`).
+- New page: add a route in `web/ui.py`, a template in `web/templates/` extending `base.html`
+  (title in `{% block heading %}`, content in `{% block content %}`), a link in the sidebar of
+  `base.html` and its name in the sub-path redirect script of `base.html`. Links must stay
+  relative (no leading `/`), see `test_links_are_relative`. Icons come from the sprite
+  `static/icons.svg` ([Lucide](https://lucide.dev) icons, add a `<symbol id="i-name">` to use
+  `icon("name")`).
+- List page: add `{% block layout %}list-page{% endblock %}` and wrap the table in
+  `<div class="overflow-auto table-wrap">`: only the table scrolls, its header stays. Add
+  `data-sort` to the sortable `<th>` (`data-sort="desc"` to sort descending first) and, when the
+  text of a cell does not sort well, a `data-sort` value on the `<td>` (`kube-tower.js` sorts).
 
 ## CI
 
@@ -72,7 +85,8 @@ docs/                  documentation and ADRs
 1. Merge the changes into `main`.
 2. Push a semver tag: `git tag v0.2.0 && git push origin v0.2.0`.
 3. CI publishes `ghcr.io/arcanexus/kube-tower:0.2.0` (and `0.2`, `0`) and the chart `0.2.0`
-   whose `appVersion` points to that image.
+   whose `appVersion` points to that image. The version shown by the UI comes from the tag
+   (build argument `VERSION`, `dev` when run from the sources).
 
 ## Conventions
 

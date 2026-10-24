@@ -43,8 +43,11 @@
         <small>{{ "v" if version[:1].isdigit() }}{{ version }}</small>
       </footer>
     </aside>
-    <div class="content">
-      <header>{% include "_status.html" %}</header>
+    <div class="content {% block layout %}{% endblock %}">
+      <header class="topbar">
+        <div class="topbar-title">{% block heading %}{% endblock %}</div>
+        {% include "_status.html" %}
+      </header>
       <main>
         {% block content %}{% endblock %}
       </main>

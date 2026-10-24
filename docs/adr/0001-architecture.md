@@ -41,6 +41,7 @@ A single Python 3.13 process (FastAPI + uvicorn) packaged as one multi-arch imag
 | `collectors/helm.py` | Reads ArgoCD `Application` objects (single and multi-source) and extracts Helm sources. |
 | `registry/oci.py` | Minimal OCI distribution client (token auth, tag pagination, digests, blobs). |
 | `registry/helm.py` | Helm repositories (`index.yaml`), OCI charts, and `Chart.yaml` read from git through raw URLs. |
+| `collectors/vulnerabilities.py`, `trivy.py` | Vulnerabilities: Trivy Operator `VulnerabilityReports`, else scans with the Trivy CLI (see [vulnerabilities](../vulnerabilities.md)). |
 | `checkers.py` | Computes the status of each image / chart / subchart, querying each repository once per scan. |
 | `scanner.py` | Runs a full scan periodically and keeps the last `Snapshot` in memory. |
 | `web/` | Server-rendered UI, JSON API (`/api/snapshot`, `/api/refresh`, `/api/rescan/*`), Prometheus `/metrics`. |
@@ -63,8 +64,10 @@ new registries types as a new client, without touching the rest.
 
 Jinja2 templates + [htmx](https://htmx.org) + [Pico CSS](https://picocss.com), served by FastAPI
 and vendored in the image. No Node.js toolchain, no build step: a page is an HTML file with
-Jinja placeholders, which a Python developer can maintain. Tabs: Images, Helm charts, Clusters,
-Settings. Filtering is done server-side with htmx partial updates.
+Jinja placeholders, which a Python developer can maintain. Pages: Synthesis, Images, Helm charts,
+Vulnerabilities, Clusters, Logs, Maintenance, Settings. Filtering is done server-side with htmx
+partial updates; column sorting, detail panels and the theme switch are a few lines of plain
+JavaScript (`static/kube-tower.js`).
 
 Alternatives considered: React/Vue SPA (needs a JS toolchain and skills we don't have),
 Streamlit/NiceGUI (fast to start but harder to deploy behind an ingress and to customize).

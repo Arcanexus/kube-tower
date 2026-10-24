@@ -36,8 +36,8 @@
 {% else %}<p><small>None.</small></p>{% endif %}
 {%- endmacro %}
 
+{% block heading %}{{ page_title("synthesis", "Synthesis", "Overview of the last scan across every cluster.") }}{% endblock %}
 {% block content %}
-{{ page_title("synthesis", "Synthesis", "Overview of the last scan across every cluster.") }}
 {% set s = summary %}
 {% set reachable = snapshot.clusters | selectattr("reachable") | list | length %}
 

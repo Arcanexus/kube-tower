@@ -28,10 +28,18 @@ One line per image, the most vulnerable first: counts per severity (`C`ritical, 
 `M`edium, `L`ow, `U`nknown), how many vulnerabilities have a fix in a newer package version, and
 where the result comes from. The counters at the top give the number of images with at least one
 vulnerability of each severity; click one to show only those images. An image whose OS release is
-**end of life** (no more security fixes, e.g. `alpine 3.18`) is flagged in red.
+**end of life** (no more security fixes, e.g. `alpine 3.18`) is flagged in red. Click a column
+header to sort on it.
+
+To find the images affected by a given vulnerability, type all or part of its ID in the **CVE**
+filter, e.g. `CVE-2025-68121` (or `2025-68121`, `GHSA-`; several IDs separated by spaces or
+commas): only the images with a matching vulnerability are listed, with the matching IDs, and the
+counters only count them. The filter is kept in the URL (`vulnerabilities?cve=CVE-2025-68121`), so
+the result can be shared.
 
 Clicking an image opens the list of its vulnerabilities: ID (linked to its advisory), severity and
-CVSS score, package, installed version and the version that fixes it.
+CVSS score, package, installed version and the version that fixes it. With a CVE filter, the
+matching vulnerabilities are listed first and highlighted.
 
 ## Where the Trivy CLI comes from
 

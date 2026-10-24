@@ -287,7 +287,8 @@ To follow the development version, point `source` at the git repository instead:
 | Value | Default | Description |
 | --- | --- | --- |
 | `image.repository` | `ghcr.io/arcanexus/kube-tower` | Image (amd64, arm64, arm/v7) |
-| `image.tag` | chart `appVersion` | Image tag |
+| `image.tag` / `image.pullPolicy` | chart `appVersion` / `IfNotPresent` | Image tag (also the version shown by the UI) |
+| `replicaCount` | `1` | Keep 1: the inventory lives in memory |
 | `config` | see [configuration](configuration.md) | Application settings, rendered into a ConfigMap |
 | `clusters` | `[]` | Remote clusters: Secrets created by the chart or `existingSecret`, see [clusters](clusters.md#registering-clusters-with-the-helm-chart) |
 | `registries.credentials` | `[]` | Per registry credentials, existing Secret or inline password, see [configuration](configuration.md#registry-authentication) |
@@ -313,6 +314,7 @@ To follow the development version, point `source` at the git repository instead:
 | `trivy.server.resources` | 100m CPU / 256Mi requests, 1Gi memory limit | Trivy server resources |
 | `trivy.server.nodeSelector` / `.tolerations` / `.affinity` | | Trivy server scheduling |
 | `config.vulnerabilities.*` | see [configuration](configuration.md#vulnerabilities-trivy) | Trivy Operator reports, scan settings, ignored images |
+| `startupProbe` / `livenessProbe` / `readinessProbe` | 5 min to start, then every 20s / 10s | Probes on `/healthz` (the chart sets `httpGet`); `null` disables one |
 | `resources` | 50m CPU / 256Mi requests, 1536Mi memory limit | kube-tower pod resources (Trivy scans in standalone mode need the memory) |
 | `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `imagePullSecrets` | | Usual pod settings |
 | `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
