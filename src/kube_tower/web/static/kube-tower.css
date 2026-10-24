@@ -40,6 +40,9 @@ body { margin: 0; }
 .sidebar nav a[aria-current="page"] { background: var(--kt-sidebar-active); color: #fff; }
 .sidebar nav .icon { width: 1.2rem; height: 1.2rem; margin: 0; }
 .sidebar footer { margin-top: auto; padding: 0 .5rem; color: #8a99b4; line-height: 1.3; display: flex; flex-direction: column; gap: .5rem; }
+.sidebar .version { display: flex; align-items: center; gap: .5rem; }
+.sidebar .version a { display: inline-flex; color: #8a99b4; }
+.sidebar .version a:hover { color: #fff; }
 
 /* Theme button: shows the icon of the current theme */
 .theme-toggle {

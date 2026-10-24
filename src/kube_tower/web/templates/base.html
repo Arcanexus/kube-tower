@@ -40,7 +40,10 @@
         <button type="button" class="theme-toggle" onclick="ktCycleTheme()" title="Theme">
           {{ icon("theme-auto", "theme-auto") }}{{ icon("sun", "theme-light") }}{{ icon("moon", "theme-dark") }}<span class="theme-label"></span>
         </button>
-        <small>{{ "v" if version[:1].isdigit() }}{{ version }}</small>
+        <div class="version">
+          <small>{{ "v" if version[:1].isdigit() }}{{ version }}</small>
+          <a href="https://github.com/Arcanexus/kube-tower" target="_blank" rel="noopener" title="kube-tower on GitHub" aria-label="kube-tower on GitHub">{{ icon("github") }}</a>
+        </div>
       </footer>
     </aside>
     <div class="content {% block layout %}{% endblock %}">
