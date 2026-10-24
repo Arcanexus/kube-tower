@@ -148,3 +148,53 @@ async def test_ping():
             await OCIClient(http).ping("basic.example.com")
         with pytest.raises(RegistryError, match="down.example.com refused the connection test: HTTP 503"):
             await client.ping("down.example.com")
+
+
+CHALLENGE = 'Bearer realm="https://auth.example.com/token",service="registry.example.com"'
+
+
+@respx.mock
+async def test_refused_cached_token_is_renewed():
+    """A token that expired during a long scan is replaced instead of being sent again."""
+    tags = respx.get("https://registry.example.com/v2/app/tags/list?n=1000")
+    tags.side_effect = lambda request: (
+        httpx.Response(200, json={"tags": ["1.0"]})
+        if request.headers.get("authorization") == "Bearer fresh"
+        else httpx.Response(401, headers={"www-authenticate": CHALLENGE})
+    )
+    token = respx.get("https://auth.example.com/token").respond(200, json={"token": "fresh"})
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http)
+        oci._tokens[("registry.example.com", "repository:app:pull")] = ("old", None)  # expired, no known lifetime
+        assert await oci.list_tags("registry.example.com", "app") == ["1.0"]
+        assert token.call_count == 1
+        # The renewed token is cached: no new token request.
+        assert await oci.list_tags("registry.example.com", "app") == ["1.0"]
+    assert token.call_count == 1
+
+
+@respx.mock
+async def test_token_not_sent_after_its_lifetime(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr("kube_tower.registry.oci.time.monotonic", lambda: now[0])
+    tags = respx.get("https://registry.example.com/v2/app/tags/list?n=1000")
+    tags.side_effect = lambda request: (
+        httpx.Response(200, json={"tags": ["1.0"]})
+        if "authorization" in request.headers
+        else httpx.Response(401, headers={"www-authenticate": CHALLENGE})
+    )
+    token = respx.get("https://auth.example.com/token")
+    token.side_effect = [
+        httpx.Response(200, json={"token": "t1", "expires_in": 300}),
+        httpx.Response(200, json={"token": "t2", "expires_in": 300}),
+    ]
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http)
+        await oci.list_tags("registry.example.com", "app")
+        now[0] += 200  # still valid
+        await oci.list_tags("registry.example.com", "app")
+        assert tags.calls[-1].request.headers["authorization"] == "Bearer t1"
+        now[0] += 80  # 280s: within the renewal margin, not sent
+        await oci.list_tags("registry.example.com", "app")
+    assert tags.calls[-1].request.headers["authorization"] == "Bearer t2"
+    assert token.call_count == 2
