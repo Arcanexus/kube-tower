@@ -6,7 +6,7 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from kube_tower.maintenance import unused_node_images
+from kube_tower.administration import unused_node_images
 
 router = APIRouter()
 
@@ -63,43 +63,43 @@ async def rescan_chart(request: Request, response: Response, cluster: str, names
     return _rescan_answer(response, scanner.rescan_chart(report))
 
 
-@router.post("/api/maintenance/retry-failed", status_code=202)
+@router.post("/api/administration/retry-failed", status_code=202)
 async def retry_failed(request: Request, response: Response) -> dict:
     """Check again everything that failed in the last scan (image versions, vulnerability scans, charts)."""
     return _rescan_answer(response, request.app.state.scanner.retry_failed())
 
 
-@router.post("/api/maintenance/trivy-db", status_code=202)
+@router.post("/api/administration/trivy-db", status_code=202)
 async def update_trivy_db(request: Request, response: Response) -> dict:
     """Download the Trivy databases when a newer one is published (standalone mode)."""
-    return _rescan_answer(response, request.app.state.maintenance.update_trivy_db())
+    return _rescan_answer(response, request.app.state.administration.update_trivy_db())
 
 
-@router.delete("/api/maintenance/trivy-cache")
+@router.delete("/api/administration/trivy-cache")
 async def clear_trivy_cache(request: Request) -> dict:
     """Forget the cached Trivy results: the next scan scans every image again."""
-    return {"cleared": request.app.state.maintenance.clear_trivy_cache()}
+    return {"cleared": request.app.state.administration.clear_trivy_cache()}
 
 
-@router.post("/api/maintenance/connectivity", status_code=202)
+@router.post("/api/administration/connectivity", status_code=202)
 async def test_connectivity(request: Request, response: Response) -> dict:
-    """Test the clusters, registries, Helm repositories and Trivy server; results in GET /api/maintenance/connectivity."""
-    return _rescan_answer(response, request.app.state.maintenance.test_connectivity())
+    """Test the clusters, registries, Helm repositories and Trivy server; results in GET /api/administration/connectivity."""
+    return _rescan_answer(response, request.app.state.administration.test_connectivity())
 
 
-@router.get("/api/maintenance/connectivity")
+@router.get("/api/administration/connectivity")
 async def connectivity(request: Request) -> dict:
-    maintenance = request.app.state.maintenance
-    report = maintenance.connectivity
+    administration = request.app.state.administration
+    report = administration.connectivity
     return {
-        "running": "connectivity" in maintenance.running,
+        "running": "connectivity" in administration.running,
         "startedAt": report.started_at.isoformat() if report else None,
         "finishedAt": report.finished_at.isoformat() if report and report.finished_at else None,
         "checks": [asdict(c) for c in report.checks] if report else [],
     }
 
 
-@router.get("/api/maintenance/unused-images")
+@router.get("/api/administration/unused-images")
 async def unused_images(request: Request) -> list[dict]:
     """Images cached on nodes that no workload of their cluster uses."""
     return [asdict(u) for u in unused_node_images(request.app.state.scanner.snapshot)]

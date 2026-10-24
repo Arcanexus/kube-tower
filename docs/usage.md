@@ -67,6 +67,10 @@ it. The counters at the top summarize the statuses; filter by text, status or cl
 tag at all, which means `latest`) are shown in red: the running version changes on every pull, pin
 a version instead.
 
+The icon in front of each image tells whether it runs: a green play icon when a pod uses it, a grey
+pause icon otherwise (workload scaled to zero, CronJob between two runs, or image only cached on
+nodes). Hover it for the explanation.
+
 | Column | Meaning |
 | --- | --- |
 | Image | Normalized name: `nginx` becomes `docker.io/library/nginx` |
@@ -150,15 +154,15 @@ scan.
 | `WARNING` | Non fatal problems: an unreachable cluster, an invalid cluster secret, a resource that cannot be listed (e.g. 403), an image, chart or subchart that cannot be checked, ignored credentials |
 | `ERROR` | A scan that failed as a whole (with the stack trace); the previous results are kept |
 
-### Maintenance
+### Administration
 
-![Maintenance](images/maintenance.png)
+![Administration](images/administration.png)
 
-Maintenance actions, run in the background (the page follows them and reloads when they are over):
+Administration actions, run in the background (the page follows them and reloads when they are over):
 
 | Section | Actions |
 | --- | --- |
-| In progress | First section: what runs now, each with its start time: the two phases of the full scan (clusters and versions, then vulnerabilities with Trivy), the scans waiting for the Trivy phase of another one, the rescans and the maintenance actions. The scan status at the top of every page links to it |
+| In progress | First section: what runs now, each with its start time: the two phases of the full scan (clusters and versions, then vulnerabilities with Trivy), the scans waiting for the Trivy phase of another one, the rescans and the administration actions. The scan status at the top of every page links to it |
 | Scans | **Scan everything** (same as *Refresh*). A scan checks the versions first, then scans the vulnerabilities with Trivy: during this Trivy phase a new scan, *Retry what failed* and the rescans can already start (a new scan waits for the Trivy phase to end before its own one). **Retry what failed**: checks again only the image version checks, vulnerability scans and charts (or subcharts) in error in the last scan, e.g. after fixing credentials or a rate limit. One image or chart is rescanned from its detail panel (see above) |
 | Trivy | Trivy version and vulnerability database (version, build date, next update, download date). **Update the database** downloads it when a newer one is published (standalone mode; with `trivy.server.enabled` the Trivy server updates its own). Scans wait for the update. **Clear** forgets the cached scan results (kept `vulnerabilities.trivy.rescanInterval`), so the next scan scans every image again; **Clear and scan now** also starts it |
 | Connectivity | **Test the connectivity** of every cluster (Kubernetes API `/version`, cluster Secrets read again), every container registry of the last scan and every registry with credentials (`/v2/`, and a pull token for one of its repositories), every HTTP Helm repository (`index.yaml`) and the Trivy server (`/healthz`), with kube-tower's credentials. Failures say why (proxy, DNS, TLS, 401/403…) |
@@ -189,11 +193,11 @@ credentials come from, the username and whether they could be read.
 | `POST /api/refresh` | Start a scan now (`{"started": false}` if one is already running) |
 | `POST /api/rescan/image?ref=…` | Check an image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`): every image with its name is checked (all tags, including the new ones found on the clusters); `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
 | `POST /api/rescan/chart?cluster=…&namespace=…&app=…&chart=…` | Check one Helm chart and its subcharts again (`namespace` is the Application's namespace) |
-| `POST /api/maintenance/retry-failed` | Check again everything that failed in the last scan (202, or 409 with a `reason`) |
-| `POST /api/maintenance/trivy-db` | Update the Trivy databases when a newer one is published (standalone mode) |
-| `DELETE /api/maintenance/trivy-cache` | Forget the cached Trivy results (`{"cleared": n}`) |
-| `POST /api/maintenance/connectivity` | Start a connectivity test; results with `GET /api/maintenance/connectivity` |
-| `GET /api/maintenance/unused-images` | Images cached on nodes that no workload of their cluster uses |
+| `POST /api/administration/retry-failed` | Check again everything that failed in the last scan (202, or 409 with a `reason`) |
+| `POST /api/administration/trivy-db` | Update the Trivy databases when a newer one is published (standalone mode) |
+| `DELETE /api/administration/trivy-cache` | Forget the cached Trivy results (`{"cleared": n}`) |
+| `POST /api/administration/connectivity` | Start a connectivity test; results with `GET /api/administration/connectivity` |
+| `GET /api/administration/unused-images` | Images cached on nodes that no workload of their cluster uses |
 | `GET /healthz` | Liveness |
 | `GET /readyz` | 200 once the first scan has finished |
 | `GET /api/docs` | Interactive OpenAPI documentation |

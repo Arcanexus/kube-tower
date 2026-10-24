@@ -1,4 +1,4 @@
-"""Maintenance actions of the Maintenance page: Trivy database, caches, connectivity tests, unused node images.
+"""Administration actions of the Administration page: Trivy database, caches, connectivity tests, unused node images.
 
 The rescans (all, failed items, one item) are run by the Scanner; this module holds the
 other actions and their last results, in memory like everything else.
@@ -69,7 +69,7 @@ def unused_node_images(snapshot: Snapshot) -> list[UnusedImage]:
     return sorted(unused, key=lambda u: (u.cluster, u.image))
 
 
-class Maintenance:
+class Administration:
     def __init__(self, scanner: Scanner):
         self.scanner = scanner
         self.running: set[str] = set()  # actions in progress: trivy-db, connectivity
@@ -89,7 +89,7 @@ class Maintenance:
             try:
                 await work()
             except Exception:  # noqa: BLE001 - shown on the page as "failed, see the logs"
-                log.exception("maintenance action %s failed", action)
+                log.exception("administration action %s failed", action)
             finally:
                 self.running.discard(action)
 
