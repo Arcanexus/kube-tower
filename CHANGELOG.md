@@ -119,6 +119,14 @@ All notable changes to this project are documented here. The format follows
 - Performance: the `index.yaml` of HTTP Helm repositories is kept between scans (only the chart
   versions and archive URLs) and downloaded again only when the repository says it changed
   (`ETag` / `Last-Modified`, HTTP 304): big indexes are no longer downloaded and parsed at each scan.
+- Scans: the Trivy phase of a scan has its own lock. Once the versions are checked, a new scan,
+  *Retry what failed* and the rescans can start without waiting for the vulnerability scans; a new
+  scan waits only for the Trivy phase before running its own (skipped when a newer scan replaced it).
+  The Trivy database update still waits for both phases. The status shows *Vulnerability scan in
+  progress…* during the Trivy phase.
+- Maintenance page: an *In progress* section first lists what runs (each scan phase, the scans
+  waiting for a Trivy phase, the rescans and the maintenance actions) with their start time; the scan
+  status at the top of every page links to it.
 - Security: cluster Secrets are read by name only by default (`get` on these Secrets), instead of
   listing the Secrets of the namespace, which gave read access to all of them. The chart names
   the Secrets it creates and the `existingSecret` ones itself. **Labelled cluster Secrets created

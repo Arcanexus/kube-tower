@@ -2,9 +2,9 @@
 {# Scan status, top right of every page: state, age of the last scan, errors and the refresh button. #}
 <div id="scan-status" class="scan-status {{ 'has-errors' if snapshot.errors }}"
      {% if scanning %}hx-get="status?polling=1" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
-  <div class="scan-state">
+  <a class="scan-state" href="maintenance#scans" title="Scans in progress (Maintenance page)">
     {% if scanning %}
-      <span class="dot dot-busy" aria-hidden="true"></span><span>Scan in progress…</span>
+      <span class="dot dot-busy" aria-hidden="true"></span><span>{{ "Scan in progress…" if checking_versions else "Vulnerability scan in progress…" }}</span>
     {% elif snapshot.finished_at %}
       <span class="dot {{ 'dot-warn' if snapshot.errors else 'dot-ok' }}" aria-hidden="true"></span>
       <span title="{{ snapshot.finished_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}">Last scan
@@ -13,7 +13,7 @@
     {% else %}
       <span class="dot" aria-hidden="true"></span><span>No scan yet</span>
     {% endif %}
-  </div>
+  </a>
   {% if snapshot.errors %}
   <details class="scan-errors dropdown-right">
     <summary title="Errors of the last scan">{{ icon("warning") }}{{ snapshot.errors | length }}</summary>
@@ -23,6 +23,6 @@
     </div>
   </details>
   {% endif %}
-  <button class="refresh" {% if scanning %}disabled aria-busy="true"{% endif %} hx-post="api/refresh" hx-swap="none" title="Start a full scan now"
-          hx-on::after-request="htmx.ajax('GET', 'status', {target: '#scan-status', swap: 'outerHTML'})">{% if not scanning %}{{ icon("refresh") }}{% endif %}Refresh</button>
+  <button class="refresh" {% if checking_versions %}disabled aria-busy="true"{% endif %} hx-post="api/refresh" hx-swap="none" title="Start a full scan now"
+          hx-on::after-request="htmx.ajax('GET', 'status', {target: '#scan-status', swap: 'outerHTML'})">{% if not checking_versions %}{{ icon("refresh") }}{% endif %}Refresh</button>
 </div>

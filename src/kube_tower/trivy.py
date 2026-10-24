@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import shutil
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -138,6 +139,9 @@ class TrivyScanner:
         self.settings = settings
         self.credentials = credentials
         self.cache: dict[str, VulnerabilityReport] = {}  # by scan target, kept between scans
+        # The Trivy phase of a scan and the rescans run at the same time, in different threads:
+        # one database download at a time.
+        self._prepare_lock = threading.Lock()
 
     @property
     def available(self) -> bool:
@@ -176,6 +180,14 @@ class TrivyScanner:
         """Download (or refresh) the databases once before the scans. Returns an error message."""
         if self.settings.server_url:
             return None
+        while not self._prepare_lock.acquire(blocking=False):  # polled: cancelling the wait leaves the lock free
+            await asyncio.sleep(0.5)
+        try:
+            return await self._download_db()
+        finally:
+            self._prepare_lock.release()
+
+    async def _download_db(self) -> str | None:
         args = [*QUIET_ARGS, "--cache-dir", self.settings.cache_dir]
         code, _, stderr = await self._run(["image", "--download-db-only", *args])
         if code == 0 and self.settings.java_db:
