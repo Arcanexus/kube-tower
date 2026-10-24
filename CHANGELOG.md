@@ -52,6 +52,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Security: registry credentials and tokens are never sent over plain `http://` any more. A token
+  service (`realm`) or a registry redirect in `http://`, an `http://` Helm repository with
+  credentials and an `http://` git raw URL template with a git token are refused with an explicit
+  error.
 - Security: a cluster Secret holding a kubeconfig could make kube-tower run any command of its
   image (exec plugin), read files of the pod (`tokenFile`, `client-certificate`...) or use an
   `auth-provider`. Exec plugins now run only when their command is listed in the new

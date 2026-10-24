@@ -198,3 +198,29 @@ async def test_token_not_sent_after_its_lifetime(monkeypatch):
         await oci.list_tags("registry.example.com", "app")
     assert tags.calls[-1].request.headers["authorization"] == "Bearer t2"
     assert token.call_count == 2
+
+
+@respx.mock
+async def test_http_token_service_refused():
+    challenge = 'Bearer realm="http://auth.example.com/token",service="registry.example.com"'
+    respx.get("https://registry.example.com/v2/app/tags/list?n=1000").respond(401, headers={"www-authenticate": challenge})
+    token = respx.get("http://auth.example.com/token").respond(200, json={"token": "t"})
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http, {"registry.example.com": ("user", "secret")})
+        with pytest.raises(
+            RegistryError, match=r"token service of registry.example.com uses http://auth.example.com/token: refused"
+        ):
+            await oci.list_tags("registry.example.com", "app")
+    assert not token.called
+
+
+@respx.mock
+async def test_redirect_to_http_refused():
+    respx.head("https://registry.example.com/v2/app/manifests/1.0").respond(
+        307, headers={"location": "http://mirror.example.com/v2/app/manifests/1.0"}
+    )
+    plain = respx.head("http://mirror.example.com/v2/app/manifests/1.0").respond(200)
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(RegistryError, match="redirect of registry.example.com/app uses http://mirror.example.com"):
+            await OCIClient(http).get_digest("registry.example.com", "app", "1.0")
+    assert not plain.called

@@ -87,6 +87,12 @@ class RegistryError(Exception):
     """A registry, Helm repository or git host answered, but not with what was asked: the message says why."""
 
 
+def require_https(url: str | httpx.URL, what: str) -> None:
+    """Credentials and tokens are never sent over plain http://: anyone on the path could read them."""
+    if httpx.URL(str(url)).scheme != "https":
+        raise RegistryError(f"{what} uses {httpx.URL(str(url)).copy_with(query=None)}: refused, only https:// is allowed")
+
+
 class OCIClient:
     def __init__(
         self,
@@ -135,6 +141,8 @@ class OCIClient:
         if scope := fields.get("scope", scope):
             query["scope"] = scope
         auth = self.credentials.get(registry)
+        # The token (and the credentials asking for it) would travel in clear text.
+        require_https(fields.get("realm", ""), f"the token service of {registry}")
         log.debug(
             "requesting an %s token for %s (%s)",
             "authenticated" if auth else "anonymous",
@@ -178,6 +186,8 @@ class OCIClient:
             if not (manual_redirects and resp.is_redirect and "location" in resp.headers):
                 return resp
             url = str(resp.url.join(resp.headers["location"]))
+            # The next request carries a token or the registry credentials.
+            require_https(url, f"a redirect of {registry}/{repository}")
             log.debug("%s redirected to %s", resp.request.url.copy_with(query=None), httpx.URL(url).copy_with(query=None))
         raise RegistryError(f"too many redirects for {registry}/{repository} (more than {MAX_REDIRECTS})")
 

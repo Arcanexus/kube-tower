@@ -158,6 +158,11 @@ existing image pull secret, or its content in `registries.dockerConfigJson` (an 
 string) for the chart to create it; per registry entries win when both define the same host.
 The Settings page lists the loaded credentials (never their values) and flags invalid ones.
 
+Credentials and tokens are only sent over `https://`. kube-tower refuses a registry token service
+(`realm`) or a registry redirect in `http://`, an `http://` Helm repository that has credentials,
+and an `http://` git raw URL template when a git token is set: the check fails with a message
+saying what was refused. Public `http://` Helm repositories (no credentials) still work.
+
 ## Secrets
 
 Every credential can come from an existing Secret or be given in the values, the chart then
