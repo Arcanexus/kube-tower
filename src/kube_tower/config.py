@@ -155,8 +155,15 @@ class GitSettings:
     token_env: str = "GIT_TOKEN"
 
 
+# What one kube-tower process runs. `all`: everything in one process (UI, API, scans). The other roles
+# split it for horizontal scaling (see docs/adr/0002-horizontal-scaling.md); they are not available yet.
+ROLES = ("all",)
+PLANNED_ROLES = ("ui", "controller", "worker")
+
+
 @dataclass
 class Settings:
+    role: str = "all"
     refresh_interval: int = 6 * 3600
     logs: LogsSettings = field(default_factory=LogsSettings)
     clusters: ClustersSettings = field(default_factory=ClustersSettings)
@@ -201,4 +208,15 @@ def load_settings(path: str | None = None) -> Settings:
         settings.logs.level = level
     if interval := os.environ.get("KUBE_TOWER_REFRESH_INTERVAL"):
         settings.refresh_interval = parse_duration(interval)
+    if role := os.environ.get("KUBE_TOWER_ROLE"):
+        settings.role = role
+    check_role(settings.role)
     return settings
+
+
+def check_role(role: str) -> None:
+    if role in ROLES:
+        return
+    if role in PLANNED_ROLES:
+        raise ValueError(f"role {role!r} is planned for the distributed mode but not available yet: use role 'all'")
+    raise ValueError(f"unknown role {role!r}: expected one of {', '.join(ROLES)}")

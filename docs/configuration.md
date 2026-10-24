@@ -5,6 +5,7 @@ chart, this file is rendered from `.Values.config`. Keys are camelCase; unknown 
 at startup so typos are caught early.
 
 ```yaml
+role: all                      # what this process runs (only `all` for now)
 refreshInterval: 6h            # 30s, 15m, 6h, 1d or seconds
 logs:
   level: INFO                  # DEBUG, INFO, WARNING, ERROR
@@ -69,7 +70,11 @@ git:
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
 
-Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`.
+Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLE`.
+
+`role` prepares the horizontal scaling of the next major release (separate `ui`, `controller` and
+`worker` processes, see [ADR 0002](adr/0002-horizontal-scaling.md)). Only `all`, everything in one
+process, is available today; other values are refused at startup.
 
 ## Vulnerabilities (Trivy)
 

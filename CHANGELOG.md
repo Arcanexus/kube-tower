@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Groundwork for horizontal scaling ([ADR 0002](docs/adr/0002-horizontal-scaling.md)): `role`
+  setting (`KUBE_TOWER_ROLE`, only `all` for now) and `Snapshot.from_dict`, the inverse of the JSON
+  encoding of `/api/snapshot`.
 - Chart: optional NetworkPolicies (`networkPolicy.enabled`) for the kube-tower pod and the Trivy
   server: only the `http` port is reachable (from `networkPolicy.ingress.from`), egress limited to DNS,
   the Trivy server and `networkPolicy.egress.ports` (443, 6443).

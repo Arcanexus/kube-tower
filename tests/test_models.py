@@ -22,3 +22,51 @@ def test_snapshot_lookups_follow_list_changes():
 def test_snapshot_lookup_keeps_the_first_duplicate():
     first, second = (ImageReport(ImageRef("docker.io", "library/nginx", "1.25")) for _ in range(2))
     assert Snapshot(images=[first, second]).image("docker.io/library/nginx:1.25") is first
+
+
+def test_snapshot_round_trips_through_to_dict():
+    from datetime import UTC, datetime
+
+    from kube_tower.models import (
+        ChartDependency,
+        ClusterStatus,
+        Severity,
+        Status,
+        Usage,
+        Vulnerability,
+        VulnerabilityReport,
+    )
+
+    now = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
+    image = ImageReport(
+        ImageRef("docker.io", "library/nginx", "1.25", "sha256:abc"),
+        usages=[Usage("c1", "Deployment", "web", "nginx", "app"), Usage("c1", "Node", None, "node-1")],
+        running_digests={"sha256:abc", "sha256:def"},
+        status=Status.OUTDATED,
+        latest_tag="1.27",
+        vulnerabilities=VulnerabilityReport(
+            "trivy",
+            scanned_at=now,
+            os="debian 12.5",
+            vulnerabilities=[Vulnerability("CVE-2024-1", Severity.HIGH, "openssl", "3.0.1", "3.0.2", score=7.5)],
+        ),
+    )
+    chart = _chart("app")
+    chart.status = Status.ERROR
+    chart.dependencies = [
+        ChartDependency("redis", "18.0.0", "oci://r", dependencies=[ChartDependency("common", "2.0.0", "oci://c")])
+    ]
+    snap = Snapshot(
+        images=[image, ImageReport(ImageRef("ghcr.io", "a/b"))],
+        charts=[chart],
+        clusters=[ClusterStatus("c1", "https://k", "in-cluster", reachable=True, version="v1.31")],
+        started_at=now,
+        finished_at=now,
+        errors=["boom"],
+    )
+    data = snap.to_dict()
+    back = Snapshot.from_dict(data)
+    assert back == snap
+    assert back.image("docker.io/library/nginx:1.25@sha256:abc").vulnerabilities.counts()[Severity.HIGH] == 1
+    assert back.to_dict() == data
+    assert Snapshot.from_dict(Snapshot().to_dict()) == Snapshot()

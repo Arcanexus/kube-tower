@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+import types
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from datetime import datetime
 from enum import Enum, StrEnum
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 
 class Status(StrEnum):
@@ -241,3 +243,31 @@ class Snapshot:
         for img, raw in zip(self.images, data["images"], strict=True):
             raw["image"] = {**raw["image"], "ref": str(img.image)}
         return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Snapshot:
+        """The Snapshot that to_dict() encoded, e.g. sent by another kube-tower process."""
+        return _decode(cls, data)
+
+
+def _decode(hint: Any, value: Any) -> Any:
+    """Rebuild a value of type `hint` from its to_dict() form (keys unknown to a dataclass are ignored)."""
+    if value is None:
+        return None
+    origin = get_origin(hint)
+    if origin in (Union, types.UnionType):  # `X | None`: the only unions of the models
+        return _decode(next(a for a in get_args(hint) if a is not type(None)), value)
+    if origin is list:
+        return [_decode(get_args(hint)[0], v) for v in value]
+    if origin is set:
+        return {_decode(get_args(hint)[0], v) for v in value}
+    if is_dataclass(hint):
+        hints = get_type_hints(hint)
+        return hint(**{f.name: _decode(hints[f.name], value[f.name]) for f in fields(hint) if f.name in value})
+    if isinstance(hint, type) and issubclass(hint, Enum):
+        return hint(value)
+    if hint is datetime:
+        return datetime.fromisoformat(value)
+    if hint is float:
+        return float(value)
+    return value

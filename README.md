@@ -83,7 +83,8 @@ Every `refreshInterval` (6h by default), kube-tower lists the workloads, nodes a
 Applications of every reachable cluster with a read-only ServiceAccount, asks each registry for
 its published versions (each repository once per scan), then reads or scans the vulnerabilities
 of every image, and keeps the result in memory.
-Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md).
+Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md); the horizontal scaling
+planned for the next major release in [ADR 0002](docs/adr/0002-horizontal-scaling.md).
 
 ## Documentation
 

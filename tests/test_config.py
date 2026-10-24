@@ -40,3 +40,15 @@ def test_unknown_key(tmp_path):
     cfg.write_text("images:\n  typo: true\n")
     with pytest.raises(ValueError, match="typo"):
         load_settings(str(cfg))
+
+
+def test_role_defaults_to_all_and_planned_roles_are_refused(tmp_path, monkeypatch):
+    monkeypatch.delenv("KUBE_TOWER_ROLE", raising=False)
+    assert load_settings(str(tmp_path / "missing.yaml")).role == "all"
+    monkeypatch.setenv("KUBE_TOWER_ROLE", "worker")
+    with pytest.raises(ValueError, match="'worker' is planned for the distributed mode"):
+        load_settings(str(tmp_path / "missing.yaml"))
+    monkeypatch.delenv("KUBE_TOWER_ROLE")
+    (tmp_path / "config.yaml").write_text("role: scanner\n")
+    with pytest.raises(ValueError, match="unknown role 'scanner'"):
+        load_settings(str(tmp_path / "config.yaml"))
