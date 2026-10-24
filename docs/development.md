@@ -47,7 +47,7 @@ src/kube_tower/
   checkers.py          version comparison, one lookup per repository per scan
   versions.py          tag parsing and ordering
   scanner.py           full scan, rescans and in-memory snapshot
-  maintenance.py       Maintenance page actions (Trivy database, connectivity tests, unused node images)
+  administration.py       Administration page actions (Trivy database, connectivity tests, unused node images)
   errors.py            explicit error messages (what failed, status, what to do)
   logger.py            log formats; logbuffer.py keeps the last lines for the Logs page
   web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Synthesis figures), api.py,

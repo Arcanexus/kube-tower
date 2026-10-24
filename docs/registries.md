@@ -52,7 +52,7 @@ to store and rotate. Tokens are fetched when first needed, kept in memory, and f
 minutes before they expire. No cloud SDK is involved: only a few HTTPS requests.
 
 The Settings page shows each provider and whether the pod has the identity it needs; the
-connectivity test of the Maintenance page gets a real token.
+connectivity test of the Administration page gets a real token.
 
 ### Amazon ECR
 

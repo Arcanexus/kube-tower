@@ -79,7 +79,7 @@ async def _log_response(response: httpx.Response) -> None:
 
 @dataclasses.dataclass
 class Activity:
-    """Something running (or waiting to run) in the scanner, listed on the Maintenance page."""
+    """Something running (or waiting to run) in the scanner, listed on the Administration page."""
 
     name: str
     state: str  # running, waiting
@@ -155,12 +155,12 @@ class Scanner:
         self.trivy_waiting = 0  # scans whose versions are checked, waiting for the Trivy phase of another one
         self._rescan_started: dict[tuple, tuple[str, datetime]] = {}
         self._clusters: dict[str, Cluster] = {}  # reachable clusters of the last scan, by name
-        # Set while a maintenance action holds the scan lock (e.g. Trivy database update): why scans must wait.
+        # Set while an administration action holds the scan lock (e.g. Trivy database update): why scans must wait.
         self.busy: str | None = None
 
     @property
     def running(self) -> bool:
-        """A scan is running, either phase (not a maintenance action holding the scan locks)."""
+        """A scan is running, either phase (not an administration action holding the scan locks)."""
         return (self._lock.locked() or self._trivy_lock.locked()) and self.busy is None
 
     @property
@@ -170,12 +170,12 @@ class Scanner:
 
     @property
     def locked(self) -> bool:
-        """A scan (either phase) or a maintenance action holds a scan lock."""
+        """A scan (either phase) or an administration action holds a scan lock."""
         return self._lock.locked() or self._trivy_lock.locked()
 
     @contextlib.asynccontextmanager
     async def exclusive(self, reason: str) -> AsyncIterator[None]:
-        """Hold both scan locks for a maintenance action: no scan nor rescan starts meanwhile."""
+        """Hold both scan locks for an administration action: no scan nor rescan starts meanwhile."""
         async with self._lock, self._trivy_lock:
             self.busy = reason
             try:
@@ -587,7 +587,7 @@ class Scanner:
         refresh_check_errors(snap, before)
 
     def trigger(self) -> bool:
-        """Start a scan in the background unless one is checking versions (or a maintenance action holds the
+        """Start a scan in the background unless one is checking versions (or an administration action holds the
         locks). A scan in its Trivy phase does not prevent it: the new one waits only for that phase.
         """
         if self._lock.locked():

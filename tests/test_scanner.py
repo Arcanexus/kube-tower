@@ -662,14 +662,14 @@ async def test_trivy_phase_has_its_own_lock(fakes, monkeypatch, caplog):
         tasks.append(scanner._task)
         await _until(lambda previous=previous: scanner.snapshot is not previous and not scanner.checking_versions)
     snap3 = scanner.snapshot
-    # A maintenance action waits for the Trivy phase too.
+    # An administration action waits for the Trivy phase too.
     entered = []
 
-    async def maintenance():
+    async def administration():
         async with scanner.exclusive("the Trivy database is being updated"):
             entered.append(scanner.busy)
 
-    tasks.append(asyncio.create_task(maintenance()))
+    tasks.append(asyncio.create_task(administration()))
     await asyncio.sleep(0.05)
     assert not entered and len(scanned) == 1
     release.set()

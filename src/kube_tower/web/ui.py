@@ -8,12 +8,12 @@ from pathlib import Path
 
 import yaml
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from kube_tower import __version__
-from kube_tower.maintenance import unused_node_images
+from kube_tower.administration import unused_node_images
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.scanner import chart_key, image_key
@@ -292,24 +292,24 @@ def mount(app: FastAPI) -> None:
         _, credentials = resolve_credentials(settings.registries, pull_secrets=request.app.state.scanner.pull_secrets)
         return render(request, "settings", tab="settings", settings_yaml=rendered, credentials=credentials)
 
-    def render_maintenance(request: Request, notice: str = "", error: str = "", full: bool = False) -> HTMLResponse:
-        """The Maintenance page, or only its actions (`#maintenance`) for htmx. While an action runs the
+    def render_administration(request: Request, notice: str = "", error: str = "", full: bool = False) -> HTMLResponse:
+        """The Administration page, or only its actions (`#administration`) for htmx. While an action runs the
         actions poll themselves (`polling=1`); the poll that sees them all over reloads the page.
         """
-        scanner, maintenance = request.app.state.scanner, request.app.state.maintenance
+        scanner, administration = request.app.state.scanner, request.app.state.administration
         images, vulnerabilities, charts = scanner.failed_items()
-        busy = bool(scanner.locked or scanner.rescanning or maintenance.running)
+        busy = bool(scanner.locked or scanner.rescanning or administration.running)
         response = templates.TemplateResponse(
             request,
-            "maintenance.html" if full else "_maintenance.html",
+            "administration.html" if full else "_administration.html",
             {
-                "tab": "maintenance",
+                "tab": "administration",
                 "snapshot": scanner.snapshot,
                 "scanning": scanner.running,
                 "checking_versions": scanner.checking_versions,
                 "partial": False,
                 "scanner": scanner,
-                "m": maintenance,
+                "m": administration,
                 "busy": busy,
                 "failed": {"images": images, "vulnerabilities": vulnerabilities, "charts": charts},
                 "unused": unused_node_images(scanner.snapshot),
@@ -322,20 +322,25 @@ def mount(app: FastAPI) -> None:
             response.headers["HX-Refresh"] = "true"
         return response
 
-    @app.get("/maintenance", response_class=HTMLResponse, include_in_schema=False)
-    async def maintenance(request: Request):
-        m, trivy = request.app.state.maintenance, request.app.state.settings.vulnerabilities
+    @app.get("/administration", response_class=HTMLResponse, include_in_schema=False)
+    async def administration(request: Request):
+        m, trivy = request.app.state.administration, request.app.state.settings.vulnerabilities
         if m.trivy_status is None and trivy.enabled and trivy.trivy.enabled:
             await m.refresh_trivy_status()
-        fragment = request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "maintenance"
-        return render_maintenance(request, full=not fragment)
+        fragment = request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "administration"
+        return render_administration(request, full=not fragment)
 
-    @app.post("/maintenance/{action}", response_class=HTMLResponse, include_in_schema=False)
-    async def maintenance_action(request: Request, action: str):
-        scanner, m = request.app.state.scanner, request.app.state.maintenance
+    @app.get("/maintenance", include_in_schema=False)
+    async def maintenance():
+        """Former name of the Administration page: bookmarks still work (relative, whatever the sub-path)."""
+        return RedirectResponse("administration", status_code=301)
+
+    @app.post("/administration/{action}", response_class=HTMLResponse, include_in_schema=False)
+    async def administration_action(request: Request, action: str):
+        scanner, m = request.app.state.scanner, request.app.state.administration
         notice = error = None
         if action == "scan":
-            error = None if scanner.trigger() else "a scan or a maintenance action is already running"
+            error = None if scanner.trigger() else "a scan or an administration action is already running"
             notice = "Full scan started."
         elif action == "retry-failed":
             error, notice = scanner.retry_failed(), "Retry of the failed items started."
@@ -353,7 +358,7 @@ def mount(app: FastAPI) -> None:
             error, notice = m.test_connectivity(), "Connectivity test started."
         else:
             return Response(status_code=404)
-        return render_maintenance(request, "" if error else notice, error or "")
+        return render_administration(request, "" if error else notice, error or "")
 
     @app.get("/status", response_class=HTMLResponse, include_in_schema=False)
     async def scan_status(request: Request):

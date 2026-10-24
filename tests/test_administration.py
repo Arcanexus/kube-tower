@@ -6,9 +6,9 @@ import httpx
 import pytest
 import respx
 
-from kube_tower import maintenance as maintenance_module
+from kube_tower import administration as administration_module
+from kube_tower.administration import Administration, unused_node_images
 from kube_tower.config import Settings
-from kube_tower.maintenance import Maintenance, unused_node_images
 from kube_tower.models import (
     ChartDependency,
     ChartReport,
@@ -58,26 +58,26 @@ def test_unused_node_images():
     ]
 
 
-def _maintenance(settings=None):
+def _administration(settings=None):
     scanner = Scanner(settings or Settings(), FakeRegistry())
-    return Maintenance(scanner), scanner
+    return Administration(scanner), scanner
 
 
-async def _done(maintenance):
-    await asyncio.gather(*maintenance._tasks)
-    assert not maintenance.running
+async def _done(administration):
+    await asyncio.gather(*administration._tasks)
+    assert not administration.running
 
 
 def test_clear_trivy_cache(caplog):
     caplog.set_level(logging.INFO, logger="kube_tower")
-    m, scanner = _maintenance()
+    m, scanner = _administration()
     scanner.trivy.cache = {"a": VulnerabilityReport("trivy"), "b": VulnerabilityReport("trivy")}
     assert m.clear_trivy_cache() == 2 and scanner.trivy.cache == {}
     assert "Trivy results cache cleared (2 image(s))" in caplog.text
 
 
 async def test_update_trivy_db_refused(monkeypatch):
-    m, scanner = _maintenance()
+    m, scanner = _administration()
     monkeypatch.setattr(TrivyScanner, "available", False)
     assert m.update_trivy_db() == "Trivy is disabled or its binary 'trivy' is not found"
     monkeypatch.setattr(TrivyScanner, "available", True)
@@ -98,7 +98,7 @@ async def test_update_trivy_db_refused(monkeypatch):
     ],
 )
 async def test_update_trivy_db(monkeypatch, error, downloaded, message):
-    m, scanner = _maintenance()
+    m, scanner = _administration()
     seen = []
 
     async def prepare(self):
@@ -124,7 +124,7 @@ async def test_update_trivy_db(monkeypatch, error, downloaded, message):
 async def test_connectivity():
     settings = Settings()
     settings.vulnerabilities.trivy.server_url = "http://trivy:4954"
-    m, scanner = _maintenance(settings)
+    m, scanner = _administration(settings)
     scanner.snapshot = Snapshot(
         images=[_image("ghcr.io", "org/app", "1", Usage("up", "Pod", "default", "web"))],
         charts=[
@@ -167,7 +167,7 @@ async def test_connectivity():
 
 @respx.mock
 async def test_connectivity_network_errors():
-    m, scanner = _maintenance()
+    m, scanner = _administration()
     scanner.snapshot = Snapshot(images=[_image("ghcr.io", "org/app", "1", Usage("up", "Pod", "default", "web"))])
     respx.get("https://ghcr.io/v2/").mock(side_effect=httpx.ConnectError("boom"))
     m.test_connectivity()
@@ -180,12 +180,12 @@ async def test_connectivity_network_errors():
 async def test_trivy_server_unhealthy():
     respx.get("http://trivy:4954/healthz").respond(503)
     async with httpx.AsyncClient() as http:
-        with pytest.raises(maintenance_module.RegistryError, match="HTTP 503"):
-            await maintenance_module._ping_trivy_server(http, "http://trivy:4954/")
+        with pytest.raises(administration_module.RegistryError, match="HTTP 503"):
+            await administration_module._ping_trivy_server(http, "http://trivy:4954/")
 
 
 async def test_refresh_trivy_status_and_failed_action(monkeypatch, caplog):
-    m, _ = _maintenance()
+    m, _ = _administration()
 
     async def status(self):
         return TrivyStatus(datetime.now(UTC), message="trivy binary 'trivy' not found")
@@ -198,4 +198,4 @@ async def test_refresh_trivy_status_and_failed_action(monkeypatch, caplog):
 
     m._start("broken", broken)
     await _done(m)
-    assert "maintenance action broken failed" in caplog.text
+    assert "administration action broken failed" in caplog.text

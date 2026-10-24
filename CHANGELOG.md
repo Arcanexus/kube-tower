@@ -141,6 +141,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The Maintenance page is renamed Administration: page `administration` (the old `maintenance` URL
+  redirects to it) and JSON API `/api/administration/...` (was `/api/maintenance/...`).
+- Images page: an icon in front of each image tells whether a pod runs it (green play) or not (grey
+  pause: workload scaled to zero, CronJob between two runs, image only cached on nodes).
 - Performance: images and charts of the snapshot are looked up by key (detail panels, rescans, API)
   instead of scanning the whole list at each request and each poll of a rescan.
 - Documentation: client/server Trivy mode recommended beyond a few dozen images (standalone mode
