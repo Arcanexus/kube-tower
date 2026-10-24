@@ -65,7 +65,7 @@ new registries types as a new client, without touching the rest.
 Jinja2 templates + [htmx](https://htmx.org) + [Pico CSS](https://picocss.com), served by FastAPI
 and vendored in the image. No Node.js toolchain, no build step: a page is an HTML file with
 Jinja placeholders, which a Python developer can maintain. Pages: Synthesis, Images, Helm charts,
-Vulnerabilities, Clusters, Logs, Maintenance, Settings. Filtering is done server-side with htmx
+Vulnerabilities, Clusters, Logs, Administration, Settings. Filtering is done server-side with htmx
 partial updates; column sorting, detail panels and the theme switch are a few lines of plain
 JavaScript (`static/kube-tower.js`).
 

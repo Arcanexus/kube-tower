@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, counters, digest, filters, icon, page_title, tag %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("images", "Container images", "Every image used by workloads (running or not) and cached on nodes. Click an image for its details.") }}{% endblock %}
+{% block heading %}{{ page_title("images", "Container images", "Every image used by workloads (running or not) and cached on nodes, with an icon telling whether a pod runs it (hover it for details). Click an image for its details.") }}{% endblock %}
 {% block content %}
 {{ filters("images", q, status, cluster, snapshot) }}
 <div id="results">{{ self.results() }}</div>
@@ -16,7 +16,7 @@
   {% for r in rows %}
     <tr class="clickable" tabindex="0" hx-get="images/detail?ref={{ r.image | string | urlencode }}" hx-target="#detail"
         hx-trigger="click, keyup[key=='Enter']">
-      <td>{{ icon("box", "muted") }}<code>{{ r.image.name }}</code></td>
+      <td>{% if r.running %}<span role="img" aria-label="Running" title="Running: used by a pod">{{ icon("running", "ok") }}</span>{% else %}<span role="img" aria-label="Not running" title="Not running: no pod uses it (workload scaled to zero, CronJob between runs, or only cached on nodes)">{{ icon("not-running", "muted") }}</span>{% endif %}<code>{{ r.image.name }}</code></td>
       <td data-sort="{{ r.image.tag or '' }}">{{ tag(r.image.tag) }}{% if r.image.digest %}<br><small>{{ digest(r.image.digest, short=True) }}</small>{% endif %}</td>
       <td>{{ r.latest_tag or "" }}{% if r.latest_digest and r.status == Status.OUTDATED and not r.latest_tag %}<br><small>{{ digest(r.latest_digest, short=True) }}</small>{% endif %}</td>
       <td data-sort="{{ status_rank[r.status] }}">{{ badge(r.status) }}{% if r.message %}<br><small>{{ r.message }}</small>{% endif %}</td>

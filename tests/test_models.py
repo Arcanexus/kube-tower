@@ -1,4 +1,4 @@
-from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot
+from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Usage
 
 
 def _chart(name: str) -> ChartReport:
@@ -22,3 +22,12 @@ def test_snapshot_lookups_follow_list_changes():
 def test_snapshot_lookup_keeps_the_first_duplicate():
     first, second = (ImageReport(ImageRef("docker.io", "library/nginx", "1.25")) for _ in range(2))
     assert Snapshot(images=[first, second]).image("docker.io/library/nginx:1.25") is first
+
+
+def test_image_running():
+    report = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), [Usage("c1", "Deployment", "default", "web", "nginx")])
+    assert not report.running  # scaled to zero: declared, no pod
+    report.usages.append(Usage("c1", "Node", None, "n1"))
+    assert not report.running
+    report.usages.append(Usage("c1", "Pod", "default", "web-1", "nginx"))
+    assert report.running

@@ -39,7 +39,7 @@ never updates anything, you stay in control of your GitOps workflow.
 | 🛡️ **Vulnerabilities (CVE)** | Read from Trivy Operator reports when the cluster has them, else scanned with Trivy (copied into the pod by the chart, standalone or client/server). Find the images affected by a CVE in one search. |
 | 🖥️ **A UI made for triage** | Synthesis home page, filters kept in the URL, sortable columns with fixed headers, detail panels (digests, registry links, subchart tree, CVE list), per item rescan, live logs, light and dark themes. |
 | 🔐 **Registry authentication** | Per registry credentials for private registries, private Helm repositories and Docker Hub rate limits. |
-| 🧰 **Maintenance** | Rescan one item or what failed, update the Trivy database, test the connectivity to clusters and registries, list unused node images. Read-only: nothing is ever changed in the clusters. |
+| 🧰 **Administration** | Rescan one item or what failed, update the Trivy database, test the connectivity to clusters and registries, list unused node images. Read-only: nothing is ever changed in the clusters. |
 | 🪶 **Stateless** | No database. One small pod, rebuilt inventory every few hours or on demand. |
 | 📈 **Observable** | JSON API and Prometheus metrics, ready for Grafana dashboards and alerts. |
 
@@ -92,7 +92,7 @@ Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md).
 | [Installation](docs/installation.md) | Helm, ArgoCD, ingress, upgrades, requirements |
 | [Configuration](docs/configuration.md) | every setting, registry authentication, secrets |
 | [Clusters](docs/clusters.md) | registering remote clusters, reusing ArgoCD clusters |
-| [Usage](docs/usage.md) | the pages, filters and sorting, rescans, maintenance, statuses, JSON API |
+| [Usage](docs/usage.md) | the pages, filters and sorting, rescans, administration, statuses, JSON API |
 | [Vulnerabilities](docs/vulnerabilities.md) | CVE detection with Trivy Operator reports or Trivy |
 | [Metrics and Grafana](docs/metrics.md) | Prometheus exporter, PromQL examples, alerts, Grafana dashboard |
 | [Development](docs/development.md) | run locally, tests and coverage, project layout, releases |

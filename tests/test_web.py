@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from kube_tower import __version__
+from kube_tower.administration import Check, ConnectivityReport
 from kube_tower.config import Settings, TrivySettings
 from kube_tower.main import create_app
-from kube_tower.maintenance import Check, ConnectivityReport
 from kube_tower.models import (
     ChartDependency,
     ChartReport,
@@ -152,12 +152,28 @@ def _client():
 
 def test_pages():
     client, _ = _client()
-    for path in ("/", "/images", "/charts", "/vulnerabilities", "/clusters", "/logs", "/maintenance", "/settings", "/status"):
+    for path in ("/", "/images", "/charts", "/vulnerabilities", "/clusters", "/logs", "/administration", "/settings", "/status"):
         resp = client.get(path)
         assert resp.status_code == 200, path
     assert "library/nginx" in client.get("/images").text
     assert "common" in client.get("/charts").text
     assert "timeout" in client.get("/clusters").text
+
+
+def test_images_running_icons():
+    client, _ = _client()
+    page = client.get("/images").text
+    # nginx is used by pods; ghcr.io/org/app and redis are only cached on nodes
+    assert page.count('aria-label="Running"') == 1 and page.count('aria-label="Not running"') == 2
+    assert re.search(r'aria-label="Running".*?</span><code>docker.io/library/nginx</code>', page)
+    assert "#i-running" in page and "#i-not-running" in page
+
+
+def test_maintenance_redirects_to_administration():
+    client, _ = _client()
+    resp = client.get("/maintenance", follow_redirects=False)
+    assert resp.status_code == 301 and resp.headers["location"] == "administration"
+    assert client.get("/maintenance").url.path == "/administration"
 
 
 def test_filters_and_partial():
@@ -493,27 +509,27 @@ def test_rescan_buttons_and_polling():
     assert "HX-Trigger" not in client.get("/images/detail", params=ref).headers
 
 
-def test_maintenance_page():
+def test_administration_page():
     client, scanner = _client()
-    page = " ".join(client.get("/maintenance").text.split())
-    assert 'aria-current="page"' in page and "Maintenance" in page
+    page = " ".join(client.get("/administration").text.split())
+    assert 'aria-current="page"' in page and "Administration" in page
     assert "Failed in the last scan: 0 image version check(s), 1 vulnerability scan(s), 0 chart(s)" in page
     assert "/nonexistent/trivy&#39; not found" in page  # status read at the first visit
     # unused node images: ghcr.io/org/app in c2, redis in c1
     assert "c1: 1 unused image(s)" in page and "crictl rmi docker.io/library/redis:latest" in page
     assert "c2: 1 unused image(s)" in page
-    assert 'hx-get="maintenance?polling=1"' not in page  # nothing running
+    assert 'hx-get="administration?polling=1"' not in page  # nothing running
     # What runs is listed first, the scan status links to it
     assert page.index('id="scans"') < page.index("<strong>Full scan</strong>")
     assert "Nothing is running. Last scan finished" in page
-    assert 'href="maintenance#scans"' in page
-    m = client.app.state.maintenance
+    assert 'href="administration#scans"' in page
+    m = client.app.state.administration
     scanner.running_activities = [
         Activity("Full scan: vulnerabilities (Trivy)", "running", datetime(2026, 10, 24, 10, tzinfo=UTC)),
         Activity("Full scan: vulnerabilities (Trivy) of 1 newer scan(s)", "waiting"),
     ]
     m.running = {"connectivity"}
-    page = " ".join(client.get("/maintenance").text.split())
+    page = " ".join(client.get("/administration").text.split())
     assert "Nothing is running" not in page and "Full scan: vulnerabilities (Trivy)</td>" in page
     assert "2026-10-24 10:00 UTC" in page and "waiting for the current Trivy phase" in page
     assert "<td>Connectivity test</td>" in page
@@ -524,57 +540,57 @@ def test_maintenance_page():
     m.connectivity = ConnectivityReport(
         datetime.now(UTC), datetime.now(UTC), [Check("registry", "ghcr.io", False, "HTTP 403", 0.5), Check("cluster", "c1", True)]
     )
-    fragment = " ".join(client.get("/maintenance", headers={"HX-Request": "true", "HX-Target": "maintenance"}).text.split())
-    assert "<html" not in fragment and 'id="maintenance"' in fragment
+    fragment = " ".join(client.get("/administration", headers={"HX-Request": "true", "HX-Target": "administration"}).text.split())
+    assert "<html" not in fragment and 'id="administration"' in fragment
     assert "v2 · built 2026-10-23 00:00 UTC" in fragment and "after 2026-10-24 00:00 UTC" in fragment
     assert "1/2 OK" in fragment and "HTTP 403" in fragment and "0.50s" in fragment
     # while something runs, the actions poll themselves; the poll that sees the end reloads the page
     scanner.rescanning = {("retry-failed",)}
-    assert 'hx-get="maintenance?polling=1"' in client.get("/maintenance").text
+    assert 'hx-get="administration?polling=1"' in client.get("/administration").text
     scanner.rescanning = set()
-    assert client.get("/maintenance?polling=1").headers["HX-Refresh"] == "true"
+    assert client.get("/administration?polling=1").headers["HX-Refresh"] == "true"
 
 
-def test_maintenance_actions(monkeypatch):
+def test_administration_actions(monkeypatch):
     client, scanner = _client()
-    m = client.app.state.maintenance
-    assert "Full scan started." in client.post("/maintenance/scan").text and scanner.triggered == 1
-    assert "Retry of the failed items started." in client.post("/maintenance/retry-failed").text and scanner.retried == 1
+    m = client.app.state.administration
+    assert "Full scan started." in client.post("/administration/scan").text and scanner.triggered == 1
+    assert "Retry of the failed items started." in client.post("/administration/retry-failed").text and scanner.retried == 1
     scanner.rescan_error = "nothing failed in the last scan"
-    assert "nothing failed in the last scan" in client.post("/maintenance/retry-failed").text
-    assert "Trivy is disabled or its binary" in client.post("/maintenance/trivy-db").text
-    assert "Trivy status read again." in client.post("/maintenance/trivy-status").text
+    assert "nothing failed in the last scan" in client.post("/administration/retry-failed").text
+    assert "Trivy is disabled or its binary" in client.post("/administration/trivy-db").text
+    assert "Trivy status read again." in client.post("/administration/trivy-status").text
     scanner.trivy.cache = {"a": None}
-    resp = client.post("/maintenance/trivy-cache-scan").text
+    resp = client.post("/administration/trivy-cache-scan").text
     assert "Trivy results cache cleared (1 image(s)). Full scan started." in resp and scanner.triggered == 2
     started = []
     monkeypatch.setattr(m, "test_connectivity", lambda: started.append(1))
-    assert "Connectivity test started." in client.post("/maintenance/connectivity").text and started
-    assert client.post("/maintenance/nope").status_code == 404
+    assert "Connectivity test started." in client.post("/administration/connectivity").text and started
+    assert client.post("/administration/nope").status_code == 404
     monkeypatch.setattr(scanner, "trigger", lambda: False)
-    assert "already running" in client.post("/maintenance/scan").text
+    assert "already running" in client.post("/administration/scan").text
 
 
-def test_maintenance_api(monkeypatch):
+def test_administration_api(monkeypatch):
     client, scanner = _client()
-    m = client.app.state.maintenance
-    assert client.post("/api/maintenance/retry-failed").json() == {"started": True}
-    resp = client.post("/api/maintenance/trivy-db")
+    m = client.app.state.administration
+    assert client.post("/api/administration/retry-failed").json() == {"started": True}
+    resp = client.post("/api/administration/trivy-db")
     assert resp.status_code == 409 and "not found" in resp.json()["reason"]
     scanner.trivy.cache = {"a": None}
-    assert client.delete("/api/maintenance/trivy-cache").json() == {"cleared": 1}
-    assert client.get("/api/maintenance/connectivity").json() == {
+    assert client.delete("/api/administration/trivy-cache").json() == {"cleared": 1}
+    assert client.get("/api/administration/connectivity").json() == {
         "running": False,
         "startedAt": None,
         "finishedAt": None,
         "checks": [],
     }
     monkeypatch.setattr(m, "test_connectivity", lambda: None)
-    assert client.post("/api/maintenance/connectivity").status_code == 202
+    assert client.post("/api/administration/connectivity").status_code == 202
     m.connectivity = ConnectivityReport(datetime(2026, 10, 23, tzinfo=UTC), checks=[Check("cluster", "c1", True, "v1.30.0")])
-    data = client.get("/api/maintenance/connectivity").json()
+    data = client.get("/api/administration/connectivity").json()
     assert data["startedAt"] == "2026-10-23T00:00:00+00:00" and data["checks"][0]["detail"] == "v1.30.0"
-    assert client.get("/api/maintenance/unused-images").json() == [
+    assert client.get("/api/administration/unused-images").json() == [
         {"cluster": "c1", "image": "docker.io/library/redis:latest", "nodes": ["n1"]},
         {"cluster": "c2", "image": "ghcr.io/org/app:2.0", "nodes": ["n1", "n2"]},
     ]
@@ -656,7 +672,7 @@ def test_cross_site_requests_refused(caplog):
     for headers in refused:
         resp = client.post("/api/refresh", headers=headers)
         assert resp.status_code == 403 and resp.json() == {"detail": "cross-site request refused"}, headers
-        assert client.post("/maintenance/scan", headers=headers).status_code == 403
+        assert client.post("/administration/scan", headers=headers).status_code == 403
     assert scanner.triggered == 0 and "cross-site POST /api/refresh refused" in caplog.text
     allowed = [
         {},  # curl, scripts

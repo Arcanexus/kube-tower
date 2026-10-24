@@ -1,13 +1,13 @@
 {% from "_macros.html" import icon %}
 {% macro action(name, label, ico="refresh", disabled=False, why="", confirm="", cls="outline") -%}
-<button type="button" class="{{ cls }} small" hx-post="maintenance/{{ name }}" hx-target="#maintenance" hx-swap="outerHTML"
+<button type="button" class="{{ cls }} small" hx-post="administration/{{ name }}" hx-target="#administration" hx-swap="outerHTML"
         {% if confirm %}hx-confirm="{{ confirm }}"{% endif %}
         {% if disabled %}disabled title="{{ why }}"{% endif %}>{{ icon(ico) }}{{ label }}</button>
 {%- endmacro %}
 {% macro date(value) -%}{{ value.strftime("%Y-%m-%d %H:%M UTC") if value else "" }}{%- endmacro %}
 {% set locked = checking_versions or scanner.busy %}
-<div id="maintenance" class="maintenance"
-     {% if busy %}hx-get="maintenance?polling=1" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML"{% endif %}>
+<div id="administration" class="administration"
+     {% if busy %}hx-get="administration?polling=1" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML"{% endif %}>
   {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
   {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
 
@@ -38,15 +38,15 @@
 
   <article>
     <h3>{{ icon("refresh") }}Scans</h3>
-    <div class="maintenance-row">
+    <div class="administration-row">
       <div>
         <strong>Full scan</strong>
         <p><small>Collects every cluster again and checks every image, chart and vulnerability report.
           {% if checking_versions %}<span aria-busy="true">Scan in progress…</span>{% elif scanning %}<span aria-busy="true">Vulnerability scan in progress…</span>{% elif scanner.busy %}{{ scanner.busy }}…{% endif %}</small></p>
       </div>
-      {{ action("scan", "Scan everything", disabled=locked, why="A scan or a maintenance action is running") }}
+      {{ action("scan", "Scan everything", disabled=locked, why="A scan or an administration action is running") }}
     </div>
-    <div class="maintenance-row">
+    <div class="administration-row">
       <div>
         <strong>Retry what failed</strong>
         <p><small>
@@ -60,7 +60,7 @@
       {{ action("retry-failed", "Retry what failed", disabled=locked or ("retry-failed",) in scanner.rescanning or not (failed.images or failed.vulnerabilities or failed.charts),
                 why="Nothing failed, or a scan is running") }}
     </div>
-    <div class="maintenance-row">
+    <div class="administration-row">
       <div>
         <strong>One image or chart</strong>
         <p><small>Open it on the <a href="images">Images</a>, <a href="charts">Helm charts</a> or <a href="vulnerabilities">Vulnerabilities</a>
@@ -104,7 +104,7 @@
       {% endif %}
       {{ action("trivy-status", "Read the status again", cls="outline secondary") }}
     </p>
-    <div class="maintenance-row">
+    <div class="administration-row">
       <div>
         <strong>Results cache</strong>
         <p><small>{{ scanner.trivy.cache | length }} image(s) cached: they are not scanned again before {{ (t.rescan_interval / 3600) | round(1) }} h
@@ -112,7 +112,7 @@
       </div>
       <p class="actions">
         {{ action("trivy-cache", "Clear", "trash", cls="outline secondary", confirm="Forget the Trivy results? The next scan scans every image again.") }}
-        {{ action("trivy-cache-scan", "Clear and scan now", "trash", disabled=locked, why="A scan or a maintenance action is running",
+        {{ action("trivy-cache-scan", "Clear and scan now", "trash", disabled=locked, why="A scan or an administration action is running",
                   confirm="Forget the Trivy results and scan everything now?") }}
       </p>
     </div>
@@ -121,7 +121,7 @@
 
   <article>
     <h3>{{ icon("plug") }}Connectivity</h3>
-    <div class="maintenance-row">
+    <div class="administration-row">
       <p><small>Tests every cluster (its Kubernetes API), every container registry and Helm repository of the last scan, with kube-tower's credentials{% if trivy_settings.trivy.server_url %}, and the Trivy server{% endif %}.</small></p>
       {% if "connectivity" in m.running %}<span aria-busy="true">Testing…</span>
       {% else %}{{ action("connectivity", "Test the connectivity", "plug") }}{% endif %}
