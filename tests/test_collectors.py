@@ -169,3 +169,74 @@ def test_image_inventory_deduplicates_usages():
     report = inventory.reports["registry.k8s.io/pause:3.9"]
     assert len(report.usages) == 501
     assert report.usages[0] == Usage("c", "Node", None, "node-0") and report.usages[-1].kind == "Pod"
+
+
+def test_image_pull_secrets(monkeypatch, caplog):
+    import base64
+    import json
+
+    def dockerconfig(host, user, password):
+        auth = base64.b64encode(f"{user}:{password}".encode()).decode()
+        return base64.b64encode(json.dumps({"auths": {host: {"auth": auth}}}).encode()).decode()
+
+    def spec(*secrets):
+        s = _spec("harbor.example.com/team/app:1")
+        s.image_pull_secrets = [client.V1LocalObjectReference(name=n) for n in secrets]
+        return s
+
+    pod = client.V1Pod(metadata=_meta("app-1", "team"), spec=spec("harbor", "missing", "forbidden"), status=client.V1PodStatus())
+    deploy = NS(metadata=_meta("app", "team"), spec=NS(template=NS(spec=spec("harbor"))))
+    cron = NS(
+        metadata=_meta("job", "ops"), spec=NS(job_template=NS(spec=NS(template=NS(spec=spec("legacy", "garbage", "opaque")))))
+    )
+    secrets = {
+        ("team", "harbor"): client.V1Secret(
+            type="kubernetes.io/dockerconfigjson",
+            data={".dockerconfigjson": dockerconfig("harbor.example.com", "robot$ci", "pw")},
+        ),
+        ("ops", "legacy"): client.V1Secret(
+            type="kubernetes.io/dockercfg",
+            data={".dockercfg": base64.b64encode(json.dumps({"quay.io": {"username": "q", "password": "p"}}).encode()).decode()},
+        ),
+        ("ops", "garbage"): client.V1Secret(type="kubernetes.io/dockerconfigjson", data={".dockerconfigjson": "bm90IGpzb24="}),
+        ("ops", "opaque"): client.V1Secret(type="Opaque", data={"token": "eA=="}),
+    }
+
+    def read_secret(name, namespace):
+        if name == "forbidden":
+            raise client.ApiException(status=403, reason="Forbidden")
+        if (namespace, name) not in secrets:
+            raise client.ApiException(status=404, reason="Not Found")
+        return secrets[(namespace, name)]
+
+    core, apps, batch = MagicMock(), MagicMock(), MagicMock()
+    core.list_pod_for_all_namespaces.return_value.items = [pod]
+    core.read_namespaced_secret.side_effect = read_secret
+    apps.list_deployment_for_all_namespaces.return_value.items = [deploy]
+    apps.list_stateful_set_for_all_namespaces.return_value.items = []
+    apps.list_daemon_set_for_all_namespaces.return_value.items = []
+    batch.list_cron_job_for_all_namespaces.return_value.items = [cron]
+    for api in (core, apps, batch):
+        for fn in (
+            "list_pod_for_all_namespaces",
+            "list_deployment_for_all_namespaces",
+            "list_stateful_set_for_all_namespaces",
+            "list_daemon_set_for_all_namespaces",
+            "list_cron_job_for_all_namespaces",
+        ):
+            getattr(api, fn).return_value.metadata = client.V1ListMeta()
+    monkeypatch.setattr(images_collector.client, "CoreV1Api", lambda _: core)
+    monkeypatch.setattr(images_collector.client, "AppsV1Api", lambda _: apps)
+    monkeypatch.setattr(images_collector.client, "BatchV1Api", lambda _: batch)
+
+    # Off by default: no Secret is read
+    inventory = ImageInventory(ImagesSettings(include_node_images=False))
+    assert inventory.collect(Cluster("c1", "https://x", "in-cluster", None)) == []
+    assert not core.read_namespaced_secret.called and inventory.pull_secrets == {}
+
+    inventory = ImageInventory(ImagesSettings(include_node_images=False), pull_secrets=True)
+    errors = inventory.collect(Cluster("c1", "https://x", "in-cluster", None))
+    assert inventory.pull_secrets == {"harbor.example.com": ("robot$ci", "pw"), "quay.io": ("q", "p")}
+    assert core.read_namespaced_secret.call_count == 6  # team/harbor read once for the pod and the Deployment
+    assert len(errors) == 1 and "cannot read 1 image pull secret(s) (e.g. team/forbidden): 403" in errors[0]
+    assert "ops/garbage ignored" in caplog.text

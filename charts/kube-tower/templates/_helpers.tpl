@@ -88,3 +88,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 {{- toJson $names }}
 {{- end }}
+
+{{/* ConfigMap holding the CA certificates of internal registries, empty when none */}}
+{{- define "kube-tower.caConfigMapName" -}}
+{{- if .Values.registries.ca.existingConfigMap }}
+{{- .Values.registries.ca.existingConfigMap }}
+{{- else if .Values.registries.ca.pem }}
+{{- printf "%s-ca" (include "kube-tower.fullname" .) }}
+{{- end }}
+{{- end }}

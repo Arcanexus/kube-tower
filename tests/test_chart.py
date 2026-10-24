@@ -355,3 +355,53 @@ def test_network_policies(tmp_path):
     assert server["podSelector"]["matchLabels"] == server_labels
     assert server["ingress"][0]["from"] == [{"podSelector": {"matchLabels": policy["podSelector"]["matchLabels"]}}]
     assert server["egress"][1]["to"] == [{"ipBlock": {"cidr": "10.0.0.0/8"}}]
+
+
+def test_cloud_registry_providers_need_no_secret(tmp_path):
+    docs = render(
+        tmp_path,
+        {
+            "registries": {
+                "credentials": [
+                    {"registry": "*.dkr.ecr.*.amazonaws.com", "provider": "aws"},
+                    {"registry": "quay.io", "password": "s3cret"},
+                    {"registry": "myacr.azurecr.io", "provider": "azure"},
+                ]
+            }
+        },
+    )
+    assert not [k for k in docs if k[0] == "Secret" and k[1] != "kt-kube-tower-registry-1"]
+    assert {"registry-1"} == {name for name in volumes(docs) if name.startswith("registry-")}
+    creds = app_settings(tmp_path, docs).registries.credentials
+    assert [(c.registry, c.provider, c.password_file) for c in creds] == [
+        ("*.dkr.ecr.*.amazonaws.com", "aws", ""),
+        ("quay.io", "static", "/etc/kube-tower/registries/1/password"),
+        ("myacr.azurecr.io", "azure", ""),
+    ]
+
+
+@pytest.mark.parametrize(
+    "ca,configmap,key",
+    [
+        ({"pem": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"}, "kt-kube-tower-ca", "ca.crt"),
+        ({"existingConfigMap": "corp-ca", "key": "root.pem"}, "corp-ca", "root.pem"),
+    ],
+)
+def test_registry_ca(tmp_path, ca, configmap, key):
+    docs = render(tmp_path, {"registries": {"ca": ca}})
+    assert volumes(docs)["registry-ca"]["configMap"] == {"name": configmap, "items": [{"key": key, "path": "ca.crt"}]}
+    assert {"name": "registry-ca", "mountPath": "/etc/kube-tower/ca", "readOnly": True} in container(docs)["volumeMounts"]
+    assert app_settings(tmp_path, docs).registries.ca_file == "/etc/kube-tower/ca/ca.crt"
+    if "pem" in ca:
+        assert docs[("ConfigMap", "kt-kube-tower-ca")]["data"]["ca.crt"].startswith("-----BEGIN CERTIFICATE-----")
+    else:
+        assert ("ConfigMap", "kt-kube-tower-ca") not in docs
+
+
+def test_image_pull_secrets_rbac(tmp_path):
+    secrets_rule = {"apiGroups": [""], "resources": ["secrets"], "verbs": ["get"]}
+    assert secrets_rule not in render(tmp_path, {})[("ClusterRole", "kt-kube-tower")]["rules"]
+    docs = render(tmp_path, {"config": {"registries": {"useImagePullSecrets": True, "insecure": ["registry.local:5000"]}}})
+    assert secrets_rule in docs[("ClusterRole", "kt-kube-tower")]["rules"]
+    settings = app_settings(tmp_path, docs).registries
+    assert settings.use_image_pull_secrets and settings.insecure == ["registry.local:5000"] and settings.ca_file == ""
