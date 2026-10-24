@@ -298,7 +298,7 @@ async def test_rescan_image_version(monkeypatch, caplog):
     scanner, image, _ = _snapshot_scanner()
     assert scanner.rescan_image(image, vulnerabilities=False) is None
     assert scanner.rescanning == {("image", "docker.io/library/nginx:1.25")}
-    assert scanner.rescan_image(image) == "image docker.io/library/nginx:1.25 is already being rescanned"
+    assert scanner.rescan_image(image) == "images named docker.io/library/nginx is already being rescanned"
     await _rescanned(scanner)
     assert threads == ["rescan"]
     assert (image.status, image.latest_tag, image.message) == (Status.OUTDATED, "1.27", None)
@@ -325,7 +325,7 @@ async def test_rescan_failure_keeps_the_report(monkeypatch, caplog):
     scanner.rescan_image(image, vulnerabilities=False)
     await _rescanned(scanner)
     assert (image.status, image.latest_tag) == (Status.ERROR, "1.26")
-    assert "rescan of image docker.io/library/nginx:1.25 failed" in caplog.text
+    assert "rescan of images named docker.io/library/nginx failed" in caplog.text
 
 
 async def test_rescan_chart(monkeypatch):
@@ -394,20 +394,24 @@ async def test_rescan_vulnerabilities_with_trivy(monkeypatch):
 async def test_rescan_vulnerabilities_errors(monkeypatch):
     scanner, image, _ = _snapshot_scanner()
     monkeypatch.setattr(scanner_module.TrivyScanner, "available", False)
-    assert "not found" in (await scanner._rescan_vulnerabilities(image)).message
+    await scanner._rescan_vulnerabilities([image])
+    assert "not found" in image.vulnerabilities.message
 
     async def prepare(self):
         return "cannot download the Trivy database: 403"
 
     monkeypatch.setattr(scanner_module.TrivyScanner, "available", True)
     monkeypatch.setattr(scanner_module.TrivyScanner, "prepare", prepare)
-    assert (await scanner._rescan_vulnerabilities(image)).message == "cannot download the Trivy database: 403"
+    await scanner._rescan_vulnerabilities([image])
+    assert image.vulnerabilities.message == "cannot download the Trivy database: 403"
     scanner.settings.vulnerabilities.trivy.enabled = False
     image.vulnerabilities = current = VulnerabilityReport("trivy")
-    assert await scanner._rescan_vulnerabilities(image) is current
+    await scanner._rescan_vulnerabilities([image])
+    assert image.vulnerabilities is current
 
 
 async def test_rescan_vulnerabilities_from_trivy_operator(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="kube_tower")
     newer = VulnerabilityReport(
         "trivy-operator", datetime.now(UTC), vulnerabilities=[Vulnerability("CVE-2", Severity.LOW, "curl", "7")]
     )
@@ -423,12 +427,16 @@ async def test_rescan_vulnerabilities_from_trivy_operator(monkeypatch, caplog):
     scanner, image, _ = _snapshot_scanner()
     scanner._clusters = {"up": Cluster("up", "https://up", "in-cluster", None)}
     image.vulnerabilities = VulnerabilityReport("trivy-operator")
-    assert await scanner._rescan_vulnerabilities(image) is newer
-    assert listed == ["up"] and "cannot list VulnerabilityReports" in caplog.text
+    tag = ImageReport(ImageRef("docker.io", "library/nginx", "1.26"), [Usage("up", "Node", None, "n1")])
+    await scanner._rescan_vulnerabilities([image, tag])
+    assert listed == ["up"] and "cannot list VulnerabilityReports" in caplog.text  # once for both images
+    assert image.vulnerabilities is newer
+    assert "not found" in tag.vulnerabilities.message  # no operator report: Trivy (not installed here)
     # report gone from the clusters: scanned with Trivy instead
     monkeypatch.setattr(scanner_module, "collect_operator_reports", lambda cluster: ([], []))
     monkeypatch.setattr(scanner_module.TrivyScanner, "available", False)
-    assert (await scanner._rescan_vulnerabilities(image)).source == "trivy"
+    await scanner._rescan_vulnerabilities([image])
+    assert image.vulnerabilities.source == "trivy" and "no Trivy Operator report left" in caplog.text
 
 
 async def test_scan_remembers_the_reachable_clusters(fakes):
@@ -513,3 +521,111 @@ async def test_exclusive_blocks_scans_and_rescans():
         assert scanner.rescan_image(image) == "the Trivy database is being updated: try again when it is over"
         assert scanner.retry_failed() == "the Trivy database is being updated: try again when it is over"
     assert scanner.busy is None and not scanner.locked
+
+
+async def test_version_rescan_covers_every_image_with_the_name(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="kube_tower")
+    listed = []
+
+    async def list_tags(self, registry, repository):
+        listed.append(repository)
+        return ["1.25", "1.26", "1.27"]
+
+    monkeypatch.setattr(scanner_module.OCIClient, "list_tags", list_tags)
+    settings = Settings()
+    settings.images.fetch_tag_digests = False
+    scanner = Scanner(settings, FakeRegistry())
+    nginx = [
+        ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), [Usage("up", "Pod", "default", "web")]),
+        ImageReport(ImageRef("docker.io", "library/nginx", "1.27"), [Usage("up", "Node", None, "n1")]),  # node only
+    ]
+    redis = ImageReport(ImageRef("docker.io", "library/redis", "7"), status=Status.ERROR, message="timeout")
+    scanner.snapshot = Snapshot(images=[*nginx, redis])
+    assert scanner.same_name_images(nginx[0]) == nginx
+    assert scanner.rescan_image(nginx[0], vulnerabilities=False) is None
+    assert scanner.rescanning == {("image", "docker.io/library/nginx:1.25"), ("image", "docker.io/library/nginx:1.27")}
+    assert scanner.rescan_image(nginx[1]) == "1 image(s) named docker.io/library/nginx are already being rescanned"
+    await _rescanned(scanner)
+    assert [(r.status, r.latest_tag) for r in nginx] == [(Status.OUTDATED, "1.27"), (Status.UP_TO_DATE, "1.27")]
+    assert listed == ["library/nginx"]  # one tag list for both
+    assert (redis.status, redis.message) == (Status.ERROR, "timeout")  # other names untouched
+    assert "rescan of docker.io/library/nginx: checking the version of 2 image(s): 1.25, 1.27" in caplog.text
+
+
+async def test_version_rescan_refused_while_an_image_with_the_name_is_rescanned():
+    scanner = Scanner(Settings(), FakeRegistry())
+    a = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"))
+    b = ImageReport(ImageRef("docker.io", "library/nginx", "1.27"))
+    scanner.snapshot = Snapshot(images=[a, b])
+    scanner.rescanning.add(("image", "docker.io/library/nginx:1.27"))
+    assert (
+        scanner.rescan_image(a, vulnerabilities=False) == "1 image(s) named docker.io/library/nginx are already being rescanned"
+    )
+    # the vulnerability scan alone only concerns this image
+    assert scanner.same_name_images(ImageReport(ImageRef("ghcr.io", "o/x", "1"))) == [
+        ImageReport(ImageRef("ghcr.io", "o/x", "1"))
+    ]
+
+
+async def test_rescan_finds_the_new_images_with_the_name(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="kube_tower")
+
+    def collect(self, cluster):
+        self.add("nginx:1.25", Usage(cluster.name, "Pod", "default", "web"), "sha256:new-pod")
+        self.add("nginx:1.28", Usage(cluster.name, "Pod", "default", "canary"))  # deployed since the last scan
+        self.add("redis:8", Usage(cluster.name, "Pod", "default", "cache"))  # another name: ignored
+        return ["[up] cannot list CronJob: 403 Forbidden"]
+
+    def broken(self, cluster):
+        raise RuntimeError("unreachable")
+
+    checked, scanned = [], []
+
+    async def check(self, report):
+        checked.append(str(report.image))
+        report.status = Status.UP_TO_DATE
+
+    async def scan_many(self, reports):
+        scanned.extend(str(r.image) for r in reports)
+        for r in reports:
+            r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC))
+        return []
+
+    monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
+    monkeypatch.setattr(scanner_module.ImageChecker, "check", check)
+    monkeypatch.setattr(scanner_module.TrivyScanner, "available", True)
+    monkeypatch.setattr(scanner_module.TrivyScanner, "scan_many", scan_many)
+    monkeypatch.setattr(scanner_module, "collect_operator_reports", lambda cluster: ([], []))
+    scanner, image, _ = _snapshot_scanner()
+    scanner._clusters = {"up": Cluster("up", "https://up", "in-cluster", None)}
+    old = ImageReport(ImageRef("docker.io", "library/nginx", "1.20"), [Usage("up", "Node", None, "n1")])
+    scanner.snapshot.images.append(old)
+    scanner.trivy.cache["docker.io/library/nginx:1.25"] = VulnerabilityReport("trivy", datetime.now(UTC))
+
+    # vulnerabilities only: every tag is scanned, the new one also gets its version checked
+    assert scanner.rescan_image(image, versions=False) is None
+    await _rescanned(scanner)
+    names = [str(r.image) for r in scanner.snapshot.images]
+    assert names == ["docker.io/library/nginx:1.20", "docker.io/library/nginx:1.25", "docker.io/library/nginx:1.28"]
+    assert checked == ["docker.io/library/nginx:1.28"]
+    assert sorted(scanned) == names  # not read from the cache
+    assert image.running_digests == {"sha256:new-pod"} and image.usages[0].name == "web"
+    assert old.usages == [Usage("up", "Node", None, "n1")]  # not found again: kept until the next full scan
+    assert "1 new image(s) found on the clusters: docker.io/library/nginx:1.28" in caplog.text
+
+    # a cluster that fails is logged, the others are still read
+    scanner._clusters["down"] = Cluster("down", "https://down", "secret", None)
+    monkeypatch.setattr(scanner_module.ImageInventory, "collect", broken)
+    checked.clear()
+    assert scanner.rescan_image(image, vulnerabilities=False) is None
+    await _rescanned(scanner)
+    assert sorted(checked) == names
+    assert "[down] cannot read the images again: unreachable" in caplog.text
+
+
+async def test_rescan_without_image_collection(monkeypatch):
+    settings = Settings()
+    settings.images.enabled = False
+    scanner, image, _ = _snapshot_scanner(settings)
+    scanner._clusters = {"up": Cluster("up", "https://up", "in-cluster", None)}
+    assert await scanner._collect_images_named(scanner.snapshot, image.image.name) == []

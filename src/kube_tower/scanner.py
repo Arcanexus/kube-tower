@@ -229,14 +229,29 @@ class Scanner:
         from_operator = report.vulnerabilities is not None and report.vulnerabilities.source == "trivy-operator"
         return settings.trivy.enabled or (from_operator and settings.trivy_operator)
 
+    def same_name_images(self, report: ImageReport) -> list[ImageReport]:
+        """The images of the snapshot with the name (registry/repository) of this one: every tag, used or not."""
+        return [r for r in self.snapshot.images if r.image.name == report.image.name] or [report]
+
     def rescan_image(self, report: ImageReport, versions: bool = True, vulnerabilities: bool = True) -> str | None:
-        """Check one image again in the background. Returns why it cannot start, None when started."""
+        """Check again, in the background, every image with the name of this one: all its tags, used by
+        workloads or only cached on nodes, including the ones that appeared on the clusters since the last
+        scan (the clusters are read again first). Returns why it cannot start, None when started.
+        """
         vulnerabilities = vulnerabilities and self.can_rescan_vulnerabilities(report)
         if not versions and not vulnerabilities:
             return "nothing to rescan (vulnerability scans are disabled or ignored for this image)"
-        return self._start_rescan(
-            image_key(report), f"image {report.image}", partial(self._rescan_image, report, versions, vulnerabilities)
+        others = {image_key(r) for r in self.same_name_images(report)} - {image_key(report)}
+        if busy := others & self.rescanning:
+            return f"{len(busy)} image(s) named {report.image.name} are already being rescanned"
+        error = self._start_rescan(
+            image_key(report),
+            f"images named {report.image.name}",
+            partial(self._rescan_image, report, versions, vulnerabilities, others),
         )
+        if error is None:
+            self.rescanning |= others  # their detail panels show the rescan
+        return error
 
     def rescan_chart(self, report: ChartReport) -> str | None:
         """Check one chart (and its subcharts) again in the background. Returns why it cannot start, None when started."""
@@ -331,65 +346,117 @@ class Scanner:
         finally:
             self.rescanning.discard(key)
 
-    async def _rescan_image(self, report: ImageReport, versions: bool, vulnerabilities: bool) -> None:
+    async def _rescan_image(self, report: ImageReport, versions: bool, vulnerabilities: bool, others: set[tuple]) -> None:
         """Run in a worker thread's event loop. Results are computed apart, then set at once (no half-updated row)."""
+        try:
+            await self._rescan_image_work(report, versions, vulnerabilities)
+        finally:
+            self.rescanning -= others
+
+    async def _rescan_image_work(self, report: ImageReport, versions: bool, vulnerabilities: bool) -> None:
         snap = self.snapshot
         before = check_errors(snap)
-        if versions:
-            log.info("rescan of image %s: checking its version", report.image)
-            fresh = _fresh_image(report)
+        name = report.image.name
+        new = await self._collect_images_named(snap, name)
+        group = [r for r in snap.images if r.image.name == name]
+        # Images new to the snapshot were never checked: they get both checks.
+        to_check = group if versions else new
+        if to_check:
+            log.info(
+                "rescan of %s: checking the version of %d image(s): %s",
+                name,
+                len(to_check),
+                ", ".join(r.image.tag or r.image.digest or "" for r in to_check),
+            )
+            fresh = [_fresh_image(r) for r in to_check]
             async with self._clients() as (oci, _, _):
-                await ImageChecker(oci, self.settings.images, self.settings.registries.concurrency).check(fresh)
-            _apply_image(report, fresh)
-            log.info(
-                "rescan of image %s: %s%s",
-                report.image,
-                report.status.value,
-                f" (latest {report.latest_tag})" if report.latest_tag else "",
-            )
-        if vulnerabilities:
-            log.info("rescan of image %s: scanning its vulnerabilities", report.image)
-            report.vulnerabilities = await self._rescan_vulnerabilities(report)
-            v = report.vulnerabilities
-            log.info(
-                "rescan of image %s: %s",
-                report.image,
-                f"vulnerability scan failed: {v.message}"
-                if v and v.message
-                else f"{len(v.vulnerabilities) if v else 0} vulnerabilities",
-            )
+                # One checker: the tag list of the repository is read once for all of them.
+                checker = ImageChecker(oci, self.settings.images, self.settings.registries.concurrency)
+                await asyncio.gather(*(checker.check(f) for f in fresh))
+            for r, f in zip(to_check, fresh, strict=True):
+                _apply_image(r, f)
+                log.info("rescan of image %s: %s%s", r.image, r.status.value, f" (latest {r.latest_tag})" if r.latest_tag else "")
+        to_scan = [r for r in (group if vulnerabilities else new) if self.can_rescan_vulnerabilities(r)]
+        if to_scan:
+            log.info("rescan of %s: scanning the vulnerabilities of %d image(s)", name, len(to_scan))
+            await self._rescan_vulnerabilities(to_scan)
+            for r in to_scan:
+                v = r.vulnerabilities
+                log.info(
+                    "rescan of image %s: %s",
+                    r.image,
+                    f"vulnerability scan failed: {v.message}"
+                    if v and v.message
+                    else f"{len(v.vulnerabilities) if v else 0} vulnerabilities",
+                )
         refresh_check_errors(snap, before)
 
-    async def _rescan_vulnerabilities(self, report: ImageReport) -> VulnerabilityReport | None:
-        """Images with a Trivy Operator report get it read again from their clusters (the operator scans them).
-        The others, and those whose report is gone, are scanned again with Trivy, ignoring the cached result.
+    async def _collect_images_named(self, snap: Snapshot, name: str) -> list[ImageReport]:
+        """Read the images of the clusters again and update those with this name in the snapshot: current
+        usages for the known ones, the new ones (e.g. a new tag deployed) added. Returns the new ones.
+        Images no longer found stay until the next full scan.
+        """
+        if not self.settings.images.enabled or not self._clusters:
+            return []
+        inventory = ImageInventory(self.settings.images)
+        clusters = list(self._clusters.values())
+        results = await asyncio.gather(
+            *(run_in_thread(f"rescan-{c.name}", partial(inventory.collect, c)) for c in clusters), return_exceptions=True
+        )
+        for cluster, result in zip(clusters, results, strict=True):
+            if isinstance(result, BaseException):
+                log.warning("[%s] cannot read the images again: %s", cluster.name, result)
+        known = {str(r.image): r for r in snap.images if r.image.name == name}
+        new = []
+        for key, found in inventory.reports.items():
+            if found.image.name != name:
+                continue
+            if current := known.get(key):
+                current.usages, current.running_digests = found.usages, found.running_digests
+            else:
+                new.append(found)
+        if new:
+            snap.images = sorted([*snap.images, *new], key=lambda r: str(r.image))
+            log.info(
+                "rescan of %s: %d new image(s) found on the clusters: %s", name, len(new), ", ".join(str(r.image) for r in new)
+            )
+        return new
+
+    async def _rescan_vulnerabilities(self, reports: list[ImageReport]) -> None:
+        """Images with a Trivy Operator report get it read again from their clusters (the operator scans them,
+        each cluster is read once). The others, and those whose report is gone, are scanned again with Trivy,
+        ignoring the cached results.
         """
         settings = self.settings.vulnerabilities
-        current = report.vulnerabilities
-        if current and current.source == "trivy-operator" and settings.trivy_operator:
-            candidates = []
-            for name in report.clusters:
-                if cluster := self._clusters.get(name):
-                    found, errors = collect_operator_reports(cluster)
-                    for error in errors:
-                        log.warning(error)
-                    candidates += [r for key, r in found if str(key) == str(report.image)]
-            if candidates:
-                return pick_report(candidates, report.running_digests)
-            log.info("no Trivy Operator report left for %s", report.image)
-        if not settings.trivy.enabled:
-            return current
+        todo = reports
+        if settings.trivy_operator:
+            names = {c for r in reports for c in r.clusters}
+            found: dict[str, list[VulnerabilityReport]] = {}
+            for cluster in (self._clusters[n] for n in sorted(names) if n in self._clusters):
+                cluster_reports, errors = collect_operator_reports(cluster)
+                for error in errors:
+                    log.warning(error)
+                for key, v in cluster_reports:
+                    found.setdefault(str(key), []).append(v)
+            todo = []
+            for r in reports:
+                if candidates := found.get(str(r.image)):
+                    r.vulnerabilities = pick_report(candidates, r.running_digests)
+                else:
+                    if r.vulnerabilities and r.vulnerabilities.source == "trivy-operator":
+                        log.info("no Trivy Operator report left for %s", r.image)
+                    todo.append(r)
+        if not todo or not settings.trivy.enabled:
+            return
         if not self.trivy.available:
-            return VulnerabilityReport(
-                "trivy", message=f"trivy binary {settings.trivy.binary!r} not found (Helm chart: set trivy.enabled=true)"
-            )
+            message = f"trivy binary {settings.trivy.binary!r} not found (Helm chart: set trivy.enabled=true)"
+            for r in todo:
+                r.vulnerabilities = VulnerabilityReport("trivy", message=message)
+            return
         self.trivy.credentials, _ = resolve_credentials(self.settings.registries)  # Secrets may have been rotated
-        if error := await self.trivy.prepare():
-            log.error(error)
-            return VulnerabilityReport("trivy", datetime.now(UTC), message=error)
-        result = await self.trivy.scan(report)
-        self.trivy.cache[scan_target(report)[0]] = result
-        return result
+        for r in todo:
+            self.trivy.cache.pop(scan_target(r)[0], None)  # scanned again, not read from the cache
+        await self.trivy.scan_many(todo)
 
     async def _rescan_chart(self, report: ChartReport) -> None:
         """Run in a worker thread's event loop. Results are computed apart, then set at once."""

@@ -2,9 +2,12 @@
 {% set ref = r.image | string | urlencode %}
 {% call drawer(r.image.name, r.image.registry) %}
 <p>{{ badge(r.status) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
-{% set buttons = [("Check version", "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false")] %}
-{% if can_rescan_vulnerabilities %}{% set buttons = buttons + [("Scan vulnerabilities", "api/rescan/image?ref=" ~ ref ~ "&versions=false")] %}{% endif %}
+{# Rescans cover every image with this name (all tags, used or not, new ones found on the clusters), see Scanner.rescan_image. #}
+{% set tags = "" if same_name < 2 else " (" ~ same_name ~ " tags)" %}
+{% set buttons = [("Check version" ~ ("s" if tags) ~ tags, "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false")] %}
+{% if can_rescan_vulnerabilities %}{% set buttons = buttons + [("Scan vulnerabilities" ~ tags, "api/rescan/image?ref=" ~ ref ~ "&versions=false")] %}{% endif %}
 {{ rescan(buttons, "images/detail?ref=" ~ ref, rescanning, scanning) }}
+{% if not rescanning %}<p><small>Rescans cover every tag of <code>{{ r.image.name }}</code>, used or not, and the new ones found on the clusters.</small></p>{% endif %}
 {% if r.image.is_latest %}
 <p class="tag-latest">{{ icon("warning") }}This image uses <code>latest</code> (or no tag): the running version changes on every pull. Pin a version instead.</p>
 {% endif %}
