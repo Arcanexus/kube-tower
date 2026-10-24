@@ -113,6 +113,18 @@ class OCIClient:
             return self.mirrors[registry]
         return DOCKER_HUB_API if registry == DOCKER_HUB else registry
 
+    def _credentials_for(self, registry: str, host: str) -> tuple[str, str] | None:
+        """Credentials for a request to `host`, chosen by that host like Docker and containerd do.
+
+        The registry's own credentials go to its API host (or its mirror) only. After a redirect to
+        another host (e.g. registry.k8s.io to Artifact Registry), that host gets the credentials
+        configured for it, or none: the registry's credentials are never sent elsewhere.
+        """
+        if host in (registry, self._api_host(registry)):
+            return self.credentials.get(registry)
+        host = host.lower()
+        return self.credentials.get(DOCKER_HUB if host in DOCKER_HUB_ALIASES else host)
+
     def _cached_token(self, host: str, scope: str) -> str | None:
         """The token got earlier for this host and scope, unless it has expired (or is about to)."""
         cached = self._tokens.get((host, scope))
@@ -140,13 +152,16 @@ class OCIClient:
         query = {"service": fields.get("service", "")}
         if scope := fields.get("scope", scope):
             query["scope"] = scope
-        auth = self.credentials.get(registry)
+        # The credentials of the host that sent the challenge, even when its token service is elsewhere
+        # (auth.docker.io for Docker Hub, gitlab.com for registry.gitlab.com).
+        auth = self._credentials_for(registry, host)
         # The token (and the credentials asking for it) would travel in clear text.
         require_https(fields.get("realm", ""), f"the token service of {registry}")
         log.debug(
-            "requesting an %s token for %s (%s)",
+            "requesting an %s token for %s%s (%s)",
             "authenticated" if auth else "anonymous",
             registry,
+            f" from {host}" if host != self._api_host(registry) else "",
             query.get("scope", "no scope"),
         )
         resp = await self.http.get(fields["realm"], params=query, auth=auth)
@@ -178,8 +193,8 @@ class OCIClient:
             resp = await self.http.request(method, url, headers=headers, **kwargs)
             if resp.status_code == 401 and "www-authenticate" in resp.headers:
                 challenge = resp.headers["www-authenticate"]
-                if challenge.lower().startswith("basic") and registry in self.credentials:
-                    resp = await self.http.request(method, url, headers=headers, auth=self.credentials[registry], **kwargs)
+                if challenge.lower().startswith("basic") and (auth := self._credentials_for(registry, host)):
+                    resp = await self.http.request(method, url, headers=headers, auth=auth, **kwargs)
                 elif token := await self._renew_token(registry, host, challenge, scope):
                     headers["Authorization"] = f"Bearer {token}"
                     resp = await self.http.request(method, url, headers=headers, **kwargs)

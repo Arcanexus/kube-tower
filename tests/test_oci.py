@@ -224,3 +224,44 @@ async def test_redirect_to_http_refused():
         with pytest.raises(RegistryError, match="redirect of registry.example.com/app uses http://mirror.example.com"):
             await OCIClient(http).get_digest("registry.example.com", "app", "1.0")
     assert not plain.called
+
+
+@respx.mock
+async def test_credentials_not_sent_to_another_host_after_redirect():
+    """registry.example.com redirects to cdn.example.net: its credentials stay with it."""
+    respx.get("https://registry.example.com/v2/app/tags/list?n=1000").respond(
+        307, headers={"location": "https://cdn.example.net/v2/app/tags/list?n=1000"}
+    )
+    cdn = respx.get("https://cdn.example.net/v2/app/tags/list?n=1000")
+    cdn.side_effect = lambda request: (
+        httpx.Response(200, json={"tags": ["1.0"]})
+        if "authorization" in request.headers
+        else httpx.Response(401, headers={"www-authenticate": 'Bearer realm="https://cdn.example.net/token"'})
+    )
+    token = respx.get("https://cdn.example.net/token").respond(200, json={"token": "anon"})
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http, {"registry.example.com": ("user", "secret")})
+        assert await oci.list_tags("registry.example.com", "app") == ["1.0"]
+    assert "authorization" not in token.calls[0].request.headers  # anonymous token from the other host
+
+
+@respx.mock
+async def test_redirect_target_gets_its_own_credentials():
+    respx.get("https://registry.example.com/v2/app/tags/list?n=1000").respond(
+        307, headers={"location": "https://private.example.net/v2/app/tags/list?n=1000"}
+    )
+    target = respx.get("https://private.example.net/v2/app/tags/list?n=1000")
+    target.side_effect = lambda request: (
+        httpx.Response(200, json={"tags": ["2.0"]})
+        if "authorization" in request.headers
+        else httpx.Response(401, headers={"www-authenticate": 'Basic realm="private"'})
+    )
+    creds = {"registry.example.com": ("user", "secret"), "private.example.net": ("other", "pw")}
+    async with httpx.AsyncClient() as http:
+        assert await OCIClient(http, creds).list_tags("registry.example.com", "app") == ["2.0"]
+        # Without credentials for the target, the registry's own are not sent to it
+        calls_before = target.call_count
+        with pytest.raises(RegistryError, match="401 Unauthorized - authentication required or refused by private.example.net"):
+            await OCIClient(http, {"registry.example.com": ("user", "secret")}).list_tags("registry.example.com", "app")
+    assert target.calls[1].request.headers["authorization"] == "Basic " + base64.b64encode(b"other:pw").decode()
+    assert "authorization" not in target.calls[calls_before].request.headers

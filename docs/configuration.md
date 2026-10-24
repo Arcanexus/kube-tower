@@ -163,6 +163,13 @@ Credentials and tokens are only sent over `https://`. kube-tower refuses a regis
 and an `http://` git raw URL template when a git token is set: the check fails with a message
 saying what was refused. Public `http://` Helm repositories (no credentials) still work.
 
+Credentials are chosen by the host that asks for them, like Docker and containerd do: a registry's
+credentials only go to that registry (or its mirror in `registries.mirrors`) and to the token
+service it names. When a registry redirects to another host (e.g. `registry.k8s.io` to Artifact
+Registry), that host gets the credentials configured for it, or anonymous access: if a private
+registry redirects to another private host, add an entry for that host in
+`registries.credentials`.
+
 ## Secrets
 
 Every credential can come from an existing Secret or be given in the values, the chart then
