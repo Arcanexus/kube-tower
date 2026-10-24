@@ -73,6 +73,15 @@ async def _log_response(response: httpx.Response) -> None:
     log.debug("%s %s -> %s", request.method, request.url.copy_with(query=None), response.status_code)
 
 
+@dataclasses.dataclass
+class Activity:
+    """Something running (or waiting to run) in the scanner, listed on the Maintenance page."""
+
+    name: str
+    state: str  # running, waiting
+    started_at: datetime | None = None
+
+
 def check_errors(snap: Snapshot) -> list[str]:
     """Version check failures, listed with the collection errors in the scan errors."""
     errors = [f"image {r.image}: {r.message}" for r in snap.images if r.status == Status.ERROR]
@@ -93,7 +102,10 @@ class Scanner:
         self.settings = settings
         self.registry = registry or ClusterRegistry(settings.clusters)
         self.snapshot = Snapshot()
+        # A scan has two phases, each with its lock: the version checks (`_lock`), then the Trivy scans
+        # (`_trivy_lock`). The next scan and the rescans can start while the Trivy phase runs.
         self._lock = asyncio.Lock()
+        self._trivy_lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self.scans_total = {"success": 0, "failure": 0}  # exported as kube_tower_scans_total
         # Keeps its results between scans; registry credentials are set at each scan.
@@ -102,24 +114,34 @@ class Scanner:
         # Keys (see image_key / chart_key) of the images and charts being rescanned on their own.
         self.rescanning: set[tuple] = set()
         self._rescans: set[asyncio.Task] = set()  # keeps the background rescans referenced
+        # Start times of the scan phases in progress, and of the rescans (by key, with their name).
+        self.versions_started_at: datetime | None = None
+        self.trivy_started_at: datetime | None = None
+        self.trivy_waiting = 0  # scans whose versions are checked, waiting for the Trivy phase of another one
+        self._rescan_started: dict[tuple, tuple[str, datetime]] = {}
         self._clusters: dict[str, Cluster] = {}  # reachable clusters of the last scan, by name
         # Set while a maintenance action holds the scan lock (e.g. Trivy database update): why scans must wait.
         self.busy: str | None = None
 
     @property
     def running(self) -> bool:
-        """A scan is running (not a maintenance action holding the scan lock)."""
+        """A scan is running, either phase (not a maintenance action holding the scan locks)."""
+        return (self._lock.locked() or self._trivy_lock.locked()) and self.busy is None
+
+    @property
+    def checking_versions(self) -> bool:
+        """A scan is in its version phase: no other scan nor rescan can start until it is over."""
         return self._lock.locked() and self.busy is None
 
     @property
     def locked(self) -> bool:
-        """A scan or a maintenance action holds the scan lock."""
-        return self._lock.locked()
+        """A scan (either phase) or a maintenance action holds a scan lock."""
+        return self._lock.locked() or self._trivy_lock.locked()
 
     @contextlib.asynccontextmanager
     async def exclusive(self, reason: str) -> AsyncIterator[None]:
-        """Hold the scan lock for a maintenance action: no scan nor rescan starts meanwhile."""
-        async with self._lock:
+        """Hold both scan locks for a maintenance action: no scan nor rescan starts meanwhile."""
+        async with self._lock, self._trivy_lock:
             self.busy = reason
             try:
                 yield
@@ -128,12 +150,44 @@ class Scanner:
 
     async def scan(self) -> Snapshot:
         async with self._lock:
-            snap = await run_in_thread("scanner", lambda: asyncio.run(self._scan()))
+            self.versions_started_at = datetime.now(UTC)
+            try:
+                snap = await run_in_thread("scanner", lambda: asyncio.run(self._scan()))
+            finally:
+                self.versions_started_at = None
             # Versions are shown as soon as they are checked, vulnerabilities fill in afterwards.
             self.snapshot = snap
-            if self.settings.vulnerabilities.enabled:
-                await run_in_thread("trivy", lambda: asyncio.run(self._scan_vulnerabilities(snap)))
-            return snap
+        if self.settings.vulnerabilities.enabled:
+            self.trivy_waiting += 1
+            try:
+                await self._trivy_lock.acquire()
+            finally:
+                self.trivy_waiting -= 1
+            try:
+                # A newer scan waiting for this lock too would make these results obsolete at once:
+                # it scans its own snapshot (reusing the Trivy results cached meanwhile).
+                if self.snapshot is snap:
+                    self.trivy_started_at = datetime.now(UTC)
+                    await run_in_thread("trivy", lambda: asyncio.run(self._scan_vulnerabilities(snap)))
+                else:
+                    log.info("vulnerability scan skipped: a newer scan replaced this one")
+            finally:
+                self.trivy_started_at = None
+                self._trivy_lock.release()
+        return snap
+
+    def activities(self) -> list[Activity]:
+        """What runs now: the phases of the scan, the scans waiting for a Trivy phase, the rescans."""
+        found = []
+        if self.versions_started_at:
+            found.append(Activity("Full scan: clusters and versions", "running", self.versions_started_at))
+        if self.trivy_started_at:
+            found.append(Activity("Full scan: vulnerabilities (Trivy)", "running", self.trivy_started_at))
+        if self.trivy_waiting:
+            found.append(Activity(f"Full scan: vulnerabilities (Trivy) of {self.trivy_waiting} newer scan(s)", "waiting"))
+        for name, started_at in sorted(self._rescan_started.values(), key=lambda item: item[1]):
+            found.append(Activity(f"Rescan of {name}", "running", started_at))
+        return found
 
     async def _scan(self) -> Snapshot:
         """The scan itself, run in the worker thread's event loop."""
@@ -327,13 +381,14 @@ class Scanner:
             self.rescanning -= keys
 
     def _start_rescan(self, key: tuple, name: str, work: Callable[[], Coroutine]) -> str | None:
-        if self.running:
+        if self.checking_versions:
             return "a scan is running, it checks everything again"
         if self.busy:
             return f"{self.busy}: try again when it is over"
         if key in self.rescanning:
             return f"{name} is already being rescanned"
         self.rescanning.add(key)
+        self._rescan_started[key] = (name, datetime.now(UTC))
         task = asyncio.create_task(self._safe_rescan(key, name, work))
         self._rescans.add(task)
         task.add_done_callback(self._rescans.discard)
@@ -346,6 +401,7 @@ class Scanner:
             log.exception("rescan of %s failed", name)
         finally:
             self.rescanning.discard(key)
+            self._rescan_started.pop(key, None)
 
     async def _rescan_image(self, report: ImageReport, versions: bool, vulnerabilities: bool, others: set[tuple]) -> None:
         """Run in a worker thread's event loop. Results are computed apart, then set at once (no half-updated row)."""
@@ -479,8 +535,10 @@ class Scanner:
         refresh_check_errors(snap, before)
 
     def trigger(self) -> bool:
-        """Start a scan in the background unless one is already running (or a maintenance action holds the lock)."""
-        if self.locked:
+        """Start a scan in the background unless one is checking versions (or a maintenance action holds the
+        locks). A scan in its Trivy phase does not prevent it: the new one waits only for that phase.
+        """
+        if self._lock.locked():
             return False
         self._task = asyncio.create_task(self._safe_scan())
         return True

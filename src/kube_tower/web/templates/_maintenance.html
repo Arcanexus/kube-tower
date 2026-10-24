@@ -5,11 +5,36 @@
         {% if disabled %}disabled title="{{ why }}"{% endif %}>{{ icon(ico) }}{{ label }}</button>
 {%- endmacro %}
 {% macro date(value) -%}{{ value.strftime("%Y-%m-%d %H:%M UTC") if value else "" }}{%- endmacro %}
-{% set locked = scanning or scanner.busy %}
+{% set locked = checking_versions or scanner.busy %}
 <div id="maintenance" class="maintenance"
      {% if busy %}hx-get="maintenance?polling=1" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML"{% endif %}>
   {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
   {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
+
+  <article id="scans">
+    <h3>{{ icon("clock") }}In progress</h3>
+    {% set activities = scanner.activities() %}
+    {% set actions = {"trivy-db": "Trivy database update", "connectivity": "Connectivity test"} %}
+    {% if activities or m.running %}
+    <table class="striped compact activities">
+      <thead><tr><th>Activity</th><th>State</th><th>Started</th></tr></thead>
+      <tbody>
+        {% for a in activities %}
+        <tr><td>{{ a.name }}</td>
+          <td>{% if a.state == "running" %}<span aria-busy="true">running</span>{% else %}<small>waiting for the current Trivy phase</small>{% endif %}</td>
+          <td>{% if a.started_at %}<time datetime="{{ a.started_at.isoformat() }}" class="ago">{{ date(a.started_at) }}</time>{% endif %}</td></tr>
+        {% endfor %}
+        {% for action in m.running | sort %}
+        <tr><td>{{ actions.get(action, action) }}</td><td><span aria-busy="true">running</span></td><td></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p><small>Nothing is running.{% if snapshot.finished_at %} Last scan finished
+      <time datetime="{{ snapshot.finished_at.isoformat() }}" class="ago">{{ date(snapshot.finished_at) }}</time>{% if snapshot.vulnerabilities_finished_at %},
+      its vulnerability scan <time datetime="{{ snapshot.vulnerabilities_finished_at.isoformat() }}" class="ago">{{ date(snapshot.vulnerabilities_finished_at) }}</time>{% endif %}.{% endif %}</small></p>
+    {% endif %}
+  </article>
 
   <article>
     <h3>{{ icon("refresh") }}Scans</h3>
@@ -17,7 +42,7 @@
       <div>
         <strong>Full scan</strong>
         <p><small>Collects every cluster again and checks every image, chart and vulnerability report.
-          {% if scanning %}<span aria-busy="true">Scan in progress…</span>{% elif scanner.busy %}{{ scanner.busy }}…{% endif %}</small></p>
+          {% if checking_versions %}<span aria-busy="true">Scan in progress…</span>{% elif scanning %}<span aria-busy="true">Vulnerability scan in progress…</span>{% elif scanner.busy %}{{ scanner.busy }}…{% endif %}</small></p>
       </div>
       {{ action("scan", "Scan everything", disabled=locked, why="A scan or a maintenance action is running") }}
     </div>
@@ -75,7 +100,7 @@
     <p class="actions">
       {% if not t.server_url %}
       {% if "trivy-db" in m.running %}<span aria-busy="true">Updating the database…</span>
-      {% else %}{{ action("trivy-db", "Update the database", "database", disabled=locked or scanner.rescanning, why="Wait for the scan or the rescans to finish") }}{% endif %}
+      {% else %}{{ action("trivy-db", "Update the database", "database", disabled=scanner.locked or scanner.rescanning, why="Wait for the scan or the rescans to finish") }}{% endif %}
       {% endif %}
       {{ action("trivy-status", "Read the status again", cls="outline secondary") }}
     </p>

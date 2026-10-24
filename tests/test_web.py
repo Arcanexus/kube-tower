@@ -20,15 +20,18 @@ from kube_tower.models import (
     Vulnerability,
     VulnerabilityReport,
 )
+from kube_tower.scanner import Activity
 from kube_tower.trivy import TrivyDatabase, TrivyScanner, TrivyStatus
 
 
 class FakeScanner:
     running = False
+    checking_versions = False
     locked = False
     busy = None
 
     def __init__(self):
+        self.running_activities = []
         now = datetime.now(UTC)
         self.snapshot = Snapshot(
             images=[
@@ -108,6 +111,9 @@ class FakeScanner:
         self.rescan_error = None
         self.trivy = TrivyScanner(TrivySettings(binary="/nonexistent/trivy"), {})
         self.retried = 0
+
+    def activities(self):
+        return self.running_activities
 
     def failed_items(self):
         failed = [r for r in self.snapshot.images if r.vulnerabilities and r.vulnerabilities.message]
@@ -252,10 +258,10 @@ def test_grafana_dashboard_uses_exported_metrics():
 
 def test_status_reloads_page_when_scan_ends():
     client, scanner = _client()
-    scanner.running = True
+    scanner.running = scanner.checking_versions = True
     resp = client.get("/status?polling=1")
     assert "Scan in progress" in resp.text and "HX-Refresh" not in resp.headers
-    scanner.running = False
+    scanner.running = scanner.checking_versions = False
     assert client.get("/status?polling=1").headers["HX-Refresh"] == "true"
     assert "HX-Refresh" not in client.get("/status").headers
 
@@ -468,9 +474,11 @@ def test_rescan_buttons_and_polling():
     assert "Scan again" in client.get("/vulnerabilities/detail", params=ref).text
     chart = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
     assert 'hx-post="api/rescan/chart?cluster=c1&amp;namespace=argocd&amp;app=redis&amp;chart=redis"' in chart
-    # buttons are disabled while a full scan runs
-    scanner.running = True
+    # buttons are disabled while a full scan checks versions, not during its Trivy phase
+    scanner.running = scanner.checking_versions = True
     assert "disabled" in client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
+    scanner.checking_versions = False
+    assert "disabled" not in client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
     scanner.running = False
     # while rescanned, the panel polls itself; the poll that sees the end reloads the results
     scanner.rescanning = {("image", "docker.io/library/nginx:1.25")}
@@ -494,7 +502,21 @@ def test_maintenance_page():
     assert "c1: 1 unused image(s)" in page and "crictl rmi docker.io/library/redis:latest" in page
     assert "c2: 1 unused image(s)" in page
     assert 'hx-get="maintenance?polling=1"' not in page  # nothing running
+    # What runs is listed first, the scan status links to it
+    assert page.index('id="scans"') < page.index("<strong>Full scan</strong>")
+    assert "Nothing is running. Last scan finished" in page
+    assert 'href="maintenance#scans"' in page
     m = client.app.state.maintenance
+    scanner.running_activities = [
+        Activity("Full scan: vulnerabilities (Trivy)", "running", datetime(2026, 10, 24, 10, tzinfo=UTC)),
+        Activity("Full scan: vulnerabilities (Trivy) of 1 newer scan(s)", "waiting"),
+    ]
+    m.running = {"connectivity"}
+    page = " ".join(client.get("/maintenance").text.split())
+    assert "Nothing is running" not in page and "Full scan: vulnerabilities (Trivy)</td>" in page
+    assert "2026-10-24 10:00 UTC" in page and "waiting for the current Trivy phase" in page
+    assert "<td>Connectivity test</td>" in page
+    scanner.running_activities, m.running = [], set()
     m.trivy_status = TrivyStatus(
         datetime.now(UTC), "0.75.0", TrivyDatabase(2, datetime(2026, 10, 23, tzinfo=UTC), datetime(2026, 10, 24, tzinfo=UTC))
     )
@@ -594,8 +616,13 @@ def test_scan_status_top_right():
     scanner.snapshot.errors = ["boom"]
     status = client.get("/status").text
     assert 'class="dot dot-warn"' in status and "1 scan error(s)" in status and "boom" in status
-    scanner.running = True
-    assert "disabled" in client.get("/status").text
+    scanner.running = scanner.checking_versions = True
+    status = client.get("/status").text
+    assert "disabled" in status and "Scan in progress" in status
+    # Trivy phase: shown as running, a new scan can be started
+    scanner.checking_versions = False
+    status = client.get("/status").text
+    assert "disabled" not in status and "Vulnerability scan in progress" in status
 
 
 def test_github_link_next_to_version():
