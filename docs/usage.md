@@ -181,6 +181,11 @@ credentials come from, the username and whether they could be read.
 | `GET /readyz` | 200 once the first scan has finished |
 | `GET /api/docs` | Interactive OpenAPI documentation |
 
+Requests that change something (`POST`, `DELETE`) are refused with a 403 when a browser says they come
+from another site (`Sec-Fetch-Site`, else `Origin` compared with the host, or `X-Forwarded-Host` behind a
+proxy): a page on another site cannot start scans through the browser of someone who can reach
+kube-tower. The UI itself and clients that are not browsers (curl, scripts) are not affected.
+
 ```sh
 # Outdated images, as "image current -> latest"
 curl -s http://kube-tower/api/snapshot \

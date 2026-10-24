@@ -15,6 +15,7 @@ from kube_tower.logger import get_logger
 from kube_tower.maintenance import Maintenance
 from kube_tower.scanner import Scanner
 from kube_tower.web import api, metrics, ui
+from kube_tower.web.csrf import add_csrf_protection
 
 
 def create_app(
@@ -47,5 +48,6 @@ def create_app(
     app.include_router(api.router)
     app.include_router(metrics.router)
     ui.mount(app)
+    add_csrf_protection(app)
     logging.getLogger(__name__).info("kube-tower started (refresh every %ss)", settings.refresh_interval)
     return app
