@@ -13,6 +13,9 @@ spec:
     metadata:
       labels:
         {{- include "kube-tower.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/credentials: {{ include (print $.Template.BasePath "/credential-secrets.yaml") . | sha256sum }}
@@ -27,8 +30,10 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if include "kube-tower.trivyBinary" . }}
+      {{- if or (include "kube-tower.trivyBinary" .) .Values.extraInitContainers }}
       initContainers:
+      {{- end }}
+      {{- if include "kube-tower.trivyBinary" . }}
         # Copies the Trivy CLI from the official image, so the kube-tower image stays small
         - name: trivy
           image: "{{ .Values.trivy.image.repository }}:{{ .Values.trivy.image.tag }}"
@@ -45,6 +50,9 @@ spec:
           volumeMounts:
             - name: trivy-bin
               mountPath: /opt/trivy/bin
+      {{- end }}
+      {{- with .Values.extraInitContainers }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: kube-tower
@@ -63,6 +71,9 @@ spec:
                 secretKeyRef:
                   name: {{ . }}
                   key: {{ ternary $.Values.git.secretKey "token" (not (empty $.Values.git.existingSecret)) }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           ports:
             - name: http
@@ -113,6 +124,9 @@ spec:
               mountPath: /etc/kube-tower/registries/{{ $i }}
               readOnly: true
             {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -140,6 +154,9 @@ spec:
         - name: registry-{{ $i }}
           secret:
             secretName: {{ include "kube-tower.registrySecretName" (dict "root" $ "index" $i) }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

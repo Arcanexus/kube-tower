@@ -52,6 +52,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Security: a cluster Secret holding a kubeconfig could make kube-tower run any command of its
+  image (exec plugin), read files of the pod (`tokenFile`, `client-certificate`...) or use an
+  `auth-provider`. Exec plugins now run only when their command is listed in the new
+  `clusters.execCommands` setting (empty by default), so managed clusters (EKS, GKE, AKS) can still
+  use their cloud identity; file paths and auth providers are refused. New chart values
+  `extraInitContainers`, `extraEnv`, `extraVolumes`, `extraVolumeMounts` and `podLabels` to add the
+  plugin to the pod. EKS, GKE and AKS examples and the list of supported authentication methods in
+  docs/clusters.md.
 - Registry tokens are renewed when they expire: a token refused with a 401 (e.g. a Docker Hub token,
   valid 5 minutes, during a long scan) is no longer sent again, and tokens are renewed before the end
   of the lifetime given by the registry (`expires_in`). Before, every later check of the repository

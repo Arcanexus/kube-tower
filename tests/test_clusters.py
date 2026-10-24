@@ -1,6 +1,7 @@
 import base64
 import json
 
+import pytest
 from kubernetes import client
 
 from kube_tower.clusters import ClusterRegistry, cluster_from_secret
@@ -33,6 +34,84 @@ current-context: ctx
 """
     cluster = cluster_from_secret(_secret("lab", kubeconfig=kubeconfig), "secret")
     assert cluster.name == "lab" and cluster.server == "https://k:6443"
+
+
+def _kubeconfig(user: dict, cluster: dict | None = None) -> str:
+    return json.dumps(
+        {
+            "apiVersion": "v1",
+            "kind": "Config",
+            "clusters": [{"name": "c", "cluster": cluster or {"server": "https://k:6443", "insecure-skip-tls-verify": True}}],
+            "users": [{"name": "u", "user": user}],
+            "contexts": [{"name": "ctx", "context": {"cluster": "c", "user": "u"}}],
+            "current-context": "ctx",
+        }
+    )
+
+
+EXEC_USER = {
+    "exec": {
+        "apiVersion": "client.authentication.k8s.io/v1beta1",
+        "command": "/opt/kube-tower/bin/plugin",
+        "args": ["get-token"],
+    }
+}
+
+
+def test_kubeconfig_exec_refused_by_default(monkeypatch):
+    ran = []
+    monkeypatch.setattr("kubernetes.config.exec_provider.subprocess.Popen", lambda *a, **k: ran.append(a))
+    with pytest.raises(ValueError, match="exec command '/opt/kube-tower/bin/plugin' is not allowed.*clusters.execCommands"):
+        cluster_from_secret(_secret("eks", kubeconfig=_kubeconfig(EXEC_USER)), "secret")
+    with pytest.raises(ValueError, match="not allowed"):
+        cluster_from_secret(_secret("eks", kubeconfig=_kubeconfig(EXEC_USER)), "secret", ["plugin"])  # not the same command
+    assert ran == []
+
+
+def test_kubeconfig_exec_allowed_command(monkeypatch):
+    class Process:
+        returncode = 0
+        stdout = None
+
+        def __init__(self, args, **kwargs):
+            self.args = args
+
+        def communicate(self):
+            status = {"apiVersion": "client.authentication.k8s.io/v1beta1", "kind": "ExecCredential"}
+            return json.dumps({**status, "status": {"token": "from-plugin"}}), ""
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr("kubernetes.config.exec_provider.subprocess.Popen", Process)
+    cluster = cluster_from_secret(_secret("eks", kubeconfig=_kubeconfig(EXEC_USER)), "secret", ["/opt/kube-tower/bin/plugin"])
+    assert cluster.api_client.configuration.api_key["BearerToken"] == "Bearer from-plugin"
+
+
+@pytest.mark.parametrize(
+    "user,cluster,message",
+    [
+        ({"auth-provider": {"name": "gcp", "config": {"cmd-path": "/bin/sh"}}}, None, "auth-provider is not supported"),
+        ({"tokenFile": "/var/run/secrets/kubernetes.io/serviceaccount/token"}, None, "tokenFile .* put the content in token"),
+        ({"client-certificate": "/etc/x.crt", "client-key": "/etc/x.key"}, None, "client-certificate .* client-certificate-data"),
+        ({"token": "t"}, {"server": "https://k:6443", "certificate-authority": "/etc/ca.crt"}, "certificate-authority"),
+    ],
+)
+def test_kubeconfig_local_files_and_auth_providers_refused(user, cluster, message):
+    with pytest.raises(ValueError, match=message):
+        cluster_from_secret(_secret("lab", kubeconfig=_kubeconfig(user, cluster)), "secret")
+
+
+def test_kubeconfig_not_a_mapping():
+    with pytest.raises(ValueError, match="not a YAML mapping"):
+        cluster_from_secret(_secret("lab", kubeconfig="just text"), "secret")
+
+
+def test_refused_exec_kubeconfig_reported_in_discovery():
+    registry = FakeRegistry([_secret("eks", name="eks", kubeconfig=_kubeconfig(EXEC_USER))])
+    clusters, statuses = registry.discover()
+    assert clusters == []
+    assert "clusters.execCommands" in statuses[0].message
 
 
 class FakeRegistry(ClusterRegistry):

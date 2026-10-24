@@ -316,7 +316,8 @@ To follow the development version, point `source` at the git repository instead:
 | `config.vulnerabilities.*` | see [configuration](configuration.md#vulnerabilities-trivy) | Trivy Operator reports, scan settings, ignored images |
 | `startupProbe` / `livenessProbe` / `readinessProbe` | 5 min to start, then every 20s / 10s | Probes on `/healthz` (the chart sets `httpGet`); `null` disables one |
 | `resources` | 50m CPU / 256Mi requests, 1536Mi memory limit | kube-tower pod resources (Trivy scans in standalone mode need the memory) |
-| `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `imagePullSecrets` | | Usual pod settings |
+| `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `podLabels`, `imagePullSecrets` | | Usual pod settings |
+| `extraInitContainers`, `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | Added to the kube-tower pod, e.g. to copy an [exec plugin](clusters.md#managed-clusters-eks-gke-aks-exec-plugins) |
 | `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
 
 ## Permissions

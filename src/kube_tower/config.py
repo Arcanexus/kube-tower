@@ -48,6 +48,9 @@ class ClustersSettings:
     use_argocd_secrets: bool = False
     argocd_namespace: str = "argocd"
     request_timeout: int = 30
+    # Commands that kubeconfig exec plugins may run (e.g. /opt/kube-tower/bin/kubelogin for AKS), as
+    # written in the kubeconfig. Empty: exec plugins are refused (a cluster Secret could run any command).
+    exec_commands: list[str] = field(default_factory=list)
 
 
 @dataclass
