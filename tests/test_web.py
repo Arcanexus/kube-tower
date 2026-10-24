@@ -593,3 +593,11 @@ def test_scan_status_top_right():
     assert 'class="dot dot-warn"' in status and "1 scan error(s)" in status and "boom" in status
     scanner.running = True
     assert "disabled" in client.get("/status").text
+
+
+def test_github_link_next_to_version():
+    client, _ = _client()
+    page = client.get("/settings").text
+    footer = page[page.index('class="version"') :]
+    assert footer.index("<small>") < footer.index('href="https://github.com/Arcanexus/kube-tower"')
+    assert 'href="static/icons.svg#i-github"' in footer
