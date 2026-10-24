@@ -228,6 +228,7 @@ def mount(app: FastAPI) -> None:
             image_key(report),
             r=report,
             can_rescan_vulnerabilities=can_scan,
+            same_name=len(scanner.same_name_images(report)),
             cve=cve,
             highlighted=highlighted,
         )

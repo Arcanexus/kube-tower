@@ -30,9 +30,15 @@ have buttons that check one item again, in the background.
 
 | Detail panel | Buttons |
 | --- | --- |
-| Image | **Check version** (registry query) of every image with this name: all its tags, used by workloads or only cached on nodes (the button says how many); **Scan vulnerabilities** of this image only |
+| Image | **Check version** (registry query) and **Scan vulnerabilities** |
 | Vulnerabilities of an image | **Scan again** (or **Scan now** when it was never scanned) |
 | Helm chart | **Check versions** (the chart and its subcharts) |
+
+An image rescan covers every image with its name (`registry/repository`): all its tags, used by
+workloads or only cached on nodes (the buttons say how many). The clusters are read again first, so
+the tags deployed since the last scan are found, added to the lists and checked too (both their
+version and their vulnerabilities, whatever the button); images no longer found stay until the next
+full scan.
 
 While it runs the panel shows *Rescanning…*, then the panel and the line of the list are updated.
 The vulnerabilities of an image read from a Trivy Operator report are read again from its clusters
@@ -163,7 +169,7 @@ credentials come from, the username and whether they could be read.
 | --- | --- |
 | `GET /api/snapshot` | The last scan: images, charts, clusters, errors, timestamps |
 | `POST /api/refresh` | Start a scan now (`{"started": false}` if one is already running) |
-| `POST /api/rescan/image?ref=…` | Check an image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`): the version check covers every image with its name (all tags), the vulnerability scan only this one; `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
+| `POST /api/rescan/image?ref=…` | Check an image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`): every image with its name is checked (all tags, including the new ones found on the clusters); `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
 | `POST /api/rescan/chart?cluster=…&namespace=…&app=…&chart=…` | Check one Helm chart and its subcharts again (`namespace` is the Application's namespace) |
 | `POST /api/maintenance/retry-failed` | Check again everything that failed in the last scan (202, or 409 with a `reason`) |
 | `POST /api/maintenance/trivy-db` | Update the Trivy databases when a newer one is published (standalone mode) |

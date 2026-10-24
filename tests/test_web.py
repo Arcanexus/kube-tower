@@ -609,5 +609,8 @@ def test_github_link_next_to_version():
 def test_check_version_button_counts_the_tags():
     client, scanner = _client()
     scanner.snapshot.images.append(ImageReport(ImageRef("docker.io", "library/nginx", "1.27"), [Usage("c1", "Node", None, "n1")]))
-    assert "Check versions (2 tags)" in client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    assert "Check versions (2 tags)" in detail and "Scan vulnerabilities (2 tags)" in detail
+    assert "and the new ones found on the clusters" in detail
+    assert "Scan again (2 tags)" in client.get("/vulnerabilities/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
     assert ">Check version</button>" in client.get("/images/detail", params={"ref": "ghcr.io/org/app:2.0"}).text.replace("\n", "")
