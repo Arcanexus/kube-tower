@@ -91,6 +91,30 @@ def vulnerability_sort_key(report: ImageReport) -> tuple:
     return (0, [-counts[s] for s in Severity], str(report.image))
 
 
+# Sort order of the Status columns (kube-tower.js): what needs attention first.
+STATUS_RANK = {Status.OUTDATED: 0, Status.ERROR: 1, Status.UNKNOWN: 2, Status.UP_TO_DATE: 3}
+
+
+def cve_terms(value: str) -> list[str]:
+    """`CVE-2025-68121, 2024-` -> ["cve-2025-68121", "2024-"]: each term matches all or part of an ID."""
+    return [t for t in re.split(r"[\s,;]+", value.lower()) if t]
+
+
+def matching_vulnerabilities(report: ImageReport, terms: list[str]) -> list:
+    if not terms or report.vulnerabilities is None:
+        return []
+    return [v for v in report.vulnerabilities.vulnerabilities if any(t in v.id.lower() for t in terms)]
+
+
+def vulnerability_score(report: ImageReport) -> int:
+    """Sort value of the Vulnerabilities column: by count of the most severe first."""
+    if report.vulnerabilities is None or report.vulnerabilities.message:
+        return -1
+    counts = report.vulnerabilities.counts()
+    return sum(counts[s] * 1000 ** (len(Severity) - i) for i, s in enumerate(Severity))
+
+
+templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
 
 
@@ -152,12 +176,22 @@ def mount(app: FastAPI) -> None:
     async def vulnerabilities(request: Request):
         # The severity filter is named status, like on the other pages (counters set it).
         q, severity, cluster = filters(request)
+        cve = request.query_params.get("cve", "")
+        terms = cve_terms(cve)
+        found = {}  # image reference -> its vulnerabilities whose ID matches the CVE filter
+        for r in request.app.state.scanner.snapshot.images:
+            if terms and (hits := matching_vulnerabilities(r, terms)):
+                # One badge per ID (a CVE often affects several packages), most severe first
+                unique = {}
+                for v in sorted(hits, key=lambda v: list(Severity).index(v.severity)):
+                    unique.setdefault(v.id, v)
+                found[str(r.image)] = list(unique.values())
         # Counters ignore the severity filter: they are the buttons that set it.
         matching = sorted(
             (
                 r
                 for r in request.app.state.scanner.snapshot.images
-                if _matches(str(r.image), q) and (not cluster or cluster in r.clusters)
+                if _matches(str(r.image), q) and (not cluster or cluster in r.clusters) and (not terms or str(r.image) in found)
             ),
             key=vulnerability_sort_key,
         )
@@ -174,15 +208,26 @@ def mount(app: FastAPI) -> None:
             severity=severity,
             cluster=cluster,
             affected=affected,
+            cve=cve,
+            found=found,
         )
 
     @app.get("/vulnerabilities/detail", response_class=HTMLResponse, include_in_schema=False)
-    async def vulnerability_detail(request: Request, ref: str = ""):
+    async def vulnerability_detail(request: Request, ref: str = "", cve: str = ""):
         scanner = request.app.state.scanner
         if (report := scanner.snapshot.image(ref)) is None:
             return Response(status_code=404)
         can_scan = scanner.can_rescan_vulnerabilities(report)
-        return render_detail(request, "_vulnerability_detail", image_key(report), r=report, can_rescan_vulnerabilities=can_scan)
+        highlighted = {v.id for v in matching_vulnerabilities(report, cve_terms(cve))}
+        return render_detail(
+            request,
+            "_vulnerability_detail",
+            image_key(report),
+            r=report,
+            can_rescan_vulnerabilities=can_scan,
+            cve=cve,
+            highlighted=highlighted,
+        )
 
     @app.get("/charts", response_class=HTMLResponse, include_in_schema=False)
     async def charts(request: Request):

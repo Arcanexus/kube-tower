@@ -552,3 +552,44 @@ def test_maintenance_api(monkeypatch):
         {"cluster": "c1", "image": "docker.io/library/redis:latest", "nodes": ["n1"]},
         {"cluster": "c2", "image": "ghcr.io/org/app:2.0", "nodes": ["n1", "n2"]},
     ]
+
+
+def test_vulnerabilities_cve_filter():
+    client, _ = _client()
+    rows = lambda page: page.split("<tbody>")[1]  # noqa: E731
+    page = client.get("/vulnerabilities?cve=CVE-2024-1").text
+    assert "library/nginx" in rows(page) and "org/app" not in rows(page) and "library/redis" not in rows(page)
+    assert 'value="CVE-2024-1"' in page and 'sev-critical" title="zlib overflow">CVE-2024-1</span>' in page
+    # all or part of the ID, case insensitive, several IDs separated by spaces or commas
+    assert "library/nginx" in rows(client.get("/vulnerabilities?cve=2024-2").text)
+    assert "library/nginx" in rows(client.get("/vulnerabilities?cve=nope,cve-2024-2").text)
+    assert "library/nginx" not in rows(client.get("/vulnerabilities?cve=CVE-2023").text)
+    assert re.search(r'sev-critical">critical</span><strong>0</strong>', client.get("/vulnerabilities?cve=CVE-2023").text)
+    # the detail panel lists the matching vulnerabilities first
+    detail = client.get("/vulnerabilities/detail", params={"ref": "docker.io/library/nginx:1.25", "cve": "2024-2"}).text
+    assert 'class="cve-match"' in detail and detail.index("CVE-2024-2") < detail.index("CVE-2024-1")
+    assert "1 matching <code>2024-2</code> (CVE-2024-2)" in detail
+
+
+def test_list_pages_layout_and_sortable_columns():
+    client, _ = _client()
+    for path in ("/images", "/charts", "/vulnerabilities", "/clusters"):
+        page = client.get(path).text
+        assert 'class="content list-page"' in page and 'class="overflow-auto table-wrap"' in page, path
+        assert "<th data-sort" in page, path
+    images = client.get("/images").text
+    assert re.search(r'<td data-sort="0">\s*<span class="badge badge-outdated">', images)  # outdated sorts first
+    assert '<th data-sort="desc">Used by</th>' in images
+    assert 'class="content "' in client.get("/settings").text  # documents scroll as a whole
+
+
+def test_scan_status_top_right():
+    client, scanner = _client()
+    page = client.get("/images").text
+    assert page.index('class="topbar-title"') < page.index('id="scan-status"')
+    assert '<time datetime="' in page and 'class="dot dot-ok"' in page and ">Refresh</button>" in page
+    scanner.snapshot.errors = ["boom"]
+    status = client.get("/status").text
+    assert 'class="dot dot-warn"' in status and "1 scan error(s)" in status and "boom" in status
+    scanner.running = True
+    assert "disabled" in client.get("/status").text

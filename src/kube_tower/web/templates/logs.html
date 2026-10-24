@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, page_title %}
+{% block layout %}list-page{% endblock %}
+{% block heading %}{{ page_title("logs", "Logs", "Last application and scanner logs, kept in memory (the level is set by logs.level in the configuration).") }}{% endblock %}
 {% block content %}
-{{ page_title("logs", "Logs", "Last application and scanner logs, kept in memory (the level is set by logs.level in the configuration).") }}
 <form class="filters log-filters" action="logs" method="get">
   <input type="search" name="q" value="{{ q }}" placeholder="Filter…" aria-label="Filter" onchange="this.form.submit()">
   <select name="level" aria-label="Minimum level" onchange="this.form.submit()">

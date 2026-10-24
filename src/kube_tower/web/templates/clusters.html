@@ -1,18 +1,21 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, icon, page_title %}
+{% block layout %}list-page{% endblock %}
+{% block heading %}{{ page_title("clusters", "Clusters", "Clusters registered through Secrets (ArgoCD format) and the local cluster.") }}{% endblock %}
 {% block content %}
-{{ page_title("clusters", "Clusters", "Clusters registered through Secrets (ArgoCD format) and the local cluster.") }}
+<div class="overflow-auto table-wrap">
 <table class="striped">
-  <thead><tr><th>Name</th><th>Server</th><th>Source</th><th>Version</th><th>Status</th></tr></thead>
+  <thead><tr><th data-sort>Name</th><th data-sort>Server</th><th data-sort>Source</th><th data-sort>Version</th><th data-sort>Status</th></tr></thead>
   <tbody>
   {% for c in snapshot.clusters %}
     <tr>
       <td>{{ icon("clusters", "muted") }}{{ c.name }}</td><td><code>{{ c.server }}</code></td><td>{{ c.source }}</td><td>{{ c.version or "" }}</td>
-      <td>{% if c.reachable %}<span class="badge badge-up-to-date">{{ icon("ok") }}reachable</span>{% else %}<span class="badge badge-error">{{ icon("error") }}unreachable</span><br><small>{{ c.message }}</small>{% endif %}</td>
+      <td data-sort="{{ 1 if c.reachable else 0 }}">{% if c.reachable %}<span class="badge badge-up-to-date">{{ icon("ok") }}reachable</span>{% else %}<span class="badge badge-error">{{ icon("error") }}unreachable</span><br><small>{{ c.message }}</small>{% endif %}</td>
     </tr>
   {% else %}
     <tr><td colspan="5">No cluster discovered yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

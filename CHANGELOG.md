@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- UI: scan status redesigned as a pill at the top right (age of the last scan, errors menu, Refresh);
+  on list pages only the list scrolls (title, filters, counters and column headers stay); sortable
+  columns; CVE filter on the Vulnerabilities page (all or part of one or several IDs), matching
+  vulnerabilities listed first in the detail panel. Documentation, README and screenshots refreshed.
 - Vulnerabilities (CVE) of every image on a new Vulnerabilities page, in the image details and in the
   Prometheus metrics: read from Trivy Operator `VulnerabilityReports` when present, else scanned with
   the Trivy CLI (standalone, or client/server with the optional Trivy server of the chart,
