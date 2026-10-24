@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- UI/UX review: the Images page always shows the current and the latest version with the start of
+  their digests below (a different latest digest is highlighted), also in the image panel and the
+  Synthesis; the Clusters page gets the figures of each cluster (images, charts, outdated, critical
+  CVEs) linking to the filtered lists; the Settings page shows one table per section with readable
+  durations and the values changed from the defaults (YAML kept below); a Trivy problem (binary not
+  found, unreadable status) is shown in the scan status and on the Vulnerabilities page;
+  Administration links to the API documentation, the JSON snapshot and the metrics; keyboard sorting
+  of the columns and a "Skip to content" link; lists readable on phones (one block per line,
+  secondary columns hidden).
+
 - Settings page: an **Authentication** column per registry credential, telling whether the registry
   accepted or refused it at the last request that sent it (scan, rescan or connectivity test), with
   the registry's answer when refused.
@@ -143,6 +153,15 @@ All notable changes to this project are documented here. The format follows
   registries, Helm repositories, git hosts, clusters and cluster secrets.
 
 ### Changed
+
+- UI/UX review: a Helm chart row shows the worst status of the chart and its subcharts, like the
+  counters and the filter ("chart up-to-date, subchart outdated"); vulnerability counters and the
+  Synthesis tile say they count images ("Images with critical CVEs"); darker orange badges (4.5:1
+  contrast); image names on one line with the registry dimmed; same running icon on the Images and
+  Vulnerabilities lists; one card style for the Administration and Settings sections; Refresh and
+  Scan everything become **Scan now**, the scan duration reads "took 3 min"; real plurals instead of
+  "image(s)"; shorter page subtitles with an ⓘ explanation; detail panels show the findings first and
+  the rescan buttons last.
 
 - The Maintenance page is renamed Administration: page `administration` (the old `maintenance` URL
   redirects to it) and JSON API `/api/administration/...` (was `/api/maintenance/...`).

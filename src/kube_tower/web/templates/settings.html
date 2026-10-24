@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, icon, page_title %}
-{% block heading %}{{ page_title("settings", "Settings", "Effective configuration, read from the kube-tower ConfigMap and environment. Secrets are only referenced, never displayed.") }}{% endblock %}
+{% block heading %}{{ page_title("settings", "Settings", "Effective configuration (ConfigMap and environment).", "Read from the kube-tower ConfigMap (Helm values) and the environment. Secrets are only referenced, never displayed. Values changed from the defaults are highlighted.") }}{% endblock %}
 {% block content %}
 
-<h3>{{ icon("key") }}Registry credentials</h3>
+<article class="settings">
+<header>{{ icon("key") }}Registry credentials</header>
+<div class="overflow-auto">
 <table class="striped">
   <thead><tr><th>Registry</th><th>Source</th><th>Username</th><th>Status</th><th>Authentication</th></tr></thead>
   <tbody>
@@ -22,7 +24,26 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
+</article>
 
-<h3>{{ icon("settings") }}Configuration</h3>
-<pre><code>{{ settings_yaml }}</code></pre>
+{% for name, rows in sections %}
+<article class="settings">
+  <header>{{ icon("settings") }}{{ name }} <small>({{ rows | map(attribute=2) | select | list | length | plural("value") }} changed from the default)</small></header>
+  <div class="overflow-auto">
+  <table class="compact">
+    <tbody>
+    {% for key, value, changed in rows %}
+      <tr {% if changed %}class="changed"{% endif %}><th scope="row"><code>{{ key }}</code></th><td>{{ value }}{% if changed %} <span class="badge badge-changed">changed</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</article>
+{% endfor %}
+
+<details>
+  <summary>Configuration as YAML</summary>
+  <pre><code>{{ settings_yaml }}</code></pre>
+</details>
 {% endblock %}

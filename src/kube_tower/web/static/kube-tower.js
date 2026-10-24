@@ -49,15 +49,27 @@ function ktApplySort(table, index, dir) {
   table.querySelectorAll("th[data-sort]").forEach((th) => th.removeAttribute("aria-sort"));
   table.tHead.rows[0].cells[index].setAttribute("aria-sort", dir);
 }
-document.addEventListener("click", (e) => {
-  const th = e.target.closest("th[data-sort]");
-  if (!th) return;
+function ktSortBy(th) {
   const current = th.getAttribute("aria-sort");
   const first = th.dataset.sort === "desc" ? "descending" : "ascending";
   const dir = current ? (current === "ascending" ? "descending" : "ascending") : first;
   ktApplySort(th.closest("table"), th.cellIndex, dir);
   ktSort[location.pathname] = { index: th.cellIndex, dir };
+}
+document.addEventListener("click", (e) => {
+  const th = e.target.closest("th[data-sort]");
+  if (th) ktSortBy(th);
 });
+// Keyboard: sortable headers are focusable and sort with Enter or Space.
+document.addEventListener("keydown", (e) => {
+  const th = e.target.closest && e.target.closest("th[data-sort]");
+  if (th && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); ktSortBy(th); }
+});
+function ktFocusableHeaders(root) {
+  (root || document).querySelectorAll("th[data-sort]").forEach((th) => { th.tabIndex = 0; });
+}
+document.addEventListener("DOMContentLoaded", () => ktFocusableHeaders());
+document.addEventListener("htmx:afterSwap", (e) => ktFocusableHeaders(e.target));
 document.addEventListener("htmx:afterSwap", (e) => {
   const state = ktSort[location.pathname];
   const table = e.target.querySelector && e.target.querySelector("table");

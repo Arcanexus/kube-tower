@@ -1,28 +1,32 @@
 {% from "_macros.html" import icon %}
-{# Scan status, top right of every page: state, age of the last scan, errors and the refresh button. #}
-<div id="scan-status" class="scan-status {{ 'has-errors' if snapshot.errors }}"
+{# Scan status, top right of every page: state, age of the last scan, problems (errors of the last scan and
+   problems of kube-tower itself, like a missing Trivy) and the scan button. #}
+{% set problems = (warnings or []) + snapshot.errors %}
+<div id="scan-status" class="scan-status {{ 'has-errors' if problems }}"
      {% if scanning %}hx-get="status?polling=1" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
   <a class="scan-state" href="administration#scans" title="Scans in progress (Administration page)">
     {% if scanning %}
       <span class="dot dot-busy" aria-hidden="true"></span><span>{{ "Scan in progress…" if checking_versions else "Vulnerability scan in progress…" }}</span>
     {% elif snapshot.finished_at %}
-      <span class="dot {{ 'dot-warn' if snapshot.errors else 'dot-ok' }}" aria-hidden="true"></span>
+      <span class="dot {{ 'dot-warn' if problems else 'dot-ok' }}" aria-hidden="true"></span>
       <span title="{{ snapshot.finished_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}">Last scan
         <time datetime="{{ snapshot.finished_at.isoformat() }}" class="ago">{{ snapshot.finished_at.strftime("%Y-%m-%d %H:%M UTC") }}</time></span>
-      <small>{{ (snapshot.finished_at - snapshot.started_at).total_seconds() | round(1) }}s</small>
+      <small title="Duration of the last scan">took {{ (snapshot.finished_at - snapshot.started_at).total_seconds() | duration }}</small>
     {% else %}
       <span class="dot" aria-hidden="true"></span><span>No scan yet</span>
     {% endif %}
   </a>
-  {% if snapshot.errors %}
+  {% if problems %}
   <details class="scan-errors dropdown-right">
-    <summary title="Errors of the last scan">{{ icon("warning") }}{{ snapshot.errors | length }}</summary>
+    <summary title="Problems: errors of the last scan and of kube-tower">{{ icon("warning") }}{{ problems | length }}</summary>
     <div class="scan-errors-list">
-      <strong>{{ snapshot.errors | length }} scan error(s)</strong>
-      <ul>{% for e in snapshot.errors %}<li><small>{{ e }}</small></li>{% endfor %}</ul>
+      {% if warnings %}<strong>{{ warnings | length | plural("problem") }} of kube-tower</strong>
+      <ul>{% for e in warnings %}<li><small>{{ e }}</small></li>{% endfor %}</ul>{% endif %}
+      {% if snapshot.errors %}<strong>{{ snapshot.errors | length | plural("scan error") }}</strong>
+      <ul>{% for e in snapshot.errors %}<li><small>{{ e }}</small></li>{% endfor %}</ul>{% endif %}
     </div>
   </details>
   {% endif %}
   <button class="refresh" {% if checking_versions %}disabled aria-busy="true"{% endif %} hx-post="api/refresh" hx-swap="none" title="Start a full scan now"
-          hx-on::after-request="htmx.ajax('GET', 'status', {target: '#scan-status', swap: 'outerHTML'})">{% if not checking_versions %}{{ icon("refresh") }}{% endif %}Refresh</button>
+          hx-on::after-request="htmx.ajax('GET', 'status', {target: '#scan-status', swap: 'outerHTML'})">{% if not checking_versions %}{{ icon("refresh") }}{% endif %}Scan now</button>
 </div>

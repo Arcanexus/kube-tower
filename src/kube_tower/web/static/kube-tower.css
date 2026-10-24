@@ -156,7 +156,10 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 .badge { display: inline-flex; align-items: center; padding: .1rem .5rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; white-space: nowrap; }
 .badge .icon { width: .95em; height: .95em; margin-right: .25em; vertical-align: 0; }
 .badge-up-to-date, .segment-up-to-date { background: #2e7d32; color: #fff; }
-.badge-outdated, .segment-outdated { background: #ef6c00; color: #fff; }
+/* Badges carry small white text: their orange is darker than the bar segments to keep a 4.5:1 contrast */
+.badge-outdated { background: #b85000; color: #fff; }
+.segment-outdated { background: #ef6c00; color: #fff; }
+.badge-changed { background: var(--kt-sidebar-active); color: #fff; font-weight: 500; }
 .badge-unknown, .segment-unknown { background: #757575; color: #fff; }
 .badge-error, .segment-error { background: #c62828; color: #fff; }
 
@@ -165,7 +168,8 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 @media (max-width: 600px) { .counters-5 { grid-template-columns: repeat(2, 1fr); } }
 .sev { display: inline-block; min-width: 1.8rem; padding: .1rem .4rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; text-align: center; white-space: nowrap; }
 .sev-critical, .segment-sev-critical { background: #b71c1c; color: #fff; }
-.sev-high, .segment-sev-high { background: #e65100; color: #fff; }
+.sev-high { background: #c2410c; color: #fff; }
+.segment-sev-high { background: #e65100; color: #fff; }
 .sev-medium, .segment-sev-medium { background: #f9a825; color: #222; }
 .sev-low, .segment-sev-low { background: #1565c0; color: #fff; }
 .sev-unknown, .segment-sev-unknown { background: #757575; color: #fff; }
@@ -263,7 +267,6 @@ table.bars .bar { height: .9rem; min-width: 2px; background: var(--kt-sidebar-ac
 table.bars .bar-value { width: 1%; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Administration page */
-.administration article h3 { display: flex; align-items: center; }
 .administration-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
 .administration-row > div, .administration-row > p:first-child { flex: 1; min-width: 16rem; margin: 0; }
 .administration-row p { margin-bottom: 0; }
@@ -275,3 +278,75 @@ table.bars .bar-value { width: 1%; text-align: right; font-variant-numeric: tabu
 .notice { padding: .5rem .75rem; border-radius: .4rem; border: 1px solid; }
 .notice-ok { border-color: #2e7d32; }
 .notice-error { border-color: var(--kt-danger); color: var(--kt-danger); }
+.notice-warn { border-color: #b85000; background: rgba(239, 108, 0, .08); margin-bottom: .75rem; }
+
+/* API links of the Administration page */
+.administration .actions a[role="button"] { padding: .3rem .7rem; font-size: .85rem; margin: 0; width: auto; }
+
+/* Settings: one table per section, values changed from the defaults highlighted */
+.settings table.compact th { width: 40%; font-weight: normal; }
+.settings table.compact code { background: transparent; padding: 0; }
+.settings tr.changed > * { background: rgba(50, 108, 229, .08); }
+.settings + details { margin-top: 1rem; }
+
+/* Keyboard: a link to jump over the sidebar, visible when focused */
+.skip-link { position: absolute; left: -999px; top: .5rem; z-index: 20; padding: .4rem .8rem; border-radius: .4rem; background: var(--kt-sidebar-active); color: #fff; }
+.skip-link:focus { left: .5rem; }
+main:focus { outline: none; }
+th[data-sort]:focus-visible { outline: 2px solid var(--kt-sidebar-active); outline-offset: -2px; }
+
+/* Help icon after a page subtitle: the explanation shows below the title on hover or focus */
+.page-title { position: relative; }
+.help { cursor: help; color: var(--pico-muted-color); }
+.help:focus-visible { outline: 2px solid var(--kt-sidebar-active); border-radius: 50%; }
+.help .icon { margin: 0; }
+.help-text {
+  display: none; position: absolute; left: 0; top: 100%; z-index: 6; max-width: 40rem; margin-top: .35rem; padding: .5rem .75rem;
+  border-radius: var(--pico-border-radius); background: var(--pico-tooltip-background-color); color: var(--pico-tooltip-color);
+  font-size: .85rem; line-height: 1.4; box-shadow: var(--pico-card-box-shadow);
+}
+.help:hover .help-text, .help:focus .help-text { display: block; }
+.page-title p { margin-bottom: 0; }
+.muted-text { color: var(--pico-muted-color); }
+.nowrap { white-space: nowrap; }
+
+/* Image names: registry dimmed, one line, cut with … (full name on hover) */
+.image-cell { display: flex; align-items: center; gap: .1rem; min-width: 0; }
+.image-cell .run-state { display: inline-flex; flex-shrink: 0; }
+.run-state .icon { width: 1.15em; height: 1.15em; }
+.run-state .icon.muted { opacity: .7; }
+.image-name { display: block; min-width: 0; max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.image-name .registry { color: var(--pico-muted-color); }
+td.cell-name { max-width: 30rem; }
+
+/* Versions: the tag, its short digest below; a digest that differs from the current one is highlighted */
+.version-cell { display: inline-flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.version-tag { display: inline-block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.digest-short { font-family: var(--pico-font-family-monospace); font-size: .72rem; color: var(--pico-muted-color); }
+.digest-differs { color: #b85000; font-weight: 600; }
+[data-theme="dark"] .digest-differs { color: #ffb74d; }
+@media only screen and (prefers-color-scheme: dark) { :root:not([data-theme]) .digest-differs { color: #ffb74d; } }
+.drawer-summary { display: flex; align-items: center; gap: .75rem; font-size: 1.1rem; }
+.drawer-summary .arrow { color: var(--pico-muted-color); }
+
+/* Counters of the Vulnerabilities page: number of images */
+.counter-value { display: flex; align-items: baseline; gap: .3rem; }
+.counter-value small { color: var(--pico-muted-color); font-weight: normal; }
+
+/* Small screens: secondary columns hidden, each row of a list becomes a block (name first, then the values
+   side by side), so status and versions stay visible without scrolling sideways */
+@media (max-width: 768px) {
+  .hide-sm { display: none; }
+  table.stack-sm, table.stack-sm tbody { display: block; width: 100%; }
+  table.stack-sm thead { display: none; }
+  table.stack-sm tr { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .9rem; padding: .5rem 0; border-bottom: 1px solid var(--pico-muted-border-color); }
+  table.stack-sm td { border: 0; padding: .1rem 0; background: transparent !important; }
+  table.stack-sm td.cell-name { flex-basis: 100%; max-width: 100%; }
+  table.stack-sm td[colspan] { flex-basis: 100%; }
+  table.stack-sm tr.subchart { padding: .2rem 0 .2rem 1rem; border-bottom: 0; }
+  table.stack-sm tr.subchart td:empty { display: none; }
+  .image-name { max-width: calc(100vw - 4rem); }
+  .scan-status { max-width: 100%; }
+  .scan-state small { display: none; }
+  .page-title p { font-size: .9rem; }
+}

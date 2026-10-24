@@ -1,26 +1,25 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, counters, digest, filters, icon, page_title, tag %}
+{% from "_macros.html" import badge, counters, filters, icon, image_name, page_title, version_cells %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("images", "Container images", "Every image used by workloads (running or not) and cached on nodes, with an icon telling whether a pod runs it (hover it for details). Click an image for its details.") }}{% endblock %}
+{% block heading %}{{ page_title("images", "Container images", "Images of the workloads and images cached on nodes.", "The icon tells whether a pod runs the image (hover it for details). Below each version, the start of its digest: a different digest is highlighted. Click an image for its details.") }}{% endblock %}
 {% block content %}
 {{ filters("images", q, status, cluster, snapshot) }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
 {{ counters(matching, "status", status) }}
-<p><small>{{ rows | length }} image(s)</small></p>
+<p><small>{{ rows | length | plural("image") }}</small></p>
 <div class="overflow-auto table-wrap">
-<table class="striped">
-  <thead><tr><th data-sort>Image</th><th data-sort>Current</th><th data-sort>Latest</th><th data-sort>Status</th><th data-sort="desc">Used by</th></tr></thead>
+<table class="striped stack-sm">
+  <thead><tr><th data-sort>Image</th><th data-sort>Current</th><th data-sort>Latest</th><th data-sort>Status</th><th data-sort="desc" class="hide-sm">Used by</th></tr></thead>
   <tbody>
   {% for r in rows %}
     <tr class="clickable" tabindex="0" hx-get="images/detail?ref={{ r.image | string | urlencode }}" hx-target="#detail"
         hx-trigger="click, keyup[key=='Enter']">
-      <td>{% if r.running %}<span role="img" aria-label="Running" title="Running: used by a pod">{{ icon("running", "ok") }}</span>{% else %}<span role="img" aria-label="Not running" title="Not running: no pod uses it (workload scaled to zero, CronJob between runs, or only cached on nodes)">{{ icon("not-running", "muted") }}</span>{% endif %}<code>{{ r.image.name }}</code></td>
-      <td data-sort="{{ r.image.tag or '' }}">{{ tag(r.image.tag) }}{% if r.image.digest %}<br><small>{{ digest(r.image.digest, short=True) }}</small>{% endif %}</td>
-      <td>{{ r.latest_tag or "" }}{% if r.latest_digest and r.status == Status.OUTDATED and not r.latest_tag %}<br><small>{{ digest(r.latest_digest, short=True) }}</small>{% endif %}</td>
+      <td class="cell-name">{{ image_name(r) }}</td>
+      {{ version_cells(r) }}
       <td data-sort="{{ status_rank[r.status] }}">{{ badge(r.status) }}{% if r.message %}<br><small>{{ r.message }}</small>{% endif %}</td>
-      <td data-sort="{{ r.usages | length }}"><small>{{ r.usages | length }} usage(s) · {{ r.clusters | join(", ") }}</small></td>
+      <td data-sort="{{ r.usages | length }}" class="hide-sm nowrap"><small>{{ r.usages | length | plural("usage") }} · {{ r.clusters | join(", ") }}</small></td>
     </tr>
   {% else %}
     <tr><td colspan="5">No image.</td></tr>

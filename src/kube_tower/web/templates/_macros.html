@@ -7,11 +7,36 @@
 <span class="badge badge-{{ status.value }}">{{ icon(icons[status.value]) }}{{ status.value }}</span>
 {%- endmacro %}
 
-{% macro page_title(name, title, subtitle) -%}
+{% macro page_title(name, title, subtitle, help="") -%}
+{# A short subtitle; longer explanations go in `help`, shown when hovering or focusing the help icon. #}
 <hgroup class="page-title">
   <h2>{{ icon(name) }}{{ title }}</h2>
-  <p>{{ subtitle }}</p>
+  <p>{{ subtitle }}{% if help %} <span class="help" tabindex="0" aria-label="More about this page">{{ icon("unknown") }}<span class="help-text" role="tooltip">{{ help }}</span></span>{% endif %}</p>
 </hgroup>
+{%- endmacro %}
+
+{% macro running_icon(r) -%}
+{# Whether a pod runs the image: same icon at the start of every image list. #}
+{% if r.running %}<span class="run-state" role="img" aria-label="Running" title="Running: used by a pod">{{ icon("running", "ok") }}</span>
+{%- else %}<span class="run-state" role="img" aria-label="Not running" title="Not running: no pod uses it (workload scaled to zero, CronJob between runs, or only cached on nodes)">{{ icon("not-running", "muted") }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro image_name(r) -%}
+{# Registry dimmed, repository in full; one line, cut with … when too long (full name on hover). #}
+<span class="image-cell">{{ running_icon(r) }}<code class="image-name" title="{{ r.image.name }}"><span class="registry">{{ r.image.registry }}/</span>{{ r.image.repository }}</code></span>
+{%- endmacro %}
+
+{% macro version_cell(tag_value, digest_value, other="", warn=True) -%}
+{# A version and its short digest below, to compare current and latest at a glance; `other` is the digest
+   of the other column: a different digest is highlighted. #}
+<span class="version-cell"><span class="version-tag" title="{{ tag_value }}">{{ (tag(tag_value) if warn else tag_value) if tag_value else ("pinned digest" if digest_value else "—") }}</span>
+{%- if digest_value %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}" title="{{ digest_value }}">{{ digest_value | short_digest }}</small>{% endif %}</span>
+{%- endmacro %}
+
+{% macro version_cells(r) -%}
+{% set current, latest = image_versions(r) %}
+<td data-sort="{{ current[0] }}">{{ version_cell(current[0], current[1]) }}</td>
+<td data-sort="{{ latest[0] }}">{% if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False) }}{% else %}<small class="muted-text" title="The registry could not tell (see the status)">unknown</small>{% endif %}</td>
 {%- endmacro %}
 
 {% macro counters(rows, status_of, active) -%}
@@ -20,7 +45,7 @@
   {% for s in Status %}
   {% set n = rows | selectattr(status_of, "equalto", s) | list | length %}
   <button type="button" class="counter counter-{{ s.value }}" aria-pressed="{{ 'true' if s.value == active else 'false' }}"
-          title="Show only {{ s.value }}" onclick="ktFilterStatus('{{ s.value }}')">{{ badge(s) }}<strong>{{ n }}</strong></button>
+          title="Show only {{ s.value }}{{ ' (the worst status of the chart and its subcharts)' if status_of == 'worst_status' }}" onclick="ktFilterStatus('{{ s.value }}')">{{ badge(s) }}<strong>{{ n }}</strong></button>
   {% endfor %}
 </div>
 {%- endmacro %}

@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from kube_tower import __version__
 from kube_tower.administration import unused_node_images
+from kube_tower.config import Settings
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.scanner import chart_key, image_key
@@ -92,6 +93,113 @@ def vulnerability_sort_key(report: ImageReport) -> tuple:
     return (0, [-counts[s] for s in Severity], str(report.image))
 
 
+def plural(n: int, word: str, many: str = "") -> str:
+    """`3 | plural("image")` -> "3 images", `1 | plural("image")` -> "1 image"."""
+    return f"{n} {word if n == 1 else many or word + 's'}"
+
+
+def duration(seconds: float) -> str:
+    """Human duration: 42 s, 3 min, 6 h, 2 days."""
+    seconds = round(seconds)
+    if seconds < 60:
+        return f"{seconds} s"
+    if seconds < 3600:
+        return f"{round(seconds / 60)} min"
+    if seconds < 172800:
+        hours = seconds / 3600
+        return f"{hours:g} h" if hours == int(hours) else f"{hours:.1f} h"
+    return f"{round(seconds / 86400)} days"
+
+
+def short_digest(value: str | None) -> str:
+    """sha256:0123456789abcdef… -> sha256:0123456789ab (enough to compare at a glance)."""
+    if not value:
+        return ""
+    algo, _, hexa = value.partition(":")
+    return f"{algo}:{hexa[:12]}" if hexa else value[:19]
+
+
+def image_versions(r: ImageReport) -> tuple[tuple[str, str], tuple[str, str]]:
+    """((current tag, current digest), (latest tag, latest digest)) of an image, to show both side by side.
+    The current digest is the pinned one, else the running one, else the one published for the tag.
+    The latest is unknown ("") when the registry could not tell.
+    """
+    tag = r.image.tag or ""
+    running = sorted(r.running_digests)
+    current = (tag, r.image.digest or (running[0] if running else "") or r.tag_digest or "")
+    if r.latest_tag:
+        latest = (r.latest_tag, r.latest_digest or "")
+    elif r.status == Status.OUTDATED and r.latest_digest:  # same tag pushed again (latest, 1.25...)
+        latest = (tag, r.latest_digest)
+    elif r.status == Status.UP_TO_DATE:
+        latest = (tag, r.tag_digest or current[1])
+    else:
+        latest = ("", "")
+    return current, latest
+
+
+# Settings shown as durations on the Settings page (values in seconds).
+DURATION_KEYS = {"refreshInterval", "requestTimeout", "timeout", "rescanInterval"}
+
+
+def _flatten(data, prefix: str = "") -> list[tuple[str, object]]:
+    rows = []
+    for key, value in data.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict) and value:
+            rows += _flatten(value, path)
+        else:
+            rows.append((path, value))
+    return rows
+
+
+def _show(key: str, value) -> str:
+    if value in ("", None, [], {}):
+        return "—"
+    if key.rsplit(".", 1)[-1] in DURATION_KEYS and isinstance(value, int | float):
+        return f"{duration(value)} ({value} s)"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, list | dict):
+        return yaml.safe_dump(value, default_flow_style=True, width=1000).strip()
+    return str(value)
+
+
+def settings_sections(settings: Settings) -> list[tuple[str, list[tuple[str, str, bool]]]]:
+    """Settings grouped by top-level section: (section, [(key, shown value, changed from the default)])."""
+    current, default = _camel(dataclasses.asdict(settings)), dict(_flatten(_camel(dataclasses.asdict(Settings()))))
+    general = [(k, v) for k, v in current.items() if not isinstance(v, dict)]
+    sections = [("general", general)] if general else []
+    sections += [(k, _flatten(v)) for k, v in current.items() if isinstance(v, dict)]
+    return [
+        (
+            name,
+            [
+                (key, _show(key, value), default.get(key if name == "general" else f"{name}.{key}", value) != value)
+                for key, value in rows
+            ],
+        )
+        for name, rows in sections
+    ]
+
+
+def warnings(request: Request) -> list[str]:
+    """Problems of kube-tower itself (not of the last scan), shown with the scan errors of the status pill."""
+    found = []
+    vulns = request.app.state.settings.vulnerabilities
+    scanner, administration = request.app.state.scanner, request.app.state.administration
+    if vulns.enabled and vulns.trivy.enabled:
+        status = administration.trivy_status
+        if not scanner.trivy.available:
+            found.append(
+                f"Trivy: binary {scanner.trivy.settings.binary!r} not found, images without a Trivy Operator report "
+                "are not scanned for vulnerabilities (see Administration)."
+            )
+        elif status and status.message:
+            found.append(f"Trivy: {status.message} (see Administration).")
+    return found
+
+
 # Sort order of the Status columns (kube-tower.js): what needs attention first.
 STATUS_RANK = {Status.OUTDATED: 0, Status.ERROR: 1, Status.UNKNOWN: 2, Status.UP_TO_DATE: 3}
 
@@ -117,7 +225,8 @@ def vulnerability_score(report: ImageReport) -> int:
 
 templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
-templates.env.globals.update(versioning=versioning)
+templates.env.globals.update(versioning=versioning, image_versions=image_versions)
+templates.env.filters.update(plural=plural, duration=duration, short_digest=short_digest)
 
 
 def mount(app: FastAPI) -> None:
@@ -134,6 +243,7 @@ def mount(app: FastAPI) -> None:
                 "snapshot": scanner.snapshot,
                 "scanning": scanner.running,
                 "checking_versions": scanner.checking_versions,
+                "warnings": warnings(request),
                 "partial": partial,
                 **context,
             },
@@ -282,7 +392,8 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/clusters", response_class=HTMLResponse, include_in_schema=False)
     async def clusters(request: Request):
-        return render(request, "clusters", tab="clusters")
+        summaries = {c.name: c for c in summarize(request.app.state.scanner.snapshot).clusters}
+        return render(request, "clusters", tab="clusters", summaries=summaries)
 
     @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
     async def settings(request: Request):
@@ -292,7 +403,15 @@ def mount(app: FastAPI) -> None:
         scanner = request.app.state.scanner
         _, credentials = resolve_credentials(settings.registries, pull_secrets=scanner.pull_secrets)
         auth = {c.registry: scanner.registry_auth.get(c.registry) for c in credentials}
-        return render(request, "settings", tab="settings", settings_yaml=rendered, credentials=credentials, auth=auth)
+        return render(
+            request,
+            "settings",
+            tab="settings",
+            settings_yaml=rendered,
+            sections=settings_sections(settings),
+            credentials=credentials,
+            auth=auth,
+        )
 
     def render_administration(request: Request, notice: str = "", error: str = "", full: bool = False) -> HTMLResponse:
         """The Administration page, or only its actions (`#administration`) for htmx. While an action runs the
@@ -309,6 +428,7 @@ def mount(app: FastAPI) -> None:
                 "snapshot": scanner.snapshot,
                 "scanning": scanner.running,
                 "checking_versions": scanner.checking_versions,
+                "warnings": warnings(request),
                 "partial": False,
                 "scanner": scanner,
                 "m": administration,
@@ -352,7 +472,7 @@ def mount(app: FastAPI) -> None:
             await m.refresh_trivy_status()
             notice = "Trivy status read again."
         elif action in ("trivy-cache", "trivy-cache-scan"):
-            notice = f"Trivy results cache cleared ({m.clear_trivy_cache()} image(s))."
+            notice = f"Trivy results cache cleared ({plural(m.clear_trivy_cache(), 'image')})."
             if action == "trivy-cache-scan":
                 started = scanner.trigger()
                 notice += " Full scan started." if started else " A scan is already running: the next one scans every image."

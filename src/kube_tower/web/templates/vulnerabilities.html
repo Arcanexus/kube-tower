@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, page_title, severity_counts, tag %}
+{% from "_macros.html" import icon, image_name, page_title, severity_counts, tag %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("shield", "Vulnerabilities", "Known vulnerabilities (CVE) of every image, from Trivy Operator reports when the cluster has them, else scanned with Trivy. Click an image for the list.") }}{% endblock %}
+{% block heading %}{{ page_title("shield", "Vulnerabilities", "Known vulnerabilities (CVE) of every image.", "From the Trivy Operator reports when the cluster has them, else scanned by kube-tower with Trivy. The counters are numbers of images. Click an image for its vulnerabilities.") }}{% endblock %}
 {% block content %}
 <form class="filters filters-4" hx-get="vulnerabilities" hx-target="#results" hx-push-url="true"
       hx-trigger="input changed delay:300ms from:input[type=search], change">
@@ -20,34 +20,35 @@
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
+{% for w in warnings if w.startswith("Trivy") %}<p class="notice notice-warn">{{ icon("warning") }}{{ w }} <a href="administration#trivy">Administration</a></p>{% endfor %}
 {# Each counter is the number of images with at least one vulnerability of that severity. #}
 <div class="counters counters-5">
   {% for s in Severity %}
   <button type="button" class="counter" aria-pressed="{{ 'true' if s.value == severity else 'false' }}"
-          title="Show only images with {{ s.value }} vulnerabilities" onclick="ktFilterStatus('{{ s.value }}')"><span class="sev sev-{{ s.value }}">{{ s.value }}</span><strong>{{ affected[s] }}</strong></button>
+          title="Show only the images with {{ s.value }} vulnerabilities" onclick="ktFilterStatus('{{ s.value }}')"><span class="sev sev-{{ s.value }}">{{ s.value }}</span><span class="counter-value"><strong>{{ affected[s] }}</strong><small>{{ "image" if affected[s] == 1 else "images" }}</small></span></button>
   {% endfor %}
 </div>
-<p><small>{{ rows | length }} image(s)
+<p><small>{{ rows | length | plural("image") }} · the counters are images with at least one vulnerability of that severity
   {% if scanning and not snapshot.vulnerabilities_finished_at %}· {{ icon("clock") }}vulnerability scan in progress{% endif %}</small></p>
 <div class="overflow-auto table-wrap">
-<table class="striped">
-  <thead><tr><th data-sort>Image</th><th data-sort>Tag</th><th data-sort="desc">Vulnerabilities</th><th data-sort="desc">Fixable</th><th data-sort>Source</th><th data-sort="desc">Used by</th></tr></thead>
+<table class="striped stack-sm">
+  <thead><tr><th data-sort>Image</th><th data-sort>Tag</th><th data-sort="desc">Vulnerabilities</th><th data-sort="desc">Fixable</th><th data-sort class="hide-sm">Source</th><th data-sort="desc" class="hide-sm">Used by</th></tr></thead>
   <tbody>
   {% for r in rows %}
     {% set v = r.vulnerabilities %}
     <tr class="clickable" tabindex="0" hx-get="vulnerabilities/detail?ref={{ r.image | string | urlencode }}{% if cve %}&cve={{ cve | urlencode }}{% endif %}" hx-target="#detail"
         hx-trigger="click, keyup[key=='Enter']">
-      <td>{{ icon("box", "muted") }}<code>{{ r.image.name }}</code>
+      <td class="cell-name">{{ image_name(r) }}
         {% if v and v.os_eosl %}<br><small class="tag-latest">{{ icon("warning") }}{{ v.os }} is end of life</small>{% endif %}</td>
-      <td>{{ tag(r.image.tag) }}</td>
+      <td><span class="version-tag" title="{{ r.image.tag or '' }}">{{ tag(r.image.tag) }}</span></td>
       <td data-sort="{{ vulnerability_score(r) }}">{% if v is none %}<small>{{ "pending" if scanning else "not scanned" }}</small>
         {% elif v.message %}<span class="badge badge-error">{{ icon("error") }}error</span><br><small>{{ v.message }}</small>
         {% else %}{{ severity_counts(v) }}{% endif %}
         {% set hits = found.get(r.image | string) %}
         {% if hits %}<br><small class="cve-hits">{% for x in hits[:5] %}<span class="sev sev-{{ x.severity.value }}" title="{{ x.title }}">{{ x.id }}</span> {% endfor %}{% if hits | length > 5 %}+{{ hits | length - 5 }}{% endif %}</small>{% endif %}</td>
       <td data-sort="{{ v.fixable if v and not v.message else -1 }}">{% if v and not v.message %}{{ v.fixable }}{% endif %}</td>
-      <td><small>{{ v.source if v else "" }}</small></td>
-      <td data-sort="{{ r.usages | length }}"><small>{{ r.usages | length }} usage(s) · {{ r.clusters | join(", ") }}</small></td>
+      <td class="hide-sm"><small>{{ v.source if v else "" }}</small></td>
+      <td data-sort="{{ r.usages | length }}" class="hide-sm nowrap"><small>{{ r.usages | length | plural("usage") }} · {{ r.clusters | join(", ") }}</small></td>
     </tr>
   {% else %}
     <tr><td colspan="6">No image.</td></tr>
