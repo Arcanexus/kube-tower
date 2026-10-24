@@ -58,3 +58,14 @@ def test_is_newer():
 )
 def test_update_kind(current, latest, expected):
     assert update_kind(current, latest) == expected
+
+
+def test_prerelease_identifiers_compared_as_numbers():
+    tags = ["1.0.0-rc.9", "1.0.0-rc.10", "1.0.0-rc.2"]
+    assert latest_semver(tags, include_prerelease=True) == "1.0.0-rc.10"
+    assert latest_semver(["2.0.0-rc9", "2.0.0-rc10"], include_prerelease=True) == "2.0.0-rc10"
+    assert latest_semver(["1.0.0-beta.11", "1.0.0-rc.1"], include_prerelease=True) == "1.0.0-rc.1"
+    assert latest_semver(["1.0.0-alpha", "1.0.0-alpha.1"], include_prerelease=True) == "1.0.0-alpha.1"
+    assert latest_semver(["1.0.0-rc.1", "1.0.0"], include_prerelease=True) == "1.0.0"
+    assert is_newer("1.0.0-rc.10", "1.0.0-rc.9") and not is_newer("1.0.0-rc.9", "1.0.0-rc.10")
+    assert not is_newer("1.0.0+build.2", "1.0.0+build.1")  # build metadata does not order versions
