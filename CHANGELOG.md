@@ -11,6 +11,10 @@ All notable changes to this project are documented here. The format follows
 - Chart: optional NetworkPolicies (`networkPolicy.enabled`) for the kube-tower pod and the Trivy
   server: only the `http` port is reachable (from `networkPolicy.ingress.from`), egress limited to DNS,
   the Trivy server and `networkPolicy.egress.ports` (443, 6443).
+- Versioning scheme detection: each tag is told `semver`, `calver` (`2024.10.1`), `date` (`20241024`)
+  or `build` (`4521`) and only compared with tags of the same scheme, so `redis:7` is no longer
+  reported outdated because of a CI build number tag. The scheme is shown in the image details;
+  updates that are not semver are reported as `newer` (metrics, Synthesis page, Grafana dashboard).
 - UI: scan status redesigned as a pill at the top right (age of the last scan, errors menu, Refresh);
   on list pages only the list scrolls (title, filters, counters and column headers stay); sortable
   columns; CVE filter on the Vulnerabilities page (all or part of one or several IDs), matching

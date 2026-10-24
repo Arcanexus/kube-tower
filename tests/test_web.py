@@ -312,9 +312,10 @@ def test_image_detail():
     detail = client.get("/images/detail", params={"ref": "docker.io/library/redis:latest"}).text
     assert "<html" not in detail and 'role="dialog"' in detail
     assert "https://hub.docker.com/_/redis/tags" in detail
-    assert "sha256:new" in detail and "Pin a version" in detail
+    assert "sha256:new" in detail and "Pin a version" in detail and "Versioning" not in detail
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
     assert "docker.io/library/nginx:1.27" in detail and "web-7d9f-abcde" in detail
+    assert re.search(r"Versioning</th><td>semver ", detail)
     assert client.get("/images/detail", params={"ref": "nope"}).status_code == 404
 
 

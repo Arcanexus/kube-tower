@@ -39,10 +39,11 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
 | `kube_tower_image_nodes` | `cluster`, `image`, `tag` | number of nodes of the cluster holding the image |
 
 - `image` is `registry/repository` (e.g. `docker.io/library/nginx`), `tag` the tag in use.
-- `latest` is the latest tag of the same shape, or the new digest for a floating tag (`latest`, `stable`…).
+- `latest` is the latest tag of the same shape and versioning scheme, or the new digest for a floating tag (`latest`, `stable`…).
 - `status` is `up-to-date`, `outdated`, `unknown` (floating tag without digest, version constraint…) or `error`.
-- `update` tells how big the update is: `major`, `minor`, `patch`, `digest` (new image under the same
-  floating tag) or empty when up to date.
+- `update` tells how big the update is: `major`, `minor`, `patch`, `newer` (a newer calendar version,
+  date or build number, which has no major/minor/patch), `digest` (new image under the same floating
+  tag) or empty when up to date.
 - An image is reported **once** by `kube_tower_image_outdated`, even when several clusters run it.
   Join with `kube_tower_image_workload_info` or `kube_tower_image_nodes` on `image, tag` to filter or
   group by cluster, namespace or workload (see the examples below).

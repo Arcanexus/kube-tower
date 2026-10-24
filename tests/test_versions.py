@@ -1,6 +1,6 @@
 import pytest
 
-from kube_tower.versions import is_newer, latest_matching, latest_semver, parse, update_kind
+from kube_tower.versions import is_newer, latest_matching, latest_semver, parse, update_kind, versioning
 
 
 def test_parse():
@@ -69,3 +69,48 @@ def test_prerelease_identifiers_compared_as_numbers():
     assert latest_semver(["1.0.0-rc.1", "1.0.0"], include_prerelease=True) == "1.0.0"
     assert is_newer("1.0.0-rc.10", "1.0.0-rc.9") and not is_newer("1.0.0-rc.9", "1.0.0-rc.10")
     assert not is_newer("1.0.0+build.2", "1.0.0+build.1")  # build metadata does not order versions
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        ("1.25.3", "semver"),
+        ("v2.1-alpine", "semver"),
+        ("7", "semver"),
+        ("999", "semver"),
+        ("2024.10.1", "calver"),
+        ("v2024.10", "calver"),
+        ("20241024", "date"),
+        ("20241024.1", "date"),
+        ("202410241530", "date"),
+        ("20241399", "build"),  # not a date
+        ("4521", "build"),
+        ("2024", "build"),  # a year alone is no calendar version
+        ("latest", ""),
+        (None, ""),
+    ],
+)
+def test_versioning(tag, expected):
+    assert versioning(tag) == expected
+
+
+@pytest.mark.parametrize(
+    ("current", "candidates", "expected"),
+    [
+        ("7", ["4521", "8", "20241024"], "8"),
+        ("4521", ["7", "4600"], "4600"),
+        ("1.2", ["2024.10", "1.3"], "1.3"),
+        ("2024.10", ["1.3", "2024.11"], "2024.11"),
+        ("20241024", ["99999999", "4521", "20241101"], "20241101"),
+    ],
+)
+def test_latest_matching_same_scheme(current, candidates, expected):
+    assert latest_matching(current, candidates) == expected
+
+
+@pytest.mark.parametrize(
+    ("current", "latest"),
+    [("2024.10.1", "2025.1.0"), ("20241024", "20241101"), ("4521", "4600"), ("2024.10", "2024.11")],
+)
+def test_update_kind_not_semver(current, latest):
+    assert update_kind(current, latest) == "newer"

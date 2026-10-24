@@ -71,7 +71,7 @@ a version instead.
 | --- | --- |
 | Image | Normalized name: `nginx` becomes `docker.io/library/nginx` |
 | Current | Tag (and digest) used by the workloads |
-| Latest | Highest tag of the same shape published in the registry, or the published digest for floating tags |
+| Latest | Highest tag of the same shape and [versioning scheme](#versioning-schemes) published in the registry, or the published digest for floating tags |
 | Status | See [statuses](#statuses) |
 | Used by | Number of workloads, pods and nodes using the image, and their clusters |
 
@@ -83,6 +83,23 @@ and the digest of the latest tag. Published digests are read with `images.fetchT
 (enabled by default).
 
 ![Image details](images/image-detail.png)
+
+#### Versioning schemes
+
+kube-tower tells from the current tag how the image is versioned, shows it in the detail panel
+(**Versioning**) and only compares the tag with tags of the same scheme, on top of the same shape
+(prefix, number of components, suffix):
+
+| Scheme | Tags | Update type |
+| --- | --- | --- |
+| `semver` | `1.25.3`, `v2.1`, `7` | `major`, `minor`, `patch` |
+| `calver` | `2024.10.1`, `2024.10` (a year from 1990 to 2100, then more numbers) | `newer` |
+| `date` | `20241024`, `20241024.1`, `202410241530` (a date, then optional hours, minutes, seconds) | `newer` |
+| `build` | `4521` (a single number from 1000) | `newer` |
+
+So `redis:7` is not reported outdated because of a `4521` CI build tag, and `1.2` is not compared
+with `2024.10`. A single number below 1000 counts as `semver`: a build number `999` is not compared
+with `1000` and above.
 
 ### Helm charts
 

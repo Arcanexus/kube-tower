@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from kube_tower.models import ImageReport, Severity, Snapshot, Status
 from kube_tower.web.metrics import image_update
 
-UPDATE_KINDS = ["major", "minor", "patch", "digest"]
+UPDATE_KINDS = ["major", "minor", "patch", "newer", "digest"]
 # Worst severity buckets of the Synthesis bar, most severe first, then images without a result
 WORST_PENDING = ("failed", "not scanned")
 WORST_ORDER = [*(s.value for s in Severity), "none", *WORST_PENDING]
