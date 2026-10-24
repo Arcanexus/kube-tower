@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Arcanexus/kube-tower/tags"><img src="https://img.shields.io/github/v/tag/Arcanexus/kube-tower?sort=semver&label=version" alt="Latest version"></a>
   <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/docker-publish.yml"><img src="https://github.com/Arcanexus/kube-tower/actions/workflows/docker-publish.yml/badge.svg?branch=main" alt="Build"></a>
   <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml"><img src="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
   <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Arcanexus/kube-tower/main/.github/badges/coverage.json" alt="Coverage"></a>
