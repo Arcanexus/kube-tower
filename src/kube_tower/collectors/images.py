@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import fnmatch
 import logging
 import threading
@@ -42,6 +43,9 @@ class ImageInventory:
     def __init__(self, settings: ImagesSettings):
         self.settings = settings
         self.reports: dict[str, ImageReport] = {}
+        # Usages already recorded, per image: a set lookup, not a scan of report.usages (an image used by
+        # thousands of pods or present on hundreds of nodes made each add slower than the previous one).
+        self._seen: dict[str, set[tuple]] = {}
         self._lock = threading.Lock()  # clusters are collected in parallel threads
 
     def ignored(self, ref: ImageRef) -> bool:
@@ -52,9 +56,12 @@ class ImageInventory:
         if self.ignored(ref):
             return
         key_ref = ImageRef(ref.registry, ref.repository, ref.tag, None if ref.tag else ref.digest)
+        key = str(key_ref)
         with self._lock:
-            report = self.reports.setdefault(str(key_ref), ImageReport(image=key_ref))
-            if usage not in report.usages:
+            report = self.reports.setdefault(key, ImageReport(image=key_ref))
+            seen = self._seen.setdefault(key, set())
+            if (identity := dataclasses.astuple(usage)) not in seen:
+                seen.add(identity)
                 report.usages.append(usage)
             if running_digest:
                 report.running_digests.add(running_digest)

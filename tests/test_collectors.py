@@ -9,6 +9,7 @@ from kube_tower.collectors import images as images_collector
 from kube_tower.collectors.helm import charts_from_application
 from kube_tower.collectors.images import ImageInventory
 from kube_tower.config import HelmSettings, ImagesSettings
+from kube_tower.models import Usage
 
 
 def _meta(name, namespace=None):
@@ -157,3 +158,14 @@ def test_image_inventory_paginates(monkeypatch):
     assert inventory.collect(Cluster("c1", "https://x", "in-cluster", None)) == []
     assert calls == [(images_collector.PAGE_SIZE, None), (images_collector.PAGE_SIZE, "next")]
     assert set(inventory.reports) == {"docker.io/library/nginx:1.25", "docker.io/library/alpine:3.19"}
+
+
+def test_image_inventory_deduplicates_usages():
+    inventory = ImageInventory(ImagesSettings())
+    for _ in range(2):
+        for node in range(500):
+            inventory.add("registry.k8s.io/pause:3.9", Usage("c", "Node", None, f"node-{node}"))
+    inventory.add("registry.k8s.io/pause:3.9", Usage("c", "Pod", "ns", "p", "c"))
+    report = inventory.reports["registry.k8s.io/pause:3.9"]
+    assert len(report.usages) == 501
+    assert report.usages[0] == Usage("c", "Node", None, "node-0") and report.usages[-1].kind == "Pod"
