@@ -16,7 +16,7 @@ import yaml
 from kube_tower.config import GitSettings
 from kube_tower.errors import GIT_CREDENTIALS, http_error_message
 from kube_tower.registry.auth import normalize_host
-from kube_tower.registry.oci import OCIClient, RegistryError
+from kube_tower.registry.oci import OCIClient, RegistryError, require_https
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +55,12 @@ class HelmClient:
         self._indexes: dict[str, asyncio.Future[dict]] = {}
 
     def _auth(self, url: str) -> tuple[str, str] | None:
-        """Basic auth for private HTTP Helm repositories, from the per registry credentials."""
-        return self.oci.credentials.get(normalize_host(url))
+        """Basic auth for private HTTP Helm repositories, from the per registry credentials (https:// only)."""
+        host = normalize_host(url)
+        credentials = self.oci.credentials.get(host)
+        if credentials:
+            require_https(url, f"the Helm repository of {host}, which has credentials in registries.credentials,")
+        return credentials
 
     async def _index(self, repository: str) -> dict:
         """The index.yaml of a Helm repository, downloaded once per scan whatever the number of charts."""
@@ -131,6 +135,7 @@ class HelmClient:
         url = template.format(owner=owner, repo=repo, ref=ref, path=f"{path.strip('/')}/Chart.yaml".lstrip("/"))
         headers = {}
         if token := os.environ.get(self.git.token_env):
+            require_https(url, f"the raw URL template of {parsed.hostname} (git.rawUrlTemplates), with a git token,")
             headers["Authorization"] = f"Bearer {token}"
         resp = await self.http.get(url, headers=headers, follow_redirects=True)
         if resp.status_code != 200:

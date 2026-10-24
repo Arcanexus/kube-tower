@@ -143,3 +143,26 @@ async def test_ping_helm_repository():
         assert index.calls[-1].request.headers["authorization"].startswith("Basic ")
         with pytest.raises(RegistryError, match="HTTP 401"):
             await helm.ping("https://private.example.com")
+
+
+@respx.mock
+async def test_credentials_never_sent_over_http(monkeypatch):
+    index = respx.get("http://charts.example.com/index.yaml").respond(200, text=INDEX)
+    respx.get("http://public.example.com/index.yaml").respond(200, text=INDEX)
+    raw = respx.get("http://git.example.com/org/repo/HEAD/app/Chart.yaml").respond(200, text="name: app\nversion: 1.0.0\n")
+    async with httpx.AsyncClient() as http:
+        helm = HelmClient(
+            http,
+            OCIClient(http, {"charts.example.com": ("u", "p")}),
+            GitSettings(raw_url_templates={"git.example.com": "http://git.example.com/{owner}/{repo}/{ref}/{path}"}),
+        )
+        with pytest.raises(RegistryError, match="Helm repository of charts.example.com, which has credentials.*only https"):
+            await helm.list_versions("http://charts.example.com", "app")
+        # Without credentials, a plain http:// repository still works
+        assert await helm.list_versions("http://public.example.com", "app") == ["1.1.0", "1.0.0"]
+        assert (await helm.git_chart_metadata("https://git.example.com/org/repo", "HEAD", "app"))["version"] == "1.0.0"
+        monkeypatch.setenv("GIT_TOKEN", "secret")
+        with pytest.raises(RegistryError, match="raw URL template of git.example.com.*with a git token.*refused"):
+            await helm.git_chart_metadata("https://git.example.com/org/repo", "v2", "app")
+    assert not index.called
+    assert "authorization" not in raw.calls[0].request.headers
