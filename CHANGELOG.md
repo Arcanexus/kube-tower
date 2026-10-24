@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Settings page: an **Authentication** column per registry credential, telling whether the registry
+  accepted or refused it at the last request that sent it (scan, rescan or connectivity test), with
+  the registry's answer when refused.
 - Any registry: cloud registries get short-lived tokens from the identity of the pod with
   `provider: aws` (Amazon ECR, IRSA or EKS Pod Identity), `gcp` (Artifact Registry and gcr.io, GKE
   Workload Identity) or `azure` (ACR, AKS Workload Identity), without cloud SDK. Credentials can match

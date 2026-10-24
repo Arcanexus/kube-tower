@@ -289,8 +289,10 @@ def mount(app: FastAPI) -> None:
         # Settings only hold references to secrets (paths, env var names), never their values.
         settings = request.app.state.settings
         rendered = yaml.safe_dump(_camel(dataclasses.asdict(settings)), sort_keys=False)
-        _, credentials = resolve_credentials(settings.registries, pull_secrets=request.app.state.scanner.pull_secrets)
-        return render(request, "settings", tab="settings", settings_yaml=rendered, credentials=credentials)
+        scanner = request.app.state.scanner
+        _, credentials = resolve_credentials(settings.registries, pull_secrets=scanner.pull_secrets)
+        auth = {c.registry: scanner.registry_auth.get(c.registry) for c in credentials}
+        return render(request, "settings", tab="settings", settings_yaml=rendered, credentials=credentials, auth=auth)
 
     def render_administration(request: Request, notice: str = "", error: str = "", full: bool = False) -> HTMLResponse:
         """The Administration page, or only its actions (`#administration`) for htmx. While an action runs the

@@ -5,15 +5,20 @@
 
 <h3>{{ icon("key") }}Registry credentials</h3>
 <table class="striped">
-  <thead><tr><th>Registry</th><th>Source</th><th>Username</th><th>Status</th></tr></thead>
+  <thead><tr><th>Registry</th><th>Source</th><th>Username</th><th>Status</th><th>Authentication</th></tr></thead>
   <tbody>
   {% for c in credentials %}
     <tr>
       <td><code>{{ c.registry }}</code></td><td>{{ c.source }}</td><td>{{ c.username }}</td>
       <td>{% if c.ok %}<span class="badge badge-up-to-date">{{ icon("ok") }}loaded</span>{% else %}<span class="badge badge-error">{{ icon("error") }}invalid</span>{% endif %}{% if c.message %}<br><small>{{ c.message }}</small>{% endif %}</td>
+      {% set a = auth[c.registry] %}
+      <td>{% if a is none %}<span class="badge badge-unknown" title="No request with these credentials yet: run a scan or the connectivity test (Administration)">{{ icon("unknown") }}not tried yet</span>
+        {%- else %}<span class="badge {{ 'badge-up-to-date' if a.ok else 'badge-error' }}" title="{{ a.host }}">{{ icon("ok" if a.ok else "error") }}{{ "accepted" if a.ok else "refused" }}</span>
+        <br><small><time datetime="{{ a.at.isoformat() }}" class="ago">{{ a.at.strftime("%Y-%m-%d %H:%M UTC") }}</time>{% if a.host != c.registry %} ({{ a.host }}){% endif %}</small>
+        {%- if a.message %}<br><small>{{ a.message }}</small>{% endif %}{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="4">No credentials: registries are queried anonymously (Docker Hub rate limits apply).</td></tr>
+    <tr><td colspan="5">No credentials: registries are queried anonymously (Docker Hub rate limits apply).</td></tr>
   {% endfor %}
   </tbody>
 </table>
