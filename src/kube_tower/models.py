@@ -203,10 +203,25 @@ class Snapshot:
     errors: list[str] = field(default_factory=list)
 
     def image(self, ref: str) -> ImageReport | None:
-        return next((r for r in self.images if str(r.image) == ref), None)
+        return self._index("images", lambda r: str(r.image)).get(ref)
 
     def chart(self, cluster: str, namespace: str, application: str, chart: str) -> ChartReport | None:
-        return next((c for c in self.charts if c.key == (cluster, namespace, application, chart)), None)
+        return self._index("charts", lambda c: c.key).get((cluster, namespace, application, chart))
+
+    def _index(self, name: str, key) -> dict:
+        """The reports of the `images` or `charts` list by key, for the detail panels and the API (opened
+        and polled often). Built again when the list is replaced or grows (rescans add the new images).
+        Not a dataclass field: left out of to_dict().
+        """
+        reports = getattr(self, name)
+        cached = self.__dict__.get(f"_{name}_index")
+        if cached and cached[0] is reports and cached[1] == len(reports):
+            return cached[2]
+        index: dict = {}
+        for report in reports:
+            index.setdefault(key(report), report)  # the first one, as a linear search would find
+        self.__dict__[f"_{name}_index"] = (reports, len(reports), index)
+        return index
 
     def to_dict(self) -> dict:
         def enc(obj):
