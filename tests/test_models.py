@@ -1,4 +1,4 @@
-from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot
+from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Usage
 
 
 def _chart(name: str) -> ChartReport:
@@ -70,3 +70,12 @@ def test_snapshot_round_trips_through_to_dict():
     assert back.image("docker.io/library/nginx:1.25@sha256:abc").vulnerabilities.counts()[Severity.HIGH] == 1
     assert back.to_dict() == data
     assert Snapshot.from_dict(Snapshot().to_dict()) == Snapshot()
+
+
+def test_image_running():
+    report = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), [Usage("c1", "Deployment", "default", "web", "nginx")])
+    assert not report.running  # scaled to zero: declared, no pod
+    report.usages.append(Usage("c1", "Node", None, "n1"))
+    assert not report.running
+    report.usages.append(Usage("c1", "Pod", "default", "web-1", "nginx"))
+    assert report.running

@@ -126,6 +126,12 @@ class ImageReport:
     def clusters(self) -> list[str]:
         return sorted({u.cluster for u in self.usages})
 
+    @property
+    def running(self) -> bool:
+        """Used by a pod; otherwise only declared by workloads without pods (scaled to zero, CronJob between
+        two runs) or only cached on nodes."""
+        return any(u.kind == "Pod" for u in self.usages)
+
 
 @dataclass
 class ChartDependency:
