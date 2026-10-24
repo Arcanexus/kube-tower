@@ -116,6 +116,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Performance: the `index.yaml` of HTTP Helm repositories is kept between scans (only the chart
+  versions and archive URLs) and downloaded again only when the repository says it changed
+  (`ETag` / `Last-Modified`, HTTP 304): big indexes are no longer downloaded and parsed at each scan.
 - Security: cluster Secrets are read by name only by default (`get` on these Secrets), instead of
   listing the Secrets of the namespace, which gave read access to all of them. The chart names
   the Secrets it creates and the `existingSecret` ones itself. **Labelled cluster Secrets created
