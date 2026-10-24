@@ -187,6 +187,8 @@ trivy:
     affinity: {}
 
 podAnnotations: {}
+# Extra pod labels, e.g. azure.workload.identity/use: "true" for Azure Workload Identity
+podLabels: {}
 
 # Extra init containers, env vars, volumes and mounts of the kube-tower pod, e.g. to copy the
 # exec plugin of a managed cluster (kubelogin, aws-iam-authenticator...), see docs/clusters.md.

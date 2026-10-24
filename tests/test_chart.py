@@ -273,6 +273,7 @@ def test_exec_plugin_from_extra_init_container(tmp_path):
             "extraEnv": [{"name": "AWS_REGION", "value": "eu-west-1"}],
             "extraVolumes": [{"name": "plugins", "emptyDir": {}}],
             "extraVolumeMounts": [{"name": "plugins", "mountPath": "/opt/kube-tower/bin", "readOnly": True}],
+            "podLabels": {"azure.workload.identity/use": "true"},
         },
     )
     spec = docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["spec"]
@@ -281,6 +282,8 @@ def test_exec_plugin_from_extra_init_container(tmp_path):
     assert "plugins" in volumes(docs)
     assert {"name": "plugins", "mountPath": "/opt/kube-tower/bin", "readOnly": True} in container(docs)["volumeMounts"]
     assert app_settings(tmp_path, docs).clusters.exec_commands == ["/opt/kube-tower/bin/kubelogin"]
+    labels = docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["metadata"]["labels"]
+    assert labels["azure.workload.identity/use"] == "true" and "app.kubernetes.io/name" in labels
 
 
 def test_extra_init_containers_after_trivy(tmp_path):
