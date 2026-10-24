@@ -318,3 +318,58 @@ def test_clusters_probed_in_parallel():
     clusters, statuses = Registry(settings, secrets).discover()
     assert [c.name for c in clusters] == ["c0", "c1", "c2", "c3"]
     assert [(s.name, s.reachable) for s in statuses] == [("c0", True), ("c1", True), ("c2", False), ("c3", True)]
+
+
+def _versioned(secret_name, version, **data):
+    secret = _secret(secret_name, **data)
+    secret.metadata.resource_version = version
+    return secret
+
+
+def test_clients_reused_while_secret_unchanged(tmp_path, monkeypatch):
+    import os
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    ca = base64.b64encode(b"-----BEGIN CERTIFICATE-----\n").decode()
+    cfg = json.dumps({"bearerToken": "t", "tlsClientConfig": {"caData": ca}})
+    secrets = {"prod": _versioned("prod", "1", name="prod", server="https://prod", config=cfg)}
+    settings = ClustersSettings(in_cluster=False, namespace="kube-tower", secret_names=["prod"])
+    registry = NamedOnlyRegistry(settings, secrets)
+
+    first, _ = registry.discover()
+    again, _ = registry.discover()
+    assert again[0] is first[0]  # same client, no new certificate file
+    assert len(os.listdir(tmp_path)) == 1
+
+    secrets["prod"] = _versioned("prod", "2", name="prod", server="https://prod", config=cfg)  # rotated token
+    changed, _ = registry.discover()
+    assert changed[0] is not first[0]
+    assert first[0].files == [] and len(os.listdir(tmp_path)) == 1  # the old one closed, its file deleted
+
+    registry.settings.secret_names = []  # Secret gone
+    assert registry.discover()[0] == []
+    assert os.listdir(tmp_path) == []
+
+
+def test_argocd_exec_refused_before_writing_files(tmp_path, monkeypatch):
+    import os
+
+    import pytest
+
+    from kube_tower.clusters import api_client_from_argocd_config
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    ca = base64.b64encode(b"ca").decode()
+    with pytest.raises(ValueError, match="not supported"):
+        api_client_from_argocd_config("https://x", {"execProviderConfig": {}, "tlsClientConfig": {"caData": ca}})
+    with pytest.raises(ValueError):  # bad key data after the CA file was written: no file left behind
+        cluster_from_secret(
+            _secret(
+                "s",
+                name="s",
+                server="https://x",
+                config=json.dumps({"tlsClientConfig": {"caData": ca, "certData": ca, "keyData": "a"}}),
+            ),
+            "secret",
+        )
+    assert os.listdir(tmp_path) == []

@@ -59,6 +59,11 @@ All notable changes to this project are documented here. The format follows
   now 0.1 s).
 - Clusters are probed in parallel at the start of each scan and connectivity test: an unreachable
   cluster no longer delays the next ones by `clusters.requestTimeout` (30 s) each.
+- Remote cluster clients are reused from one scan to the next while their Secret is unchanged
+  (same `resourceVersion`). Before, each scan and connectivity test created new clients without
+  closing the old ones (connection pools left open) and wrote the CA, client certificate and private
+  key again to new files in `/tmp`, never deleted. Clients of changed or removed Secrets are closed
+  and their files deleted; exec plugins also run less often (their token is reused until it expires).
 - Security: registry credentials and tokens are never sent over plain `http://` any more. A token
   service (`realm`) or a registry redirect in `http://`, an `http://` Helm repository with
   credentials and an `http://` git raw URL template with a git token are refused with an explicit

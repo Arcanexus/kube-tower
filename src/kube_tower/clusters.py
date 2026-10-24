@@ -16,12 +16,14 @@ Secrets listed by name in `clusters.secretNames` are used too, whatever their la
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import logging
 import os
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import yaml
 from kubernetes import client, config
@@ -44,6 +46,16 @@ class Cluster:
     server: str
     source: str
     api_client: client.ApiClient
+    files: list[str] = field(default_factory=list)  # temporary certificate / key files of the client
+
+    def close(self) -> None:
+        """Release the connection pool of the client and delete its certificate and key files."""
+        if self.api_client is not None:
+            self.api_client.close()
+        for path in self.files:
+            with contextlib.suppress(OSError):
+                os.unlink(path)
+        self.files = []
 
 
 def current_namespace() -> str:
@@ -54,15 +66,22 @@ def current_namespace() -> str:
         return os.environ.get("POD_NAMESPACE", "default")
 
 
-def _write_temp(data_b64: str, suffix: str) -> str:
-    """kubernetes-client expects file paths for certificates."""
+def _write_temp(data_b64: str, suffix: str, files: list[str]) -> str:
+    """kubernetes-client expects file paths for certificates. The path is added to `files` (deleted by Cluster.close)."""
     fh = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    files.append(fh.name)
     fh.write(base64.b64decode(data_b64))
     fh.close()
     return fh.name
 
 
-def api_client_from_argocd_config(server: str, raw_config: dict) -> client.ApiClient:
+def api_client_from_argocd_config(server: str, raw_config: dict, files: list[str] | None = None) -> client.ApiClient:
+    if "execProviderConfig" in raw_config or "awsAuthConfig" in raw_config:
+        raise ValueError(
+            "exec / AWS auth is not supported in the ArgoCD format: use a bearer token, "
+            "or a kubeconfig key with an exec plugin allowed in clusters.execCommands"
+        )
+    files = [] if files is None else files
     cfg = client.Configuration()
     cfg.host = server
     if token := raw_config.get("bearerToken"):
@@ -74,17 +93,12 @@ def api_client_from_argocd_config(server: str, raw_config: dict) -> client.ApiCl
     tls = raw_config.get("tlsClientConfig") or {}
     cfg.verify_ssl = not tls.get("insecure", False)
     if tls.get("caData"):
-        cfg.ssl_ca_cert = _write_temp(tls["caData"], ".crt")
+        cfg.ssl_ca_cert = _write_temp(tls["caData"], ".crt", files)
     if tls.get("certData") and tls.get("keyData"):
-        cfg.cert_file = _write_temp(tls["certData"], ".crt")
-        cfg.key_file = _write_temp(tls["keyData"], ".key")
+        cfg.cert_file = _write_temp(tls["certData"], ".crt", files)
+        cfg.key_file = _write_temp(tls["keyData"], ".key", files)
     if tls.get("serverName"):
         cfg.tls_server_name = tls["serverName"]
-    if "execProviderConfig" in raw_config or "awsAuthConfig" in raw_config:
-        raise ValueError(
-            "exec / AWS auth is not supported in the ArgoCD format: use a bearer token, "
-            "or a kubeconfig key with an exec plugin allowed in clusters.execCommands"
-        )
     return client.ApiClient(cfg)
 
 
@@ -148,13 +162,23 @@ def cluster_from_secret(secret: client.V1Secret, source: str, exec_commands: lis
     if not server:
         raise ValueError("secret has neither 'server' nor 'kubeconfig'")
     raw_config = json.loads(_decode(secret, "config") or "{}")
-    return Cluster(name=name, server=server, source=source, api_client=api_client_from_argocd_config(server, raw_config))
+    files: list[str] = []
+    try:
+        api = api_client_from_argocd_config(server, raw_config, files)
+    except Exception:
+        Cluster(name, server, source, None, files).close()  # files written before the error
+        raise
+    return Cluster(name=name, server=server, source=source, api_client=api, files=files)
 
 
 class ClusterRegistry:
     def __init__(self, settings: ClustersSettings):
         self.settings = settings
         self._local: client.ApiClient | None = None
+        # Clusters of the last discovery by Secret, with the Secret's resourceVersion: their clients
+        # (connection pools, exec plugin tokens) are reused until the Secret changes or goes away.
+        self._known: dict[tuple[str, str], tuple[str | None, Cluster]] = {}
+        self._known_lock = threading.Lock()  # scans and connectivity tests may discover at the same time
 
     def local_client(self) -> client.ApiClient | None:
         """Client for the cluster kube-tower runs in (or the local kubeconfig in dev)."""
@@ -245,6 +269,38 @@ class ClusterRegistry:
             found += [(s.argocd_namespace, "argocd-secret", secret) for secret in secrets]
         return found
 
+    def _clusters_of(self, declared: list[tuple[str, str, client.V1Secret]]) -> list[Cluster | Exception]:
+        """The Cluster of each Secret: the known one while the Secret is unchanged, else a new one (the old
+        one closed). Clusters whose Secret is gone are closed. Called with _known_lock held.
+        """
+        results: list[Cluster | Exception] = []
+        current: dict[tuple[str, str], tuple[str | None, Cluster]] = {}
+        for namespace, source, secret in declared:
+            key = (namespace, secret.metadata.name)
+            version = secret.metadata.resource_version
+            if key in current:  # the same Secret read by name and listed
+                results.append(current[key][1])
+                continue
+            known = self._known.get(key)
+            if known and version is not None and known[0] == version:
+                current[key] = known
+                results.append(known[1])
+                continue
+            try:
+                cluster = cluster_from_secret(secret, source, self.settings.exec_commands)
+            except Exception as exc:  # noqa: BLE001 - reported by discover
+                results.append(exc)
+                continue
+            current[key] = (version, cluster)
+            results.append(cluster)
+        kept = {id(c) for _, c in current.values()}
+        for _, cluster in self._known.values():
+            if id(cluster) not in kept:
+                log.debug("cluster %s: its Secret changed or is gone, client closed", cluster.name)
+                cluster.close()
+        self._known = current
+        return results
+
     def discover(self) -> tuple[list[Cluster], list[ClusterStatus]]:
         """Return usable clusters and a status line for every declared cluster."""
         clusters: list[Cluster] = []
@@ -255,10 +311,11 @@ class ClusterRegistry:
             clusters.append(Cluster(self.settings.in_cluster_name, local.configuration.host, "in-cluster", local))
             seen_servers.add(ARGOCD_IN_CLUSTER_SERVER)
 
-        for namespace, source, secret in self._secrets(statuses):
-            try:
-                cluster = cluster_from_secret(secret, source, self.settings.exec_commands)
-            except Exception as exc:  # noqa: BLE001 - one bad secret must not break discovery
+        declared = self._secrets(statuses)
+        with self._known_lock:
+            built = self._clusters_of(declared)
+        for (namespace, source, secret), cluster in zip(declared, built, strict=True):
+            if isinstance(exc := cluster, Exception):  # one bad secret must not break discovery
                 log.warning(
                     "invalid cluster secret %s/%s, cluster ignored: %s (expected keys: name, server, config, or kubeconfig)",
                     namespace,
