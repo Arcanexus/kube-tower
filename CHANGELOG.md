@@ -125,6 +125,8 @@ All notable changes to this project are documented here. The format follows
 
 - Performance: images and charts of the snapshot are looked up by key (detail panels, rescans, API)
   instead of scanning the whole list at each request and each poll of a rescan.
+- Documentation: client/server Trivy mode recommended beyond a few dozen images (standalone mode
+  downloads and analyses the shared base layers again for every image).
 - Performance: the `index.yaml` of HTTP Helm repositories is kept between scans (only the chart
   versions and archive URLs) and downloaded again only when the repository says it changed
   (`ETag` / `Last-Modified`, HTTP 304): big indexes are no longer downloaded and parsed at each scan.

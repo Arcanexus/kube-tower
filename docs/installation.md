@@ -107,6 +107,14 @@ trivy:
 To use a Trivy server you already run, keep `trivy.server.enabled: false` and set
 `config.vulnerabilities.trivy.serverUrl: http://trivy.trivy-system:4954`.
 
+**Which one?** Standalone suits a few dozen images. Beyond that, prefer client/server. In standalone
+mode each scan keeps the image layers in memory only (`--cache-backend memory`, so that concurrent scans
+do not fail with "cache may be in use"): the base layers shared by many images (Debian, Alpine,
+distroless…) are downloaded and analysed again for every image, at every scan. The Trivy server keeps
+the analysis of each layer: a layer already seen, in another image or in a previous scan, is neither
+downloaded nor analysed again, so scans are faster and pull much less from the registries (rate
+limits). The database is also downloaded once by the server instead of by each kube-tower pod.
+
 **Trivy Operator only**: no Trivy in kube-tower, only the operator's reports are shown (images
 only cached on nodes are not scanned):
 
