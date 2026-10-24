@@ -334,6 +334,43 @@ To follow the development version, point `source` at the git repository instead:
 | `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `podLabels`, `imagePullSecrets` | | Usual pod settings |
 | `extraInitContainers`, `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | Added to the kube-tower pod, e.g. to copy an [exec plugin](clusters.md#managed-clusters-eks-gke-aks-exec-plugins) |
 | `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
+| `networkPolicy.enabled` | `false` | NetworkPolicies of the kube-tower pod and the Trivy server, see [network policies](#network-policies) |
+| `networkPolicy.ingress.from` | `[]` (any pod) | Who may reach the UI, API and `/metrics` (port `http` only) |
+| `networkPolicy.egress.ports` / `.to` / `.extra` | `443`, `6443` / anywhere / `[]` | What kube-tower may reach besides DNS and the Trivy server |
+
+## Network policies
+
+`networkPolicy.enabled: true` restricts the network of the kube-tower pod (and of the Trivy server)
+with NetworkPolicies, enforced by CNIs such as Calico or Cilium:
+
+- **Ingress**: only the `http` port of kube-tower, from `networkPolicy.ingress.from` (any pod when
+  empty). The Trivy server only accepts kube-tower.
+- **Egress**: DNS, the Trivy server, and `networkPolicy.egress.ports` (`443` and `6443`) towards
+  `networkPolicy.egress.to` (anywhere when empty). kube-tower reaches the Kubernetes API servers, the
+  registries, the Helm repositories, the git hosts and, in standalone mode, the Trivy database
+  registries. Add the ports of registries or API servers that use other ones, or rules of your own
+  with `networkPolicy.egress.extra`.
+
+```yaml
+networkPolicy:
+  enabled: true
+  ingress:
+    from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-nginx
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: monitoring      # Prometheus scraping /metrics
+  egress:
+    ports:
+      - port: 443
+        protocol: TCP
+      - port: 6443
+        protocol: TCP
+      - port: 5000                                       # a private registry on port 5000
+        protocol: TCP
+```
 
 ## Permissions
 

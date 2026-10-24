@@ -320,3 +320,38 @@ def test_extra_init_containers_after_trivy(tmp_path):
     docs = render(tmp_path, {"extraInitContainers": [{"name": "plugin", "image": "plugins:1"}]})
     names = [c["name"] for c in docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["spec"]["initContainers"]]
     assert names == ["trivy", "plugin"]
+
+
+def test_network_policies(tmp_path):
+    assert not any(kind == "NetworkPolicy" for kind, _ in render(tmp_path, {}))  # optional
+    docs = render(tmp_path, {"networkPolicy": {"enabled": True}})
+    policy = docs[("NetworkPolicy", "kt-kube-tower")]["spec"]
+    assert policy["podSelector"]["matchLabels"] == docs[("Service", "kt-kube-tower")]["spec"]["selector"]
+    assert policy["ingress"] == [{"ports": [{"port": "http", "protocol": "TCP"}]}]
+    dns, egress = policy["egress"]  # no Trivy server rule without the server
+    assert {p["port"] for p in dns["ports"]} == {53} and "to" not in dns
+    assert [p["port"] for p in egress["ports"]] == [443, 6443] and "to" not in egress
+    assert ("NetworkPolicy", "kt-kube-tower-trivy") not in docs
+
+    monitoring = {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "monitoring"}}}
+    docs = render(
+        tmp_path,
+        {
+            "trivy": {"server": {"enabled": True}},
+            "networkPolicy": {
+                "enabled": True,
+                "ingress": {"from": [monitoring]},
+                "egress": {"to": [{"ipBlock": {"cidr": "10.0.0.0/8"}}], "extra": [{"ports": [{"port": 5000}]}]},
+            },
+        },
+    )
+    policy = docs[("NetworkPolicy", "kt-kube-tower")]["spec"]
+    assert policy["ingress"][0]["from"] == [monitoring]
+    _, egress, trivy, extra = policy["egress"]
+    assert egress["to"] == [{"ipBlock": {"cidr": "10.0.0.0/8"}}] and extra == {"ports": [{"port": 5000}]}
+    server_labels = docs[("Deployment", "kt-kube-tower-trivy")]["spec"]["template"]["metadata"]["labels"]
+    assert trivy["to"] == [{"podSelector": {"matchLabels": server_labels}}] and trivy["ports"][0]["port"] == 4954
+    server = docs[("NetworkPolicy", "kt-kube-tower-trivy")]["spec"]
+    assert server["podSelector"]["matchLabels"] == server_labels
+    assert server["ingress"][0]["from"] == [{"podSelector": {"matchLabels": policy["podSelector"]["matchLabels"]}}]
+    assert server["egress"][1]["to"] == [{"ipBlock": {"cidr": "10.0.0.0/8"}}]
