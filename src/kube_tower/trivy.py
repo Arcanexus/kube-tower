@@ -218,7 +218,10 @@ class TrivyScanner:
         args = ["image", "--format", "json", "--scanners", "vuln", "--image-src", "remote", *self._common_args()]
         if self.settings.ignore_unfixed:
             args.append("--ignore-unfixed")
-        code, stdout, stderr = await self._run([*args, *self.settings.extra_args, target], self._env(report.image.registry))
+        if target.startswith("-"):  # an image name read from the clusters must never be taken as an option
+            return VulnerabilityReport("trivy", datetime.now(UTC), digest, message=f"invalid image reference {target!r}")
+        # `--` ends the options: the target is always read as an image reference.
+        code, stdout, stderr = await self._run([*args, *self.settings.extra_args, "--", target], self._env(report.image.registry))
         if code != 0:
             message = _error_message(stderr)
             log.warning("trivy scan of %s failed: %s", target, message)

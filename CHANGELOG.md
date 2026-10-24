@@ -54,6 +54,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Security: the image given to Trivy comes after `--` and an image reference starting with `-` is
+  refused, so an image name read from the clusters can never be taken as a Trivy option.
 - Faster image collection on big clusters: an image used by thousands of pods or present on
   hundreds of nodes made each new usage slower to record (20,000 pods of one image: 30 s of CPU,
   now 0.1 s).

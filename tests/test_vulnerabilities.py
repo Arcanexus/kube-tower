@@ -201,6 +201,7 @@ async def test_trivy_scan_all(fake_trivy):
     db, *scans = calls()
     assert db["args"][:2] == ["image", "--download-db-only"] and "--disable-telemetry" in db["args"]
     alpine = next(c for c in scans if c["args"][-1] == "docker.io/library/alpine:3.18")
+    assert alpine["args"][-2] == "--"  # options end before the target
     assert alpine["user"] == "alex"  # credentials of the image registry only
     assert {"--skip-db-update", "--skip-java-db-update", "--skip-files=**/*.jar", "--image-src"} <= set(alpine["args"])
     assert ["--cache-backend", "memory"] == alpine["args"][alpine["args"].index("--cache-backend") :][:2]
@@ -327,3 +328,11 @@ def test_trivy_database_downloaded_once_at_a_time(monkeypatch):
     for t in threads:
         t.join()
     assert overlaps == [1, 1, 1]
+
+
+async def test_trivy_refuses_option_like_target(fake_trivy, monkeypatch):
+    binary, calls = fake_trivy
+    scanner = TrivyScanner(TrivySettings(binary=binary, cache_dir="/c"), {})
+    monkeypatch.setattr("kube_tower.trivy.scan_target", lambda r: ("--output=/tmp/x", None))
+    result = await scanner.scan(ImageReport(ImageRef("docker.io", "x", "1")))
+    assert result.message == "invalid image reference '--output=/tmp/x'" and calls() == []
