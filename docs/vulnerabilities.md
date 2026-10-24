@@ -61,6 +61,10 @@ and set `vulnerabilities.trivy.binary`.
 | **Standalone** (default) | `trivy.server.enabled: false` | Downloaded by kube-tower at each scan into an `emptyDir` (~1.6 GB, 3 GiB limit by default) |
 | **Client/server** | `trivy.server.enabled: true` | Held and refreshed by a Trivy server Deployment of the chart; the kube-tower pod stays small |
 
+Standalone suits a few dozen images. Beyond that, prefer client/server: in standalone mode the layers
+shared by many images are downloaded and analysed again for every image, while the Trivy server keeps
+the analysis of each layer between images and scans (see [installation](installation.md#vulnerability-scanning-trivy)).
+
 With the Helm chart:
 
 ```yaml
