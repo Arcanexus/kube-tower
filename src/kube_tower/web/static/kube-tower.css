@@ -350,3 +350,4 @@ td.cell-name { max-width: 30rem; }
   .scan-state small { display: none; }
   .page-title p { font-size: .9rem; }
 }
+@media (min-width: 769px) { td.cell-status { min-width: 13rem; } .cluster-origin { white-space: nowrap; } }

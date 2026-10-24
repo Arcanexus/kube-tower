@@ -7,8 +7,8 @@
 <div class="overflow-auto table-wrap">
 <table class="striped stack-sm">
   <thead><tr><th data-sort>Name</th><th data-sort>Status</th><th data-sort>Version</th>
-    <th data-sort="desc">Images</th><th data-sort="desc">Outdated images</th><th data-sort="desc">Charts</th><th data-sort="desc">Outdated charts</th>
-    <th data-sort="desc">With critical CVEs</th><th data-sort class="hide-sm">Server</th><th data-sort class="hide-sm">Source</th></tr></thead>
+    <th data-sort="desc">Images</th><th data-sort="desc">Helm charts</th>
+    <th data-sort="desc">With critical CVEs</th></tr></thead>
   <tbody>
   {% for c in snapshot.clusters %}
     {% set s = summaries.get(c.name) %}
@@ -16,18 +16,18 @@
     {% set nc = s.charts.values() | sum if s else 0 %}
     {% set q = c.name | urlencode %}
     <tr>
-      <td class="cell-name">{{ icon("clusters", "muted") }}<strong>{{ c.name }}</strong></td>
-      <td data-sort="{{ 1 if c.reachable else 0 }}">{% if c.reachable %}<span class="badge badge-up-to-date">{{ icon("ok") }}reachable</span>{% else %}<span class="badge badge-error">{{ icon("error") }}unreachable</span><br><small>{{ c.message }}</small>{% endif %}</td>
+      <td class="cell-name" data-sort="{{ c.name }}"><span class="nowrap">{{ icon("clusters", "muted") }}<strong>{{ c.name }}</strong></span>
+        <br><small class="muted-text cluster-origin"><code>{{ c.server }}</code> · {{ c.source }}</small></td>
+      <td data-sort="{{ 1 if c.reachable else 0 }}" class="cell-status">{% if c.reachable %}<span class="badge badge-up-to-date">{{ icon("ok") }}reachable</span>{% else %}<span class="badge badge-error">{{ icon("error") }}unreachable</span><br><small>{{ c.message }}</small>{% endif %}</td>
       <td>{{ c.version or unknown }}</td>
-      <td data-sort="{{ ni }}"><a href="images?cluster={{ q }}">{{ ni }}</a></td>
-      <td data-sort="{{ s.images['outdated'] if s else 0 }}">{% if s and s.images["outdated"] %}<a href="images?cluster={{ q }}&amp;status=outdated">{{ s.images["outdated"] }}</a>{% else %}0{% endif %}</td>
-      <td data-sort="{{ nc }}"><a href="charts?cluster={{ q }}">{{ nc }}</a></td>
-      <td data-sort="{{ s.charts['outdated'] if s else 0 }}">{% if s and s.charts["outdated"] %}<a href="charts?cluster={{ q }}&amp;status=outdated">{{ s.charts["outdated"] }}</a>{% else %}0{% endif %}</td>
+      <td data-sort="{{ ni }}"><a href="images?cluster={{ q }}">{{ ni }}</a>
+        {%- if s and s.images["outdated"] %}<br><small><a href="images?cluster={{ q }}&amp;status=outdated">{{ s.images["outdated"] }} outdated</a></small>{% endif %}</td>
+      <td data-sort="{{ nc }}"><a href="charts?cluster={{ q }}">{{ nc }}</a>
+        {%- if s and s.charts["outdated"] %}<br><small><a href="charts?cluster={{ q }}&amp;status=outdated">{{ s.charts["outdated"] }} outdated</a></small>{% endif %}</td>
       <td data-sort="{{ s.critical_images if s else 0 }}">{% if s and s.critical_images %}<a class="danger" href="vulnerabilities?status=critical&amp;cluster={{ q }}">{{ s.critical_images | plural("image") }}</a>{% else %}0{% endif %}</td>
-      <td class="hide-sm"><code>{{ c.server }}</code></td><td class="hide-sm">{{ c.source }}</td>
     </tr>
   {% else %}
-    <tr><td colspan="10">No cluster discovered yet.</td></tr>
+    <tr><td colspan="6">No cluster discovered yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>

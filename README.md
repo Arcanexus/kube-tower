@@ -49,6 +49,8 @@ never updates anything, you stay in control of your GitOps workflow.
 | ![Images](docs/images/images.png) | ![Helm charts](docs/images/charts.png) |
 | **Vulnerabilities** | **Image details** |
 | ![Vulnerabilities](docs/images/vulnerabilities.png) | ![Image details](docs/images/image-detail.png) |
+| **Clusters** | **Dark theme** |
+| ![Clusters](docs/images/clusters.png) | ![Dark theme](docs/images/dark.png) |
 
 ## Quick start
 

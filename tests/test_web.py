@@ -795,8 +795,8 @@ def test_settings_sections():
 
 def test_clusters_page_has_the_figures_of_the_synthesis():
     page = _client()[0].get("/clusters").text
-    assert 'href="images?cluster=c1">2</a>' in page and 'href="images?cluster=c1&amp;status=outdated">2</a>' in page
-    assert 'href="charts?cluster=c1&amp;status=outdated">1</a>' in page
+    assert 'href="images?cluster=c1">2</a>' in page and 'href="images?cluster=c1&amp;status=outdated">2 outdated</a>' in page
+    assert 'href="charts?cluster=c1&amp;status=outdated">1 outdated</a>' in page
     assert 'href="vulnerabilities?status=critical&amp;cluster=c1">1 image</a>' in page
 
 
