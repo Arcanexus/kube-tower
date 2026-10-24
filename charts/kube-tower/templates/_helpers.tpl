@@ -76,11 +76,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- /* Names of the existing cluster Secrets referenced in the values */ -}}
+{{- /* Cluster Secrets of .Values.clusters, read by name: existing ones and the ones the chart creates. */ -}}
 {{- define "kube-tower.clusterSecretNames" -}}
 {{- $names := list }}
 {{- range .Values.clusters }}
 {{- if .existingSecret }}
 {{- $names = append $names .existingSecret }}
+{{- else if .name }}
+{{- $names = append $names (printf "%s-cluster-%s" (include "kube-tower.fullname" $) .name) }}
 {{- end }}
 {{- end }}
 {{- toJson $names }}

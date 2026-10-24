@@ -51,6 +51,8 @@ config:
       - registry.k8s.io/pause*
   clusters:
     useArgocdSecrets: true       # also scan the clusters ArgoCD knows
+    argocdSecretNames:           # read only these ArgoCD Secrets (else every Secret of argocd is readable)
+      - cluster-prod.example.com-1234567890
 
 registries:
   credentials:
@@ -180,9 +182,12 @@ spec:
         config:
           refreshInterval: 6h
           clusters:
-            # Scan every cluster registered in ArgoCD, reusing its cluster Secrets
+            # Scan the clusters registered in ArgoCD, reusing their cluster Secrets (by name, see
+            # docs/clusters.md: without argocdSecretNames every Secret of argocd is readable)
             useArgocdSecrets: true
             argocdNamespace: argocd
+            argocdSecretNames:
+              - cluster-prod.example.com-1234567890
           images:
             ignore:
               - registry.k8s.io/pause*
@@ -250,8 +255,10 @@ A missing Secret keeps the pod in `ContainerCreating`: create the Secrets before
 or remove the matching entries.
 
 **ArgoCD clusters.** With `useArgocdSecrets: true`, the chart adds a Role in the `argocd`
-namespace so kube-tower can read the ArgoCD cluster Secrets: every remote cluster ArgoCD deploys
-to appears in the dashboards without registering it twice. The credentials ArgoCD uses must be
+namespace so kube-tower can read the ArgoCD cluster Secrets: the remote clusters ArgoCD deploys
+to appear in the dashboards without registering them twice. Name them in `argocdSecretNames`:
+otherwise the Role lists Secrets, which gives read access to every Secret of the ArgoCD namespace
+(see [clusters](clusters.md#reusing-argocd-cluster-secrets)). The credentials ArgoCD uses must be
 allowed to list pods, nodes, workloads and Applications, see [clusters](clusters.md).
 
 **OCI repository in ArgoCD.** Depending on your ArgoCD version, an OCI Helm source may need a
@@ -324,10 +331,18 @@ To follow the development version, point `source` at the git repository instead:
 
 On the cluster it runs in, kube-tower gets a ClusterRole with `get`/`list` on pods, nodes,
 deployments, statefulsets, daemonsets, cronjobs, `applications.argoproj.io` and
-`vulnerabilityreports.aquasecurity.github.io` (Trivy Operator), plus `list` on
-Secrets **of its own namespace only** (cluster registration), plus `get` on the existing cluster
-Secrets named in `clusters[].existingSecret`. With
-`config.clusters.useArgocdSecrets: true` it can also list Secrets in the ArgoCD namespace.
+`vulnerabilityreports.aquasecurity.github.io` (Trivy Operator), plus `get` on the cluster Secrets
+of its namespace named in `clusters[]` and `config.clusters.secretNames`, and on nothing else.
+Install it in a namespace of its own.
+
+Two options widen this, each reading **every** Secret of a namespace (Kubernetes RBAC cannot
+restrict `list` to a label):
+
+- `config.clusters.listSecrets: true`: `list` on the Secrets of its namespace, to find labelled
+  cluster Secrets;
+- `config.clusters.useArgocdSecrets: true` without `argocdSecretNames`: `list` on the Secrets of
+  the ArgoCD namespace. With `argocdSecretNames`, only `get` on these Secrets.
+
 Nothing is ever created, patched or deleted.
 
 ## Upgrading

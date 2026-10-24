@@ -41,12 +41,18 @@ class ClustersSettings:
     in_cluster_name: str = "in-cluster"
     # Namespace where cluster secrets live; empty means the pod's own namespace.
     namespace: str = ""
-    secret_label_selector: str = "kube-tower.arcanexus.com/secret-type=cluster"
-    # Extra cluster secrets of that namespace, read by name whatever their labels.
+    # Cluster secrets of that namespace, read by name whatever their labels (`get` on these Secrets only).
     secret_names: list[str] = field(default_factory=list)
+    # Also list the Secrets of that namespace carrying secretLabelSelector. Listing needs `list` on
+    # secrets, which reads every Secret of the namespace (RBAC cannot filter on labels): off by default.
+    list_secrets: bool = False
+    secret_label_selector: str = "kube-tower.arcanexus.com/secret-type=cluster"
     # Also reuse ArgoCD cluster secrets (label argocd.argoproj.io/secret-type=cluster).
     use_argocd_secrets: bool = False
     argocd_namespace: str = "argocd"
+    # ArgoCD cluster secrets read by name. Empty: they are listed, which reads every Secret of the
+    # ArgoCD namespace (argocd-secret, repository credentials...).
+    argocd_secret_names: list[str] = field(default_factory=list)
     request_timeout: int = 30
     # Commands that kubeconfig exec plugins may run (e.g. /opt/kube-tower/bin/kubelogin for AKS), as
     # written in the kubeconfig. Empty: exec plugins are refused (a cluster Secret could run any command).

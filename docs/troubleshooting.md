@@ -9,6 +9,8 @@ every request).
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `cannot list pods: 403 Forbidden` | The ServiceAccount used for that cluster lacks a permission | Apply `deploy/remote-cluster-rbac.yaml` on remote clusters; check `rbac.create` locally |
+| A cluster Secret is ignored (cluster missing from the Clusters tab) | Cluster Secrets are read by name: a labelled Secret created outside the chart is not listed | Reference it with `clusters[].existingSecret` or `config.clusters.secretNames`, or set `config.clusters.listSecrets: true` (see [clusters](clusters.md#finding-cluster-secrets-by-label-optional)) |
+| `cannot list secret cluster secrets in namespace …: 403` | `config.clusters.listSecrets` (or `useArgocdSecrets` without `argocdSecretNames`) is set but the Role does not allow `list` | Set it in the Helm values (the chart grants `list`), not only in the ConfigMap |
 | Cluster `unreachable` | Wrong `server`, network policy or firewall, expired token, bad CA | Test from the pod: `kubectl -n kube-tower exec deploy/kube-tower -- python -c "import urllib.request,ssl;print(urllib.request.urlopen('https://<server>/version', context=ssl._create_unverified_context()).read())"` |
 | `exec / AWS auth is not supported in the ArgoCD format` | The ArgoCD-format cluster Secret uses `execProviderConfig` or `awsAuthConfig` | Use a ServiceAccount token (`bearerToken`), or a `kubeconfig` key with an allowed exec plugin, see [managed clusters](clusters.md#managed-clusters-eks-gke-aks-exec-plugins) |
 | `exec command '…' is not allowed` | The kubeconfig of the cluster Secret runs an exec plugin not listed in `clusters.execCommands` | Add the command, exactly as written in the kubeconfig, to `config.clusters.execCommands`, or use a ServiceAccount token |

@@ -75,9 +75,39 @@ def test_cluster_secrets_created_or_referenced(tmp_path):
     assert ("Secret", "kt-kube-tower-cluster-") not in docs
     assert len([k for k in docs if k[0] == "Secret"]) == 2
 
-    assert app_settings(tmp_path, docs).clusters.secret_names == ["other", "staging-cluster"]
+    # Every cluster Secret, created by the chart or not, is read by name: no list on secrets
+    names = ["other", "staging-cluster", "kt-kube-tower-cluster-prod", "kt-kube-tower-cluster-lab"]
+    settings = app_settings(tmp_path, docs)
+    assert settings.clusters.secret_names == names and settings.clusters.list_secrets is False
     rules = docs[("Role", "kt-kube-tower-cluster-secrets")]["rules"]
-    assert {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["other", "staging-cluster"], "verbs": ["get"]} in rules
+    assert rules == [{"apiGroups": [""], "resources": ["secrets"], "resourceNames": names, "verbs": ["get"]}]
+
+
+def test_no_secret_access_by_default(tmp_path):
+    docs = render(tmp_path, {})
+    assert not [k for k in docs if k[0] in ("Role", "RoleBinding")]
+
+
+def test_list_cluster_secrets(tmp_path):
+    docs = render(tmp_path, {"config": {"clusters": {"listSecrets": True}}})
+    assert docs[("Role", "kt-kube-tower-cluster-secrets")]["rules"] == [
+        {"apiGroups": [""], "resources": ["secrets"], "verbs": ["list"]}
+    ]
+    assert ("RoleBinding", "kt-kube-tower-cluster-secrets") in docs
+    assert app_settings(tmp_path, docs).clusters.list_secrets is True
+
+
+def test_argocd_secrets_listed_or_read_by_name(tmp_path):
+    docs = render(tmp_path, {"config": {"clusters": {"useArgocdSecrets": True}}})
+    assert docs[("Role", "kt-kube-tower-argocd-clusters")]["rules"] == [
+        {"apiGroups": [""], "resources": ["secrets"], "verbs": ["list"]}
+    ]
+    names = ["cluster-prod-123", "cluster-lab-456"]
+    docs = render(tmp_path, {"config": {"clusters": {"useArgocdSecrets": True, "argocdSecretNames": names}}})
+    assert docs[("Role", "kt-kube-tower-argocd-clusters")]["rules"] == [
+        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": names, "verbs": ["get"]}
+    ]
+    assert app_settings(tmp_path, docs).clusters.argocd_secret_names == names
 
 
 def test_cluster_without_server_fails(tmp_path):

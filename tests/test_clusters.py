@@ -116,7 +116,7 @@ def test_refused_exec_kubeconfig_reported_in_discovery():
 
 class FakeRegistry(ClusterRegistry):
     def __init__(self, secrets):
-        super().__init__(ClustersSettings(in_cluster=False, namespace="kube-tower"))
+        super().__init__(ClustersSettings(in_cluster=False, namespace="kube-tower", list_secrets=True))
         self.secrets = secrets
 
     def _list_secrets(self, namespace, selector):
@@ -187,7 +187,7 @@ def test_discover_in_cluster_and_argocd_secrets(monkeypatch):
             return ClusterStatus(cluster.name, cluster.server, cluster.source, reachable=True)
 
     monkeypatch.setattr(clusters_module, "current_namespace", lambda: "kube-tower")
-    clusters, statuses = Registry(ClustersSettings(use_argocd_secrets=True)).discover()
+    clusters, statuses = Registry(ClustersSettings(list_secrets=True, use_argocd_secrets=True)).discover()
     assert [c.name for c in clusters] == ["in-cluster"]
     assert calls[0][0] == "kube-tower" and calls[1][0] == "argocd"
     assert statuses[0].message == "Forbidden"
@@ -217,10 +217,62 @@ def test_discover_named_secrets(monkeypatch):
         def probe(self, cluster):
             return ClusterStatus(cluster.name, cluster.server, cluster.source, reachable=True)
 
-    settings = ClustersSettings(in_cluster=False, namespace="kube-tower", secret_names=["prod-creds", "labelled", "missing"])
+    settings = ClustersSettings(
+        in_cluster=False, namespace="kube-tower", secret_names=["prod-creds", "labelled", "missing"], list_secrets=True
+    )
     clusters, statuses = Registry(settings).discover()
-    assert [c.name for c in clusters] == ["a", "prod"]
+    assert [c.name for c in clusters] == ["prod", "a"]  # the listed copy of "labelled" is skipped (same server)
     assert ("missing", "Not Found") in [(s.name, s.message) for s in statuses]
+
+
+class NamedOnlyRegistry(ClusterRegistry):
+    """Fails on any list: reading by name must never list Secrets."""
+
+    def __init__(self, settings, secrets):
+        super().__init__(settings)
+        self.secrets = secrets
+        self.reads = []
+
+    def local_client(self):
+        return client.ApiClient(client.Configuration(host="https://local"))
+
+    def _list_secrets(self, namespace, selector):
+        raise AssertionError(f"secrets listed in {namespace}")
+
+    def _read_secret(self, namespace, name):
+        self.reads.append((namespace, name))
+        return self.secrets[name]
+
+    def probe(self, cluster):
+        from kube_tower.models import ClusterStatus
+
+        return ClusterStatus(cluster.name, cluster.server, cluster.source, reachable=True)
+
+
+def test_secrets_read_by_name_only_by_default():
+    secrets = {"prod": _secret("prod", name="prod", server="https://prod", config="{}")}
+    settings = ClustersSettings(in_cluster=False, namespace="kube-tower", secret_names=["prod"])
+    clusters, _ = NamedOnlyRegistry(settings, secrets).discover()
+    assert [c.name for c in clusters] == ["prod"]
+
+
+def test_argocd_secrets_read_by_name():
+    secrets = {
+        "prod": _secret("prod", name="prod", server="https://prod", config="{}"),
+        "cluster-argo-1": _secret("cluster-argo-1", name="argo", server="https://argo", config="{}"),
+    }
+    settings = ClustersSettings(
+        in_cluster=False,
+        namespace="kube-tower",
+        secret_names=["prod"],
+        use_argocd_secrets=True,
+        argocd_namespace="gitops",
+        argocd_secret_names=["cluster-argo-1"],
+    )
+    registry = NamedOnlyRegistry(settings, secrets)
+    clusters, _ = registry.discover()
+    assert [(c.name, c.source) for c in clusters] == [("prod", "secret"), ("argo", "argocd-secret")]
+    assert registry.reads == [("kube-tower", "prod"), ("gitops", "cluster-argo-1")]
 
 
 def test_read_secret_without_local_client():
