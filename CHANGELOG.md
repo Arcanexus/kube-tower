@@ -87,6 +87,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A click on another row while a detail panel was open only closed the panel: the click is now passed
+  on to the row, which opens its details at once.
 - Pre-release versions are ordered like semver (`includePrerelease: true`): numeric identifiers are
   compared as numbers, so `1.0.0-rc.10` is newer than `1.0.0-rc.9` (it was compared as text).
 - Security: the image given to Trivy comes after `--` and an image reference starting with `-` is

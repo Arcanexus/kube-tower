@@ -12,6 +12,14 @@ function ktFilterStatus(status) {
 function ktCloseDetail() {
   document.getElementById("detail").innerHTML = "";
 }
+// A click beside the panel lands on its backdrop, which closes the panel: pass the click on to what is
+// below, so another row opens its details at once instead of needing a second click.
+document.addEventListener("click", (e) => {
+  if (!e.target.classList || !e.target.classList.contains("drawer-backdrop")) return;
+  ktCloseDetail();
+  const below = document.elementFromPoint(e.clientX, e.clientY);
+  if (below) below.click();
+});
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") ktCloseDetail();
 });
