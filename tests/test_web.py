@@ -338,6 +338,9 @@ def test_image_detail():
     client, _ = _client()
     detail = client.get("/images/detail", params={"ref": "docker.io/library/redis:latest"}).text
     assert "<html" not in detail and 'role="dialog"' in detail
+    # a click on the backdrop (on another row) is passed on, so one click opens that row
+    assert 'class="drawer-backdrop" onclick="ktCloseDetail()"' in detail
+    assert 'contains("drawer-backdrop")' in client.get("/static/kube-tower.js").text
     assert "https://hub.docker.com/_/redis/tags" in detail
     assert "sha256:new" in detail and "Pin a version" in detail and "Versioning" not in detail
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
