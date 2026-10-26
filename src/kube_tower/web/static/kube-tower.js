@@ -26,7 +26,7 @@ document.addEventListener("htmx:beforeRequest", (e) => {
     panel.setAttribute("aria-busy", "true");
   } else {
     detail.innerHTML = '<div class="drawer-backdrop" onclick="ktCloseDetail()"></div>'
-      + '<article class="drawer-panel drawer-loading" aria-busy="true">Loading the details…</article>';
+      + '<article class="drawer-panel drawer-loading" aria-busy="true">Loading…</article>';
   }
 });
 document.addEventListener("htmx:beforeSwap", (e) => {
