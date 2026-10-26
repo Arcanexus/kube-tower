@@ -196,6 +196,19 @@ class InternalSettings:
 
 
 @dataclass
+class RedisSettings:
+    """Optional Redis / Valkey where the controller keeps the snapshot: a new controller (restart, or a standby
+    taking over) starts with it instead of an empty inventory. Unused while `url` is empty."""
+
+    # redis://host:6379/0, or rediss:// for TLS.
+    url: str = ""
+    # Env var holding the password (empty: no password, or the one in the URL).
+    password_env: str = "KUBE_TOWER_REDIS_PASSWORD"
+    # Key of the snapshot: change it when several kube-tower installations share one Redis.
+    key: str = "kube-tower:snapshot"
+
+
+@dataclass
 class Settings:
     roles: list[str] = field(default_factory=lambda: ["all"])
     refresh_interval: int = 6 * 3600
@@ -207,6 +220,7 @@ class Settings:
     registries: RegistriesSettings = field(default_factory=RegistriesSettings)
     git: GitSettings = field(default_factory=GitSettings)
     internal: InternalSettings = field(default_factory=InternalSettings)
+    redis: RedisSettings = field(default_factory=RedisSettings)
 
     @property
     def distributed(self) -> bool:
@@ -252,6 +266,8 @@ def load_settings(path: str | None = None) -> Settings:
         settings.roles = [r.strip() for r in roles.split(",") if r.strip()]
     if url := os.environ.get("KUBE_TOWER_CONTROLLER_URL"):
         settings.internal.controller_url = url
+    if url := os.environ.get("KUBE_TOWER_REDIS_URL"):
+        settings.redis.url = url
     settings.roles = check_roles(settings.roles)
     check_internal(settings)
     return settings

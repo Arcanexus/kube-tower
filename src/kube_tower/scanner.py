@@ -121,6 +121,11 @@ class Scanner:
         self.store.set(snap)
         self.revision += 1
 
+    def _changed(self) -> None:
+        """The snapshot was changed in place: the UIs and the store take it again."""
+        self.store.changed()
+        self.revision += 1
+
     # State of the worker of this process (Trivy results, registry tokens...), kept between scans.
 
     @property
@@ -285,7 +290,7 @@ class Scanner:
                 r.vulnerabilities = vulnerabilities
             snap.errors += result.errors
         snap.vulnerabilities_finished_at = datetime.now(UTC)
-        self.revision += 1
+        self._changed()
         scanned = sum(1 for r in snap.images if r.vulnerabilities and not r.vulnerabilities.message)
         log.info("vulnerability scan finished: %d/%d images with a report", scanned, len(snap.images))
 
@@ -454,7 +459,7 @@ class Scanner:
         finally:
             self.rescanning.discard(key)
             self._rescan_started.pop(key, None)
-            self.revision += 1
+            self._changed()
 
     async def _rescan_image(self, report: ImageReport, versions: bool, vulnerabilities: bool, others: set[tuple]) -> None:
         """Run in a worker thread's event loop. Results are computed apart, then set at once (no half-updated row)."""
@@ -600,6 +605,11 @@ class Scanner:
             log.exception("scan failed")
 
     async def run_forever(self) -> None:
+        if (finished := self.snapshot.finished_at) is not None:  # read from the store (Redis)
+            wait = self.settings.refresh_interval - (datetime.now(UTC) - finished).total_seconds()
+            if wait > 0:
+                log.info("the stored snapshot was scanned at %s: next scan in %ds", finished, wait)
+                await asyncio.sleep(wait)
         while True:
             await self._safe_scan()
             await asyncio.sleep(self.settings.refresh_interval)
