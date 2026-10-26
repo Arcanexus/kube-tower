@@ -9,15 +9,16 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import yaml
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from kube_tower import __version__
 from kube_tower.administration import unused_node_images
-from kube_tower.config import Settings
+from kube_tower.config import ROLES, Settings
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status, Usage
+from kube_tower.processes import roles_status
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
 from kube_tower.web.metrics import image_update
@@ -566,27 +567,41 @@ def mount(app: FastAPI) -> None:
             return Response(status_code=404)
         return render_detail(request, "_chart_detail", chart_key(report), c=report)
 
-    async def _log_lines(request: Request, after: int, level: str, q: str):
-        """Lines after `after` matching the filters, and the sequence number to tail from."""
+    async def _log_lines(request: Request, after: int, level: str, q: str, roles: list[str]):
+        """Lines after `after` matching the filters, and the sequence number to tail from. With roles, the
+        lines of the processes running one of them (distributed mode: every pod sends its lines to the controller)."""
         minimum = LOG_LEVELS.index(level) if level in LOG_LEVELS else 0
         lines = await request.app.state.backend.log_lines(after)
         matching = [
             line
             for line in lines
             if (LOG_LEVELS.index(line.level) if line.level in LOG_LEVELS else 0) >= minimum
-            and _matches(f"{line.logger} {line.message}", q)
+            and _matches(f"{line.source} {line.logger} {line.message}", q)
+            and (not roles or set(roles) & set(line.roles))
         ]
         return matching, lines[-1].seq if lines else after
 
+    def _log_context(request: Request, level: str, q: str, roles: list[str]) -> dict:
+        roles = [r for r in roles if r in ROLES]
+        return {
+            "level": level,
+            "q": q,
+            "roles": roles,
+            "role_query": "".join(f"&role={r}" for r in roles),
+            "distributed": request.app.state.settings.distributed,
+        }
+
     @app.get("/logs", response_class=HTMLResponse, include_in_schema=False)
-    async def logs(request: Request, level: str = "INFO", q: str = ""):
-        lines, after = await _log_lines(request, 0, level, q)
-        return render(request, "logs", tab="logs", lines=lines, after=after, level=level, q=q, levels=LOG_LEVELS)
+    async def logs(request: Request, level: str = "INFO", q: str = "", role: list[str] = Query(default=[])):  # noqa: B008
+        context = _log_context(request, level, q, role)
+        lines, after = await _log_lines(request, 0, level, q, context["roles"])
+        return render(request, "logs", tab="logs", lines=lines, after=after, levels=LOG_LEVELS, all_roles=ROLES, **context)
 
     @app.get("/logs/tail", response_class=HTMLResponse, include_in_schema=False)
-    async def logs_tail(request: Request, after: int = 0, level: str = "INFO", q: str = ""):
-        lines, after = await _log_lines(request, after, level, q)
-        return render(request, "_log_tail", lines=lines, after=after, level=level, q=q)
+    async def logs_tail(request: Request, after: int = 0, level: str = "INFO", q: str = "", role: list[str] = Query(default=[])):  # noqa: B008
+        context = _log_context(request, level, q, role)
+        lines, after = await _log_lines(request, after, level, q, context["roles"])
+        return render(request, "_log_tail", lines=lines, after=after, **context)
 
     @app.get("/clusters", response_class=HTMLResponse, include_in_schema=False)
     async def clusters(request: Request):
@@ -616,6 +631,7 @@ def mount(app: FastAPI) -> None:
         backend = request.app.state.backend
         images, vulnerabilities, charts = backend.failed_items()
         busy = bool(backend.locked or backend.rescanning or backend.admin_running)
+        processes = backend.processes()
         response = templates.TemplateResponse(
             request,
             "administration.html" if full else "_administration.html",
@@ -633,6 +649,8 @@ def mount(app: FastAPI) -> None:
                 "trivy_settings": request.app.state.settings.vulnerabilities,
                 "notice": notice,
                 "error": error,
+                "processes": processes,
+                "roles_status": roles_status(processes),
             },
         )
         if request.query_params.get("polling") and not busy:
@@ -646,6 +664,13 @@ def mount(app: FastAPI) -> None:
             await backend.refresh_trivy_status()
         fragment = request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "administration"
         return render_administration(request, full=not fragment)
+
+    @app.get("/administration/processes", response_class=HTMLResponse, include_in_schema=False)
+    async def administration_processes(request: Request):
+        processes = request.app.state.backend.processes()
+        return templates.TemplateResponse(
+            request, "_processes.html", {"processes": processes, "roles_status": roles_status(processes)}
+        )
 
     @app.get("/maintenance", include_in_schema=False)
     async def maintenance():

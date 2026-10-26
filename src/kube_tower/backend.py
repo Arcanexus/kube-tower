@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -20,6 +21,7 @@ from kube_tower.administration import Administration, ConnectivityReport
 from kube_tower.config import Settings, internal_token
 from kube_tower.logbuffer import LogBuffer, LogLine
 from kube_tower.models import ChartReport, ImageReport, Snapshot, decode, encode
+from kube_tower.processes import Processes, ProcessInfo
 from kube_tower.registry.auth import AuthResult, CredentialStatus, resolve_credentials
 from kube_tower.scanner import Activity, Scanner, can_rescan_vulnerabilities, failed_items, same_name_images
 from kube_tower.trivy import TrivyStatus
@@ -82,14 +84,29 @@ class Backend(Protocol):
     # The last log lines of the process with the controller (Logs page), after this sequence number
     async def log_lines(self, after: int = 0) -> list[LogLine]: ...
 
+    def processes(self) -> list[ProcessInfo]: ...  # the processes (pods) of the installation and their state
+
 
 class LocalBackend:
     """Every role in this process: the Scanner and the Administration of the process, as before."""
 
-    def __init__(self, scanner: Scanner, administration: Administration, log_buffer: LogBuffer | None = None):
+    def __init__(
+        self,
+        scanner: Scanner,
+        administration: Administration,
+        log_buffer: LogBuffer | None = None,
+        processes: Processes | None = None,
+        state: Callable[[], str] = lambda: "active",
+    ):
         self.scanner = scanner
         self.administration = administration
         self.log_buffer = log_buffer or LogBuffer()
+        # The other processes, as they report to this controller; `state` is the one of this process.
+        self.process_registry = processes or Processes(scanner.settings.roles)
+        self.process_state = state
+
+    def processes(self) -> list[ProcessInfo]:
+        return self.process_registry.list(self.process_state())
 
     async def log_lines(self, after: int = 0) -> list[LogLine]:
         return self.log_buffer.since(after)
@@ -219,6 +236,7 @@ class LocalBackend:
             trivy_message=self.trivy_message,
             connectivity=self.connectivity,
             admin_running=sorted(self.admin_running),
+            processes=self.processes(),
             snapshot=self.snapshot if revision != scanner.revision or activities else None,
         )
 
@@ -269,6 +287,7 @@ class BackendState:
     trivy_message: str | None = None
     connectivity: ConnectivityReport | None = None
     admin_running: list[str] = field(default_factory=list)
+    processes: list[ProcessInfo] = field(default_factory=list)
     snapshot: Snapshot | None = None
 
 
@@ -431,6 +450,9 @@ class RemoteBackend:
 
     async def test_connectivity(self) -> str | None:
         return await self._action("connectivity")
+
+    def processes(self) -> list[ProcessInfo]:
+        return self.state.processes
 
     async def log_lines(self, after: int = 0) -> list[LogLine]:
         try:

@@ -73,7 +73,7 @@ git:
   tokenEnv: GIT_TOKEN
 internal:                      # between the processes, when the roles run apart
   port: 8081                   # internal API of the controller
-  controllerUrl: ""            # where worker and trivy processes reach it
+  controllerUrl: ""            # where the other processes reach the active controller
   tokenEnv: KUBE_TOWER_INTERNAL_TOKEN
   taskTimeout: 30m             # a task not answered by then is given to another process
   batchSize: 50                # images or charts per task: a scan is shared by the worker and trivy processes
@@ -123,8 +123,9 @@ run apart:
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
 
-The Logs page shows the lines of the controller, with the warnings and errors of the worker and
-trivy processes, prefixed with their pod name. When Trivy runs in trivy processes, the Administration
+Every process but the active controller reports to it every 5 seconds (`internal.controllerUrl`,
+standby controllers included): the Administration page shows the state of each role and process, and
+the Logs page the lines of every process with its pod name, filtered by role. When Trivy runs in trivy processes, the Administration
 page reads the status of one of them; a database update runs in one of them and the others refresh
 theirs before their next task, and a cleared cache is forgotten by each one at its next task. The
 connectivity test runs in the controller.

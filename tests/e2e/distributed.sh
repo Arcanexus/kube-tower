@@ -78,6 +78,17 @@ done
 fetch deploy/"$RELEASE"-ui http://127.0.0.1:8080/ | grep -q kube-tower
 fetch deploy/"$RELEASE"-ui http://"$RELEASE"-internal:8080/metrics | grep -q kube_tower_image_outdated
 
+log "every pod reports to the controller"
+pods() { kubectl -n "$NS" get pods -l 'app.kubernetes.io/component in (controller,ui,worker,trivy)' -o jsonpath='{.items[*].metadata.name}'; }
+all_reported() {
+    page=$(fetch deploy/"$RELEASE"-ui http://127.0.0.1:8080/administration/processes) || return 1
+    for pod in $(pods); do grep -q "<code>$pod</code>" <<<"$page" || return 1; done
+    ! grep -q 'process-lost' <<<"$page"
+}
+wait_for 60 "the Administration page lists every pod, none lost" all_reported
+worker_logs() { fetch deploy/"$RELEASE"-ui "http://127.0.0.1:8080/logs?role=worker" | grep -q "class=\"log-source\" title=\"Roles: worker\">$RELEASE-worker-"; }
+wait_for 60 "the Logs page shows the lines of the worker pods" worker_logs
+
 log "failover"
 images=$(snapshot | jq '.images | length')
 kubectl -n "$NS" delete pod "$first" --wait=false

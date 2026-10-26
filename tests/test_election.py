@@ -282,3 +282,38 @@ def test_election_needs_the_kubernetes_api(monkeypatch):
     settings.internal.label_pod = True
     election = create_app(settings, scanner=scanner, background=False).state.election
     assert election.identity == "kube-tower-controller-abc" and election.label.pod == "kube-tower-controller-abc"
+
+
+def test_processes_that_report_to_the_controller(monkeypatch):
+    from kube_tower import main as main_module
+
+    reporters = []
+
+    class Recorder:
+        def __init__(self, settings, buffer, roles, state=lambda: "ok"):
+            reporters.append((roles, state))
+
+        async def run_forever(self):
+            pass
+
+    monkeypatch.setattr(main_module, "Reporter", Recorder)
+    monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", "secret")
+    settings = Settings(roles=["worker"])
+    settings.internal.controller_url = "http://kube-tower-internal:8081"
+    create_app(settings, background=False)
+    assert [(roles, state()) for roles, state in reporters] == [(["worker"], "ok")]
+    create_app(Settings(roles=["all"]), scanner=FakeScanner(), background=False)  # one process: nothing to report
+    assert len(reporters) == 1
+
+    # a standby controller reports until it becomes the active one
+    settings = Settings(roles=["controller"])
+    settings.internal.leader_election = True
+    settings.internal.controller_url = "http://kube-tower-internal:8081"
+    election = FixedElection(leader=False)
+    scanner = FakeScanner()
+    scanner.worker = Worker(settings)
+    app = create_app(settings, scanner=scanner, background=False, election=election)
+    roles, state = reporters[-1]
+    assert roles == ["controller"] and state() == "standby" and app.state.backend.processes()[0].state == "standby"
+    election.leader = True
+    assert state() is None and app.state.backend.processes()[0].state == "active"

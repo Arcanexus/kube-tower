@@ -11,6 +11,8 @@
   {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
   {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
 
+  {% include "_processes.html" %}
+
   <article id="scans">
     <header>{{ icon("clock") }}In progress</header>
     {% set activities = backend.activities() %}

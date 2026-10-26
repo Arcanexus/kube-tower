@@ -78,6 +78,7 @@ flowchart TB
     isvc["Service kube-tower-internal :8081<br/>selects the active controller"] --> active
 
     ui1 & ui2 -->|"state (every 2 s), actions, logs"| isvc
+    standby -.->|"report (every 5 s)"| isvc
     w1[worker pod] & w2[worker pod] -->|"pull tasks, send results"| isvc
     tr[trivy pod ×1] -->|"pull tasks, send results"| isvc
 
@@ -100,6 +101,11 @@ flowchart TB
   result back. A task not answered within `internal.taskTimeout` is given to another pod.
 - **trivy**: one pod, so the Trivy databases are downloaded once and the results cache is shared by
   every cluster.
+- **Reports**: every pod but the active controller (standbys included) reports to the controller
+  every 5 seconds: its name, roles, version, and its new log lines. The controller keeps them for the
+  **Administration** page (state of each role and pod, task each one runs) and the **Logs** page (lines
+  of every pod, filtered by role). A pod not heard of for 30 seconds is shown as lost; a pod that stops
+  says so and leaves the list.
 - **Valkey / Redis** (optional, also in single mode): the active controller writes the snapshot
   there after each change, and reads it when it becomes active. Only the inventory is kept: a scan in
   progress and the task queue stay in the controller's memory.
@@ -136,7 +142,7 @@ image or chart, and the retry of failed items, are the same tasks on a few items
 | Port | Served by | Paths |
 | --- | --- | --- |
 | `8080` (`http`) | every pod | pages, `/api/...`, `/metrics` (controller), `/healthz`, `/readyz`, `/leaderz` |
-| `8081` (`internal`) | controller (distributed mode) | `/internal/v1/tasks/next`, `/internal/v1/tasks/{id}/result`, `/internal/v1/state`, `/internal/v1/logs`, `/internal/v1/actions/{name}` |
+| `8081` (`internal`) | controller (distributed mode) | `/internal/v1/tasks/next`, `/internal/v1/tasks/{id}/result`, `/internal/v1/state`, `/internal/v1/logs`, `/internal/v1/actions/{name}`, `/internal/v1/heartbeat` |
 | `6379` | Valkey (optional) | Redis protocol, controller only |
 
 The internal API carries registry credentials in the tasks: never expose it. With
@@ -149,7 +155,8 @@ The internal API carries registry credentials in the tasks: never expose it. Wit
 | `main.py`, `config.py` | app factory, roles, settings |
 | `scanner.py`, `tasks.py` | controller: scans split in tasks, results merged in the snapshot |
 | `worker.py`, `collectors/`, `registry/`, `checkers.py`, `trivy.py` | what the worker and trivy roles run |
-| `internal.py` | internal API, task queue, task puller of the worker and trivy processes |
+| `internal.py` | internal API, task queue, task puller of the worker and trivy processes, reports of the processes |
+| `processes.py`, `logbuffer.py` | the pods known to the controller and their state, the log lines of every pod |
 | `backend.py` | what the web layer uses: `LocalBackend` (same process) or `RemoteBackend` (ui pods) |
 | `election.py` | controller election with a Kubernetes `Lease`, active pod label |
 | `store.py` | where the snapshot is kept: memory, or memory + Redis / Valkey |

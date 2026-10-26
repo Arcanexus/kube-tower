@@ -32,6 +32,14 @@ All notable changes to this project are documented here. The format follows
   (the default) renders the same manifests as before. The active controller labels its pod
   (`internal.labelPod`), selected by the internal Service. New `/leaderz` probe: 503 on a standby
   controller. End-to-end test of the distributed mode on kind in CI.
+- Administration page: **Roles and pods** section with one tile per role (green, orange when pods are
+  lost, red when no pod runs it) and every pod with its roles, state (active / standby controller, ok,
+  lost), current task, version and start time, read again every 5 seconds. Logs page: in the
+  distributed mode, the lines of every pod with the pod name, filtered by role (**ui**, **controller**,
+  **worker**, **trivy**). Every pod but the active controller reports to it every 5 seconds
+  (`/internal/v1/heartbeat`), with its new log lines (the controller keeps the last 10,000); the
+  controller pods get `KUBE_TOWER_CONTROLLER_URL` too. The warnings of the worker and trivy pods are
+  no longer logged again by the controller with a `[pod]` prefix: they are on the Logs page with their pod.
 - Docs: [architecture](docs/architecture.md) page with diagrams of the roles, the single and distributed
   modes, the internal API and a scan step by step; ArgoCD `Application` example of the distributed mode
   with the chart's Valkey in [scaling](docs/scaling.md).

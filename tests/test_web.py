@@ -975,3 +975,72 @@ def test_web_layer_only_talks_to_the_backend():
         assert not re.search(r"state\.(scanner|administration)\b|\bscanner\.", text), path.name
     client, _ = _client()
     assert client.get("/administration").status_code == 200
+
+
+def test_roles_and_pods_on_the_administration_page():
+    from kube_tower.processes import ProcessInfo, roles_status
+
+    client, _ = _client()
+    page = " ".join(client.get("/administration").text.split())
+    # one pod runs every role
+    assert page.index('id="processes"') < page.index('id="scans"')
+    assert page.count('class="role-tile role-ok"') == 4 and "One pod runs every role" in page
+    fragment = client.get("/administration/processes").text
+    assert "<html" not in fragment and 'hx-get="administration/processes"' in fragment
+    # distributed: the controller and the pods that report to it
+    registry = client.app.state.backend.process_registry
+    registry.roles = ["controller"]
+    registry.seen("kube-tower-ui-1", ["ui"], version="1.0.0")
+    registry.seen("kube-tower-controller-1", ["controller"], "standby")
+    registry.seen("kube-tower-worker-1", ["worker"])
+    registry.task("kube-tower-worker-1", "check-images")
+    fragment = " ".join(client.get("/administration/processes").text.split())
+    assert "One pod runs every role" not in fragment
+    assert '<span aria-busy="true">check-images</span>' in fragment and "<small>1.0.0</small>" in fragment
+    assert fragment.count("dot dot-standby") == 1
+    assert 'class="role-tile role-error"' in fragment and "no pod" in fragment  # no trivy pod
+
+    now = datetime.now(UTC)
+    statuses = roles_status(
+        [
+            ProcessInfo("c0", ["controller"], "lost", seen_at=now),
+            ProcessInfo("c1", ["controller"], "standby"),
+            ProcessInfo("u0", ["ui"]),
+            ProcessInfo("u1", ["ui"], "lost"),
+            ProcessInfo("w0", ["worker", "trivy"]),
+        ]
+    )
+    assert [(s.role, s.level, s.summary) for s in statuses] == [
+        ("ui", "warn", "1 pod, 1 lost"),
+        ("controller", "error", "no active controller, 1 standby, 1 lost"),
+        ("worker", "ok", "1 pod"),
+        ("trivy", "ok", "1 pod"),
+    ]
+
+
+def test_logs_of_every_pod_filtered_by_role():
+    from kube_tower.logbuffer import LogLine
+    from kube_tower.worker import Worker
+
+    settings = Settings(roles=["ui", "controller"])
+    scanner = FakeScanner()
+    scanner.worker = Worker(settings)
+    client = TestClient(create_app(settings, scanner, background=False))
+    assert 'name="role"' in client.get("/logs").text  # distributed mode only
+    assert 'name="role"' not in _client()[0].get("/logs").text
+    buffer = client.app.state.log_buffer
+    now = datetime.now()
+    warning = LogLine(0, now, "WARNING", "kube_tower.collectors.images", "", "cannot list CronJob")
+    buffer.add([warning], "kube-tower-worker-1", ["worker"])
+    buffer.add([LogLine(0, now, "INFO", "kube_tower.trivy", "", "database updated")], "kube-tower-trivy-0", ["trivy"])
+    page = client.get("/logs").text
+    assert "cannot list CronJob" in page and "database updated" in page
+    assert '<span class="log-source" title="Roles: worker">kube-tower-worker-1</span>' in page
+    page = client.get("/logs?role=worker&role=bogus").text
+    assert "cannot list CronJob" in page and "database updated" not in page
+    assert "&amp;role=worker" in page and "bogus" not in page.split('id="log-tail"')[1]
+    assert "database updated" in client.get("/logs?q=trivy-0").text  # the text filter also matches the pod
+    after = buffer.seq
+    buffer.add([LogLine(0, now, "INFO", "kube_tower.trivy", "", "scan done")], "kube-tower-trivy-0", ["trivy"])
+    assert "scan done" not in client.get(f"/logs/tail?after={after}&role=ui&role=worker").text
+    assert "scan done" in client.get(f"/logs/tail?after={after}&role=trivy").text

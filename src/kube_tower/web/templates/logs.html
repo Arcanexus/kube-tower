@@ -1,13 +1,18 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, page_title %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("logs", "Logs", "Last logs of kube-tower, kept in memory.", "Application and scanner logs. The lowest level kept is set by logs.level in the configuration.") }}{% endblock %}
+{% block heading %}{{ page_title("logs", "Logs", "Last logs of kube-tower, kept in memory.", "Application and scanner logs, of every pod in the distributed mode (filter them by role). The lowest level kept is set by logs.level in the configuration.") }}{% endblock %}
 {% block content %}
-<form class="filters log-filters" action="logs" method="get">
+<form class="filters log-filters{% if distributed %} log-filters-roles{% endif %}" action="logs" method="get">
   <input type="search" name="q" value="{{ q }}" placeholder="Filter…" aria-label="Filter" onchange="this.form.submit()">
   <select name="level" aria-label="Minimum level" onchange="this.form.submit()">
     {% for l in levels %}<option {% if l == level %}selected{% endif %}>{{ l }}</option>{% endfor %}
   </select>
+  {% if distributed %}
+  <fieldset class="log-roles" role="group" aria-label="Roles">
+    {% for r in all_roles %}<label class="role-toggle"><input type="checkbox" name="role" value="{{ r }}" {% if r in roles %}checked{% endif %} onchange="this.form.submit()">{{ r }}</label>{% endfor %}
+  </fieldset>
+  {% endif %}
   <label class="log-follow"><input type="checkbox" id="log-pause" role="switch">Pause</label>
 </form>
 <div id="log-lines" class="log-lines">{% include "_log_lines.html" %}</div>

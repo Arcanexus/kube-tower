@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -9,14 +9,16 @@ from fastapi.testclient import TestClient
 
 from kube_tower import administration as administration_module
 from kube_tower import internal
+from kube_tower import processes as processes_module
 from kube_tower import worker as worker_module
 from kube_tower.administration import Administration
 from kube_tower.backend import UNREACHABLE, LocalBackend, RemoteBackend
 from kube_tower.config import Settings
-from kube_tower.internal import TaskPuller, create_internal_app
+from kube_tower.internal import Reporter, TaskPuller, create_internal_app
 from kube_tower.logbuffer import LogBuffer
 from kube_tower.main import create_app
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, Usage, VulnerabilityReport, encode
+from kube_tower.processes import Processes
 from kube_tower.scanner import Scanner
 from kube_tower.tasks import CheckImagesTask, CollectTask, QueueRunner, ScanVulnerabilitiesTask, TaskFailed
 from kube_tower.trivy import TrivyStatus, scans_failed
@@ -402,38 +404,98 @@ async def test_trivy_administration_in_trivy_processes(monkeypatch, caplog):
     assert backend.trivy_message == "cannot download the Trivy database: 403"
 
 
-async def test_logs_of_the_remote_processes(monkeypatch, caplog, fakes):  # noqa: F811 - fixture
-    caplog.set_level(logging.INFO, logger="kube_tower")
+async def test_logs_and_state_of_the_remote_processes(monkeypatch, fakes):  # noqa: F811 - fixture
     monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
-
-    def collect(self, cluster):
-        logging.getLogger("kube_tower.collectors.images").warning("[%s] cannot list CronJob: 403 Forbidden", cluster.name)
-        return []
-
-    monkeypatch.setattr(worker_module.ImageInventory, "collect", collect)
+    monkeypatch.setenv("POD_NAME", "kube-tower-controller-0")
     scanner = Scanner(_settings(["ui", "controller"]), TwoClusters())
     scanner.runner = runner = QueueRunner(scanner.worker, set())
     runner.loop = asyncio.get_running_loop()
+    buffer = LogBuffer(source="kube-tower-controller-0", roles=["ui", "controller"])
+    buffer.emit(logging.LogRecord("kube_tower.scanner", logging.INFO, "", 0, "scan finished", None, None))
+    backend = LocalBackend(scanner, Administration(scanner), buffer, Processes(["ui", "controller"]))
+    app = create_internal_app(runner, TOKEN, backend)
     worker = _puller(monkeypatch)
     worker.source = "kube-tower-worker-1"
-    async with _client(runner, worker) as http:
-        await _until_done(asyncio.create_task(scanner.scan()), worker, http)
-    # the warnings of the worker are logged by the controller, with the worker's name
-    assert "[kube-tower-worker-1] [a] cannot list CronJob: 403 Forbidden" in caplog.text
-    remote_log = next(r for r in caplog.records if "kube-tower-worker-1" in r.getMessage())
-    assert remote_log.name == "kube_tower.collectors.images" and remote_log.levelname == "WARNING"
+    seen = []
+    original = backend.process_registry.task
 
-    # the Logs page of a ui process shows the lines of the controller
-    buffer = LogBuffer()
-    buffer.emit(logging.LogRecord("kube_tower.scanner", logging.INFO, "", 0, "scan finished", None, None))
-    app = create_internal_app(runner, TOKEN, LocalBackend(scanner, Administration(scanner), buffer))
-    remote = RemoteBackend(_settings(["ui"]), transport=httpx.ASGITransport(app))
-    lines = await remote.log_lines()
-    assert [(line.seq, line.logger, line.message) for line in lines] == [(1, "kube_tower.scanner", "scan finished")]
-    assert await remote.log_lines(1) == []
+    def task(name, kind=""):
+        seen.append((name, kind))
+        original(name, kind)
+
+    backend.process_registry.task = task
+    transport = httpx.ASGITransport(app)
+    async with httpx.AsyncClient(transport=transport, base_url=worker.url, headers={"Authorization": f"Bearer {TOKEN}"}) as http:
+        await _until_done(asyncio.create_task(scanner.scan()), worker, http)
+    # the controller knows which task each process runs
+    assert ("kube-tower-worker-1", "collect") in seen and seen[-1] == ("kube-tower-worker-1", "")
+
+    # a worker reports its log lines, kept by the controller with the pod and its roles
+    monkeypatch.setenv("POD_NAME", "kube-tower-worker-1")
+    worker_buffer = LogBuffer(source="kube-tower-worker-1", roles=["worker"])
+    worker_buffer.emit(
+        logging.LogRecord("kube_tower.collectors.images", logging.WARNING, "", 0, "[a] cannot list CronJob", None, None)
+    )
+    reporter = Reporter(_settings(["worker"]), worker_buffer, ["worker"], transport=transport)
+    assert await reporter.report()
+    remote = buffer.since(1)
+    assert [(line.source, line.roles, line.level, line.message) for line in remote] == [
+        ("kube-tower-worker-1", ["worker"], "WARNING", "[a] cannot list CronJob")
+    ]
+    assert await reporter.report() and buffer.since(remote[-1].seq) == []  # only the new lines are sent
+    processes = backend.processes()
+    assert [(p.name, p.roles, p.state) for p in processes] == [
+        ("kube-tower-controller-0", ["ui", "controller"], "active"),
+        ("kube-tower-worker-1", ["worker"], "ok"),
+    ]
+    assert processes[1].version == "dev" and processes[1].task == "" and processes[1].alive
+
+    # a standby controller reports as such; once active it sends nothing (it keeps its own lines)
+    monkeypatch.setenv("POD_NAME", "kube-tower-controller-1")
+    standby_state = ["standby"]
+    standby = Reporter(_settings(["controller"]), LogBuffer(), ["controller"], lambda: standby_state[0], transport=transport)
+    assert await standby.report()
+    assert backend.processes()[1].state == "standby"
+    standby_state[0] = None
+    standby.buffer.emit(logging.LogRecord("kube_tower.scanner", logging.INFO, "", 0, "now active", None, None))
+    assert not await standby.report() and standby.sent == standby.buffer.seq
+
+    # processes not heard of for a while are lost, then forgotten
+    later = datetime.now(UTC) + timedelta(seconds=processes_module.LOST + 1)
+    monkeypatch.setattr(processes_module, "_now", lambda: later)
+    assert [p.state for p in backend.processes()] == ["active", "lost", "lost"]
+    much_later = datetime.now(UTC) + timedelta(seconds=processes_module.FORGET + 1)
+    monkeypatch.setattr(processes_module, "_now", lambda: much_later)
+    assert [p.name for p in backend.processes()] == ["kube-tower-controller-0"]
+
+    # the ui processes get the processes and the lines of every process
+    ui_backend = RemoteBackend(_settings(["ui"]), transport=transport)
+    monkeypatch.setattr(processes_module, "_now", lambda: datetime.now(UTC))
+    await reporter.report()
+    await ui_backend.refresh()
+    assert [p.name for p in ui_backend.processes()] == ["kube-tower-controller-0", "kube-tower-worker-1"]
+    lines = await ui_backend.log_lines()
+    assert [(line.source, line.message) for line in lines] == [
+        ("kube-tower-controller-0", "scan finished"),
+        ("kube-tower-worker-1", "[a] cannot list CronJob"),
+    ]
+    assert await ui_backend.log_lines(lines[-1].seq) == []
     ui = create_app(_settings(["ui"]), background=False)
-    ui.state.backend = remote
+    ui.state.backend = ui_backend
     assert "scan finished" in TestClient(ui).get("/logs").text
 
-    remote.http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(503)), base_url="http://c")
-    assert await remote.log_lines() == []
+    ui_backend.http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(503)), base_url="http://c")
+    assert await ui_backend.log_lines() == []
+    reporter.http = ui_backend.http
+    assert not await reporter.report()  # the controller is away: tried again at the next report
+
+    # a process that stops says so: gone at once, not shown as lost
+    reporter.http = httpx.AsyncClient(transport=transport, base_url="http://c", headers={"Authorization": f"Bearer {TOKEN}"})
+    monkeypatch.setattr(internal, "HEARTBEAT", 0.01)
+    running = asyncio.create_task(reporter.run_forever())
+    await asyncio.sleep(0.05)
+    assert "kube-tower-worker-1" in [p.name for p in backend.processes()]
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert [p.name for p in backend.processes()] == ["kube-tower-controller-0"]

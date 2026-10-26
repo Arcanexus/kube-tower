@@ -200,6 +200,11 @@ live, like `kubectl logs -f`. Filter by text or minimum level, and pause the str
 the lines logged at the configured `logs.level` or above are kept: set it to `DEBUG` to debug a
 scan.
 
+In the [distributed mode](scaling.md) the page gathers the lines of every pod: each pod sends its
+lines to the controller every 5 seconds, which keeps the last 10,000. Each line shows the pod it
+comes from (its roles on hover), and the **ui**, **controller**, **worker** and **trivy** switches
+keep the lines of the pods running these roles. The text filter also matches the pod names.
+
 | Level | What is logged |
 | --- | --- |
 | `DEBUG` | Every registry, Helm repository and git request (method, URL without query, HTTP status), registry tokens requested, Kubernetes objects listed per kind, the result of each image, chart and subchart check, cluster secrets found |
@@ -215,7 +220,8 @@ Administration actions, run in the background (the page follows them and reloads
 
 | Section | Actions |
 | --- | --- |
-| In progress | First section: what runs now, each with its start time: the two phases of the full scan (clusters and versions, then vulnerabilities with Trivy), the scans waiting for the Trivy phase of another one, the rescans and the administration actions. The scan status at the top of every page links to it |
+| Roles and pods | First section: one tile per role (**ui**, **controller**, **worker**, **trivy**), green when its pods are running, orange when some are lost, red when no pod runs it (or no controller is active); then every pod with its roles, its state (**active** / **standby** controller, **ok**, **lost** when it has not reported for 30 seconds), the task it runs, its version, start time and last report. Read again every 5 seconds. In the distributed mode each pod reports to the controller every 5 seconds; a stopped pod (e.g. replaced by a rollout) leaves the list at once, a lost one after 15 minutes. With one pod running every role, it is the only line |
+| In progress | What runs now, what runs now, each with its start time: the two phases of the full scan (clusters and versions, then vulnerabilities with Trivy), the scans waiting for the Trivy phase of another one, the rescans and the administration actions. The scan status at the top of every page links to it |
 | Scans | **Scan now** (same as the button of the scan status). A scan checks the versions first, then scans the vulnerabilities with Trivy: during this Trivy phase a new scan, *Retry what failed* and the rescans can already start (a new scan waits for the Trivy phase to end before its own one). **Retry what failed**: checks again only the image version checks, vulnerability scans and charts (or subcharts) in error in the last scan, e.g. after fixing credentials or a rate limit. One image or chart is rescanned from its detail panel (see above) |
 | Trivy | Trivy version and vulnerability database (version, build date, next update, download date). **Update the database** downloads it when a newer one is published (standalone mode; with `trivy.server.enabled` the Trivy server updates its own). Scans wait for the update. **Clear** forgets the cached scan results (kept `vulnerabilities.trivy.rescanInterval`), so the next scan scans every image again; **Clear and scan now** also starts it |
 | Connectivity | **Test the connectivity** of every cluster (Kubernetes API `/version`, cluster Secrets read again), every container registry of the last scan and every registry with credentials (`/v2/`, and a pull token for one of its repositories), every HTTP Helm repository (`index.yaml`) and the Trivy server (`/healthz`), with kube-tower's credentials. Failures say why (proxy, DNS, TLS, 401/403…) |
