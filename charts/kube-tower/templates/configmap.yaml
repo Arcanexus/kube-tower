@@ -2,6 +2,10 @@
 {{- $config := deepCopy .Values.config }}
 {{- $credentials := list }}
 {{- range $i, $c := .Values.registries.credentials }}
+{{- if and $c.provider (ne $c.provider "static") }}
+{{- /* Cloud providers: short-lived tokens from the identity of the pod, no Secret */ -}}
+{{- $credentials = append $credentials (dict "registry" (required (printf "registries.credentials[%d].registry is required" $i) $c.registry) "provider" $c.provider) }}
+{{- else }}
 {{- /* Secrets created by the chart always store the password under "password" */ -}}
 {{- $passwordKey := ternary ($c.passwordKey | default "password") "password" (not (empty $c.existingSecret)) }}
 {{- $entry := dict "registry" (required (printf "registries.credentials[%d].registry is required" $i) $c.registry) "passwordFile" (printf "/etc/kube-tower/registries/%d/%s" $i $passwordKey) }}
@@ -12,8 +16,12 @@
 {{- end }}
 {{- $credentials = append $credentials $entry }}
 {{- end }}
+{{- end }}
 {{- $registries := deepCopy ($config.registries | default dict) }}
 {{- $_ := set $registries "credentials" $credentials }}
+{{- if include "kube-tower.caConfigMapName" . }}
+{{- $_ := set $registries "caFile" "/etc/kube-tower/ca/ca.crt" }}
+{{- end }}
 {{- $_ := set $config "registries" $registries }}
 {{- /* Existing cluster Secrets referenced in .Values.clusters are read by name */ -}}
 {{- $clusters := deepCopy ($config.clusters | default dict) }}
@@ -46,3 +54,15 @@ metadata:
 data:
   config.yaml: |
     {{- toYaml $config | nindent 4 }}
+{{- if and .Values.registries.ca.pem (not .Values.registries.ca.existingConfigMap) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-ca
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+data:
+  ca.crt: |
+    {{- .Values.registries.ca.pem | nindent 4 }}
+{{- end }}

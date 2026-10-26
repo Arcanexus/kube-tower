@@ -1,10 +1,20 @@
 {% from "_macros.html" import badge, drawer, icon, links, rescan %}
 {% set query = "cluster=" ~ (c.cluster | urlencode) ~ "&namespace=" ~ (c.app_namespace | urlencode) ~ "&app=" ~ (c.application | urlencode) ~ "&chart=" ~ (c.chart | urlencode) %}
+{% macro chart_versions(version, latest) -%}
+<span class="tree-versions">{{ version or "n/a" }}{% if latest and latest != version %} <span class="arrow" aria-hidden="true">→</span> {{ latest }}{% endif %}</span>
+{%- endmacro %}
+
+{% macro subchart_item(d) -%}
+{# A subchart and its own subcharts (see ChartDependency.dependencies). #}
+<li>{{ icon("box") }}<strong>{{ d.name }}</strong> {{ chart_versions(d.version, d.latest_version) }} {{ badge(d.status) }}
+  <div class="tree-sub"><small class="tree-repo">{{ d.repository or "local" }}</small>{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</div>
+  {% if d.dependencies %}<ul>{% for s in d.dependencies %}{{ subchart_item(s) }}{% endfor %}</ul>{% endif %}
+</li>
+{%- endmacro %}
+
 {% call drawer(c.chart, c.application ~ " · " ~ c.cluster) %}
 <p>{{ badge(c.status) }}{% if c.message %} <small>{{ c.message }}</small>{% endif %}
   {% if c.worst_status != c.status %}<br><small>Subcharts: </small>{{ badge(c.worst_status) }}{% endif %}</p>
-{{ rescan([("Check versions", "api/rescan/chart?" ~ query)], "charts/detail?" ~ query, rescanning, checking_versions) }}
-{{ links(chart_links(c)) }}
 
 <h4>Chart</h4>
 <table>
@@ -14,6 +24,7 @@
   <tr><th scope="row">Repository</th><td><code>{{ c.repository }}</code></td></tr>
   {% if c.git_ref %}<tr><th scope="row">Git revision</th><td><code>{{ c.git_ref }}</code></td></tr>{% endif %}
 </table>
+{{ links(chart_links(c)) }}
 
 <h4>ArgoCD Application</h4>
 <table>
@@ -25,21 +36,14 @@
 
 <h4>Subcharts</h4>
 {% if c.dependencies %}
-<div class="overflow-auto">
-<table class="striped">
-  <thead><tr><th>Subchart</th><th>Current</th><th>Latest</th><th>Status</th></tr></thead>
-  <tbody>
-  {% for connector, d in dependency_tree(c.dependencies) %}
-    <tr>
-      <td><span class="tree">{{ connector }}</span><code>{{ d.name }}</code><br><small class="tree-repo">{{ d.repository or "local" }}</small></td>
-      <td>{{ d.version }}</td><td>{{ d.latest_version or "" }}</td>
-      <td>{{ badge(d.status) }}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
+<ul class="tree-list" aria-label="Subchart tree">
+  <li>{{ icon("charts") }}<strong>{{ c.chart }}</strong> {{ chart_versions(c.version, c.latest_version) }} {{ badge(c.status) }}
+    <ul>{% for d in c.dependencies %}{{ subchart_item(d) }}{% endfor %}</ul></li>
+</ul>
 {% else %}
 <p><small>No subchart.</small></p>
 {% endif %}
+
+<h4>Check again</h4>
+{{ rescan([("Check versions", "api/rescan/chart?" ~ query)], "charts/detail?" ~ query, rescanning, checking_versions) }}
 {% endcall %}

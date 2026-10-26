@@ -7,11 +7,36 @@
 <span class="badge badge-{{ status.value }}">{{ icon(icons[status.value]) }}{{ status.value }}</span>
 {%- endmacro %}
 
-{% macro page_title(name, title, subtitle) -%}
+{% macro page_title(name, title, subtitle, help="") -%}
+{# A short subtitle; longer explanations go in `help`, shown when hovering or focusing the help icon. #}
 <hgroup class="page-title">
   <h2>{{ icon(name) }}{{ title }}</h2>
-  <p>{{ subtitle }}</p>
+  <p>{{ subtitle }}{% if help %} <span class="help" tabindex="0" aria-label="More about this page">{{ icon("unknown") }}<span class="help-text" role="tooltip">{{ help }}</span></span>{% endif %}</p>
 </hgroup>
+{%- endmacro %}
+
+{% macro running_icon(r) -%}
+{# Whether a pod runs the image: same icon at the start of every image list. #}
+{% if r.running %}<span class="run-state" role="img" aria-label="Running" title="Running: used by a pod">{{ icon("running", "ok") }}</span>
+{%- else %}<span class="run-state" role="img" aria-label="Not running" title="Not running: no pod uses it (workload scaled to zero, CronJob between runs, or only cached on nodes)">{{ icon("not-running", "muted") }}</span>{% endif %}
+{%- endmacro %}
+
+{% macro image_name(r) -%}
+{# Registry dimmed, repository in full; one line, cut with … when too long (full name on hover). #}
+<span class="image-cell">{{ running_icon(r) }}<code class="image-name" title="{{ r.image.name }}"><span class="registry">{{ r.image.registry }}/</span>{{ r.image.repository }}</code></span>
+{%- endmacro %}
+
+{% macro version_cell(tag_value, digest_value, other="", warn=True) -%}
+{# A version and its short digest below, to compare current and latest at a glance; `other` is the digest
+   of the other column: a different digest is highlighted. #}
+<span class="version-cell"><span class="version-tag" title="{{ tag_value }}">{{ (tag(tag_value) if warn else tag_value) if tag_value else ("pinned digest" if digest_value else "—") }}</span>
+{%- if digest_value %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}" title="{{ digest_value }}">{{ digest_value | short_digest }}</small>{% endif %}</span>
+{%- endmacro %}
+
+{% macro version_cells(r) -%}
+{% set current, latest = image_versions(r) %}
+<td data-sort="{{ current[0] }}">{{ version_cell(current[0], current[1]) }}</td>
+<td data-sort="{{ latest[0] }}">{% if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False) }}{% else %}<small class="muted-text" title="The registry could not tell (see the status)">unknown</small>{% endif %}</td>
 {%- endmacro %}
 
 {% macro counters(rows, status_of, active) -%}
@@ -20,7 +45,7 @@
   {% for s in Status %}
   {% set n = rows | selectattr(status_of, "equalto", s) | list | length %}
   <button type="button" class="counter counter-{{ s.value }}" aria-pressed="{{ 'true' if s.value == active else 'false' }}"
-          title="Show only {{ s.value }}" onclick="ktFilterStatus('{{ s.value }}')">{{ badge(s) }}<strong>{{ n }}</strong></button>
+          title="Show only {{ s.value }}{{ ' (the worst status of the chart and its subcharts)' if status_of == 'worst_status' }}" onclick="ktFilterStatus('{{ s.value }}')">{{ badge(s) }}<strong>{{ n }}</strong></button>
   {% endfor %}
 </div>
 {%- endmacro %}
@@ -39,20 +64,64 @@
 {# Detail panel, loaded by htmx into #detail (see base.html). #}
 <div class="drawer-backdrop" onclick="ktCloseDetail()"></div>
 <article class="drawer-panel" role="dialog" aria-label="{{ title }}">
+  {# Drag (or arrow keys) to resize, or open full screen: until the panel is closed (the next one opens at the default size). #}
+  <div class="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize the panel" title="Drag to resize"
+       tabindex="0" onpointerdown="ktResizeStart(event)" onkeydown="ktResizeKey(event)" ondblclick="ktResizeReset()"></div>
   <header>
     <hgroup><h3>{{ title }}</h3>{% if subtitle %}<p>{{ subtitle }}</p>{% endif %}</hgroup>
-    <button type="button" class="close-detail outline secondary" onclick="ktCloseDetail()" aria-label="Close">{{ icon("x") }}</button>
+    <div class="drawer-buttons">
+      <button type="button" class="drawer-full-toggle outline secondary" onclick="ktToggleFull()" aria-label="Full screen" title="Full screen">
+        {{- icon("maximize", "when-normal") }}{{ icon("minimize", "when-full") -}}
+      </button>
+      <button type="button" class="close-detail outline secondary" onclick="ktCloseDetail()" aria-label="Close" title="Close (Esc)">{{ icon("x") }}</button>
+    </div>
   </header>
   {{ caller() }}
 </article>
+{%- endmacro %}
+
+{% macro tree_cell(connector) -%}
+{# The connector of ui.dependency_tree ("│  ├─ ") drawn with CSS lines, like the trees of the detail panels. #}
+{%- set kinds = {"│  ": "pipe", "   ": "blank", "├─ ": "tee", "└─ ": "elbow"} -%}
+{%- for i in range(0, connector | length, 3) %}<span class="tree-seg tree-{{ kinds[connector[i:i + 3]] }}" aria-hidden="true"></span>{% endfor -%}
 {%- endmacro %}
 
 {% macro links(items) -%}
 {% if items %}<p class="links">{% for label, url in items %}<a href="{{ url }}" target="_blank" rel="noopener">{{ icon("external-link") }}{{ label }}</a>{% endfor %}</p>{% endif %}
 {%- endmacro %}
 
-{% macro filters(path, q, status, cluster, snapshot) -%}
-<form class="filters" hx-get="{{ path }}" hx-target="#results" hx-push-url="true"
+{% macro sort_th(listing, index, label, desc=False, cls="") -%}
+{# A header sorting the list on the server (kube-tower.js puts the column in the filter form). #}
+<th data-sort{% if desc %}="desc"{% endif %} data-server-sort="{{ index }}"
+    {%- if listing.aria_sort(index) %} aria-sort="{{ listing.aria_sort(index) }}"{% endif %}{% if cls %} class="{{ cls }}"{% endif %}>{{ label }}</th>
+{%- endmacro %}
+
+{% macro load_more(listing, colspan, tbody=False) -%}
+{# Infinite scroll: when this last row shows, it is replaced by the next page of rows (and its own last row).
+   It also refreshes the "shown" count and the "more below" hint (out of band). #}
+{% if listing.more %}
+{% if tbody %}<tbody class="load-more" hx-get="{{ listing.more }}" hx-trigger="intersect once" hx-swap="outerHTML" hx-target="this"><tr>
+{% else %}<tr class="load-more" hx-get="{{ listing.more }}" hx-trigger="intersect once" hx-swap="outerHTML" hx-target="this">{% endif %}
+  <td colspan="{{ colspan }}"><span aria-busy="true">Loading…</span></td></tr>{% if tbody %}</tbody>{% endif %}
+{% endif %}
+{% if listing.shown > 30 %}<template>{{ list_shown(listing, True) }}{{ more_hint(listing, True) }}</template>{% endif %}
+{%- endmacro %}
+
+{% macro list_shown(listing, oob=False) -%}
+<span id="list-shown"{% if oob %} hx-swap-oob="true"{% endif %}>{% if listing.remaining > 0 %} · {{ listing.shown }} shown{% endif %}</span>
+{%- endmacro %}
+
+{% macro more_hint(listing, oob=False) -%}
+{# Stays at the bottom of the list while rows are left to load; a click scrolls down to load them. #}
+<div id="more-hint" class="more-hint"{% if oob %} hx-swap-oob="true"{% endif %}{% if listing.remaining <= 0 %} hidden{% endif %}>
+  <button type="button" class="outline secondary" onclick="ktScrollList(this)">{{ icon("arrow-down") }} {{ listing.remaining }} more below</button>
+</div>
+{%- endmacro %}
+
+{% macro filters(path, q, status, cluster, snapshot, running=none, chips=(), listing=none) -%}
+{# `running`: a "Running only" switch (images), checked when true; none: no switch.
+   `chips`: (name, label, value) of filters set by a link (e.g. from the Synthesis), shown as removable chips. #}
+<form class="filters{% if running is not none %} filters-4{% endif %}" hx-get="{{ path }}" hx-target="#results" hx-push-url="true"
       hx-trigger="input changed delay:300ms from:input[name=q], change">
   <input type="search" name="q" value="{{ q }}" placeholder="Filter…" aria-label="Filter">
   <select name="status" aria-label="Status">
@@ -63,6 +132,22 @@
     <option value="">All clusters</option>
     {% for c in snapshot.clusters %}<option {% if c.name == cluster %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
   </select>
+  {% if running is not none %}
+  <label class="filter-switch" title="Only the images that a pod runs (not the ones only declared by workloads without pods or cached on nodes)">
+    <input type="checkbox" role="switch" name="running" value="1" {% if running %}checked{% endif %}>Running only
+  </label>
+  {% endif %}
+  {% if listing %}{# Sort column of the list, set by its headers #}
+  <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
+  {% endif %}
+  {% if chips %}
+  <div class="filter-chips">
+    {% for name, label, value in chips %}
+    <span class="filter-chip">{{ label }} <strong>{{ value }}</strong><input type="hidden" name="{{ name }}" value="{{ value }}">
+      <button type="button" onclick="ktRemoveFilter(this)" aria-label="Remove the {{ label | lower }} filter" title="Remove this filter">{{ icon("x") }}</button></span>
+    {% endfor %}
+  </div>
+  {% endif %}
 </form>
 {%- endmacro %}
 

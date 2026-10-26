@@ -120,8 +120,15 @@ spec:
               readOnly: true
             {{- end }}
             {{- range $i, $c := .Values.registries.credentials }}
+            {{- if or (not $c.provider) (eq $c.provider "static") }}
             - name: registry-{{ $i }}
               mountPath: /etc/kube-tower/registries/{{ $i }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- if include "kube-tower.caConfigMapName" . }}
+            - name: registry-ca
+              mountPath: /etc/kube-tower/ca
               readOnly: true
             {{- end }}
             {{- with .Values.extraVolumeMounts }}
@@ -151,9 +158,19 @@ spec:
                 path: config.json
         {{- end }}
         {{- range $i, $c := .Values.registries.credentials }}
+        {{- if or (not $c.provider) (eq $c.provider "static") }}
         - name: registry-{{ $i }}
           secret:
             secretName: {{ include "kube-tower.registrySecretName" (dict "root" $ "index" $i) }}
+        {{- end }}
+        {{- end }}
+        {{- with include "kube-tower.caConfigMapName" . }}
+        - name: registry-ca
+          configMap:
+            name: {{ . }}
+            items:
+              - key: {{ if $.Values.registries.ca.existingConfigMap }}{{ $.Values.registries.ca.key | default "ca.crt" }}{{ else }}ca.crt{{ end }}
+                path: ca.crt
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}

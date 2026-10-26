@@ -11,6 +11,50 @@ All notable changes to this project are documented here. The format follows
 - Groundwork for horizontal scaling ([ADR 0002](docs/adr/0002-horizontal-scaling.md)): `role`
   setting (`KUBE_TOWER_ROLE`, only `all` for now) and `Snapshot.from_dict`, the inverse of the JSON
   encoding of `/api/snapshot`.
+- Images, Helm charts and Vulnerabilities load 30 rows at a time, the next ones when the bottom of the list
+  comes into view, with an animated loading row, a count of the rows shown and a "N more below" button while rows are left to load;
+  the column sort of these lists is done by the server.
+
+- Synthesis: the types of **Pending image updates** and the registries of **Images by registry** open
+  the Images page filtered on them (`images?update=major`, `images?registry=docker.io`), shown as a
+  removable chip next to the other filters.
+
+- Images page: a **Running only** switch next to the filters keeps the images that a pod runs
+  (`images?running=1`); the counters follow it.
+- Image details: **Used by** is a tree (cluster > namespace > workload > pods, then the nodes caching
+  the image), with the node of each pod; workloads without pods are flagged. Pods now record their
+  workload (`owner`) and node (`node`) in the API.
+- Helm charts: the subchart trees (charts list and chart details) are drawn with the same lines as the
+  image **Used by** tree; the chart details show each subchart's version, latest version and status in the tree.
+- Detail panels can be resized by dragging their left edge, shown by a grip (or with the arrow keys), and opened full
+  screen, as a large window centred over the page, with a button; each panel opens at the default size. A panel
+  opens at once with a loading indicator while its content arrives.
+- UI/UX review: the Images page always shows the current and the latest version with the start of
+  their digests below (a different latest digest is highlighted), also in the image panel and the
+  Synthesis; the Clusters page gets the figures of each cluster (images, charts, outdated, critical
+  CVEs) linking to the filtered lists; the Settings page shows one table per section with readable
+  durations and the values changed from the defaults (YAML kept below); a Trivy problem (binary not
+  found, unreadable status) is shown in the scan status and on the Vulnerabilities page;
+  Administration links to the API documentation, the JSON snapshot and the metrics; keyboard sorting
+  of the columns and a "Skip to content" link; lists readable on phones (one block per line,
+  secondary columns hidden).
+- Docs: screenshots of the Clusters page, the vulnerabilities of an image, the dark theme and a
+  phone; all screenshots retaken after the UI/UX review.
+
+- Settings page: an **Authentication** column per registry credential, telling whether the registry
+  accepted or refused it at the last request that sent it (scan, rescan or connectivity test), with
+  the registry's answer when refused.
+- Any registry: cloud registries get short-lived tokens from the identity of the pod with
+  `provider: aws` (Amazon ECR, IRSA or EKS Pod Identity), `gcp` (Artifact Registry and gcr.io, GKE
+  Workload Identity) or `azure` (ACR, AKS Workload Identity), without cloud SDK. Credentials can match
+  several hosts with a pattern (`*.dkr.ecr.*.amazonaws.com`). Opt-in reuse of the image pull secrets of
+  the workloads (`config.registries.useImagePullSecrets`). Private CAs (`registries.ca` in the chart,
+  `registries.caFile`) and insecure registries with plain `http://` fallback (`registries.insecure`),
+  for the version checks, the OCI Helm charts and the Trivy scans. Docker `config.json` identity
+  tokens (`az acr login`) and legacy `.dockercfg` pull secrets are read. New page docs/registries.md
+  with the method for each kind of registry (Docker Hub, ECR, Artifact Registry, ACR, Harbor,
+  Artifactory, Nexus...).
+
 - Chart: optional NetworkPolicies (`networkPolicy.enabled`) for the kube-tower pod and the Trivy
   server: only the `http` port is reachable (from `networkPolicy.ingress.from`), egress limited to DNS,
   the Trivy server and `networkPolicy.egress.ports` (443, 6443).
@@ -64,6 +108,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Pages and detail panels slow (several seconds) while a scan runs: the clusters' pods, workloads and nodes
+  are read as plain JSON instead of Kubernetes client objects (about 40 times less CPU, which the scan
+  threads share with the web server), Trivy Operator reports are read in smaller pages, and the web server
+  gets the CPU back more often. A warning is logged when it could not answer for more than a second.
+
+- A click on another row while a detail panel was open only closed the panel: the click is now passed
+  on to the row, which opens its details at once.
 - Pre-release versions are ordered like semver (`includePrerelease: true`): numeric identifiers are
   compared as numbers, so `1.0.0-rc.10` is newer than `1.0.0-rc.9` (it was compared as text).
 - Security: the image given to Trivy comes after `--` and an image reference starting with `-` is
@@ -132,6 +183,29 @@ All notable changes to this project are documented here. The format follows
   registries, Helm repositories, git hosts, clusters and cluster secrets.
 
 ### Changed
+
+- Registry rate limits (HTTP 429) are retried after the delay the registry asks for (`Retry-After`, up to
+  60 s, else a growing delay), and every request to that registry waits meanwhile instead of hitting the
+  limit again. A longer limit makes the requests to that registry fail at once until then (instead of
+  stalling the scan), with the time left in the error (`HTTP 429 Too Many Requests (retry in 90 min)`).
+  A warning is logged when Docker Hub reports no pulls left in the current window.
+- Without `Retry-After` (ghcr.io), a rate limited request waits 15 s, 30 s, then 60 s (4 times, apart
+  from `registries.retries`): ghcr.io limits the tags listed per minute (44000), which repositories with
+  tens of thousands of tags (CI builds, e.g. immich) use up.
+- `images.maxTagPages` defaults to 50 pages of 1000 tags (was 10): ghcr.io lists the tags oldest first, so
+  the recent releases of such repositories were missed. A warning is logged when a list is cut.
+
+- Clusters page: the API server and the source under the cluster name, outdated images and charts
+  under their totals, so the table fits without scrolling sideways.
+
+- UI/UX review: a Helm chart row shows the worst status of the chart and its subcharts, like the
+  counters and the filter ("chart up-to-date, subchart outdated"); vulnerability counters and the
+  Synthesis tile say they count images ("Images with critical CVEs"); darker orange badges (4.5:1
+  contrast); image names on one line with the registry dimmed; same running icon on the Images and
+  Vulnerabilities lists; one card style for the Administration and Settings sections; Refresh and
+  Scan everything become **Scan now**, the scan duration reads "took 3 min"; real plurals instead of
+  "image(s)"; shorter page subtitles with an ⓘ explanation; detail panels show the findings first and
+  the rescan buttons last.
 
 - The Maintenance page is renamed Administration: page `administration` (the old `maintenance` URL
   redirects to it) and JSON API `/api/administration/...` (was `/api/maintenance/...`).

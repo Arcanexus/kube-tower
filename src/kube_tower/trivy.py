@@ -9,6 +9,7 @@ credentials of kube-tower. Results are kept in memory and reused until `rescanIn
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
@@ -20,6 +21,8 @@ from datetime import UTC, datetime
 from kube_tower.collectors.vulnerabilities import dedupe_vulnerabilities
 from kube_tower.config import TrivySettings
 from kube_tower.models import ImageReport, Severity, Vulnerability, VulnerabilityReport
+from kube_tower.registry.auth import Credentials
+from kube_tower.registry.oci import RegistryError
 
 log = logging.getLogger(__name__)
 
@@ -135,9 +138,13 @@ def parse_trivy_version(data: dict) -> TrivyStatus:
 
 
 class TrivyScanner:
-    def __init__(self, settings: TrivySettings, credentials: dict[str, tuple[str, str]]):
+    def __init__(self, settings: TrivySettings, credentials: Credentials | dict[str, tuple[str, str]]):
         self.settings = settings
-        self.credentials = credentials
+        self.credentials = credentials if isinstance(credentials, Credentials) else Credentials(credentials)
+        # Set by the scanner from the registries settings: hosts whose TLS is not verified, and a CA bundle
+        # holding the public CAs plus registries.caFile.
+        self.insecure: list[str] = []
+        self.ca_bundle = ""
         self.cache: dict[str, VulnerabilityReport] = {}  # by scan target, kept between scans
         # The Trivy phase of a scan and the rescans run at the same time, in different threads:
         # one database download at a time.
@@ -166,7 +173,13 @@ class TrivyScanner:
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, "TRIVY_NO_PROGRESS": "true", **(env or {})},
+            env={
+                **os.environ,
+                "TRIVY_NO_PROGRESS": "true",
+                # Go programs read the CAs to trust from SSL_CERT_FILE (registries.caFile).
+                **({"SSL_CERT_FILE": self.ca_bundle} if self.ca_bundle else {}),
+                **(env or {}),
+            },
         )
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), self.settings.timeout + 60)
@@ -208,8 +221,9 @@ class TrivyScanner:
         except (ValueError, AttributeError) as exc:
             return TrivyStatus(datetime.now(UTC), message=f"unreadable trivy version output: {exc}")
 
-    def _env(self, registry: str) -> dict[str, str]:
-        if pair := self.credentials.get(registry):
+    async def _env(self, registry: str) -> dict[str, str]:
+        """The credentials of the image registry only (Trivy sends TRIVY_USERNAME/PASSWORD to the registry it pulls from)."""
+        if pair := await self.credentials.get(registry):
             return {"TRIVY_USERNAME": pair[0], "TRIVY_PASSWORD": pair[1]}
         return {}
 
@@ -218,10 +232,17 @@ class TrivyScanner:
         args = ["image", "--format", "json", "--scanners", "vuln", "--image-src", "remote", *self._common_args()]
         if self.settings.ignore_unfixed:
             args.append("--ignore-unfixed")
+        if any(fnmatch.fnmatch(report.image.registry, pattern) for pattern in self.insecure):
+            args.append("--insecure")
         if target.startswith("-"):  # an image name read from the clusters must never be taken as an option
             return VulnerabilityReport("trivy", datetime.now(UTC), digest, message=f"invalid image reference {target!r}")
         # `--` ends the options: the target is always read as an image reference.
-        code, stdout, stderr = await self._run([*args, *self.settings.extra_args, "--", target], self._env(report.image.registry))
+        try:
+            env = await self._env(report.image.registry)
+        except RegistryError as exc:
+            log.warning("trivy scan of %s skipped: %s", target, exc)
+            return VulnerabilityReport("trivy", datetime.now(UTC), digest, message=str(exc))
+        code, stdout, stderr = await self._run([*args, *self.settings.extra_args, "--", target], env)
         if code != 0:
             message = _error_message(stderr)
             log.warning("trivy scan of %s failed: %s", target, message)

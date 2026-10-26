@@ -138,6 +138,16 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 @media (max-width: 600px) { .filters { grid-template-columns: 1fr; } }
 .filters-4 { grid-template-columns: 2fr 1.5fr 1fr 1fr; }
 @media (max-width: 900px) { .filters-4 { grid-template-columns: 1fr 1fr; } }
+.filter-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: var(--pico-spacing); }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: .35rem; padding: .15rem .25rem .15rem .75rem; border-radius: 1rem;
+  background: var(--pico-primary-background); color: var(--pico-primary-inverse); font-size: .875rem;
+}
+.filter-chip button { margin: 0; padding: .1rem .3rem; width: auto; border: 0; border-radius: 1rem; background: transparent; color: inherit; }
+.filter-chip button:hover { background: rgba(255, 255, 255, .2); }
+.filter-chip .icon { margin: 0; }
+.filter-switch { display: flex; align-items: center; gap: .5rem; margin: 0 0 var(--pico-spacing, 1rem); white-space: nowrap; }
+.filter-switch input { margin: 0; }
 
 /* Status counters */
 .counters { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: 1rem; }
@@ -156,7 +166,10 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 .badge { display: inline-flex; align-items: center; padding: .1rem .5rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; white-space: nowrap; }
 .badge .icon { width: .95em; height: .95em; margin-right: .25em; vertical-align: 0; }
 .badge-up-to-date, .segment-up-to-date { background: #2e7d32; color: #fff; }
-.badge-outdated, .segment-outdated { background: #ef6c00; color: #fff; }
+/* Badges carry small white text: their orange is darker than the bar segments to keep a 4.5:1 contrast */
+.badge-outdated { background: #b85000; color: #fff; }
+.segment-outdated { background: #ef6c00; color: #fff; }
+.badge-changed { background: var(--kt-sidebar-active); color: #fff; font-weight: 500; }
 .badge-unknown, .segment-unknown { background: #757575; color: #fff; }
 .badge-error, .segment-error { background: #c62828; color: #fff; }
 
@@ -165,7 +178,8 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 @media (max-width: 600px) { .counters-5 { grid-template-columns: repeat(2, 1fr); } }
 .sev { display: inline-block; min-width: 1.8rem; padding: .1rem .4rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; text-align: center; white-space: nowrap; }
 .sev-critical, .segment-sev-critical { background: #b71c1c; color: #fff; }
-.sev-high, .segment-sev-high { background: #e65100; color: #fff; }
+.sev-high { background: #c2410c; color: #fff; }
+.segment-sev-high { background: #e65100; color: #fff; }
 .sev-medium, .segment-sev-medium { background: #f9a825; color: #222; }
 .sev-low, .segment-sev-low { background: #1565c0; color: #fff; }
 .sev-unknown, .segment-sev-unknown { background: #757575; color: #fff; }
@@ -186,7 +200,18 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--pico-table
 .chart-table tbody { border-top: 1px solid var(--pico-muted-border-color); }
 .chart-table tbody td { border-bottom: 0; }
 .chart-table tr.subchart td { padding-top: .2rem; padding-bottom: .2rem; font-size: .9em; }
-.tree { font-family: var(--pico-font-family-monospace); white-space: pre; color: var(--kt-tree); }
+/* Subchart tree of the Helm charts list: one segment per depth, its lines drawn in CSS and stretched
+   over the whole row (the cell padding is moved to the label) */
+.tree-cell { display: flex; align-items: stretch; margin: calc(var(--pico-spacing) * -.5) 0; }
+.chart-table tr.subchart .tree-cell { margin: -.2rem 0; }
+.tree-label { padding: .2rem 0; align-self: center; }
+.tree-seg { position: relative; flex: 0 0 1.1rem; }
+.tree-pipe::before, .tree-tee::before, .tree-elbow::before { content: ""; position: absolute; left: .45rem; top: 0; bottom: 0; border-left: 1px solid var(--kt-tree); }
+.tree-elbow::before { bottom: 50%; }
+.tree-tee::after, .tree-elbow::after { content: ""; position: absolute; left: .45rem; right: .15rem; top: 50%; border-top: 1px solid var(--kt-tree); }
+.tree-versions { margin: 0 .3rem; }
+.tree-sub { margin-left: 1.3rem; line-height: 1.3; }
+.tree-versions .arrow { color: var(--pico-muted-color); }
 .tree-repo { color: var(--pico-muted-color); overflow-wrap: anywhere; }
 
 /* Detail panel: slides over the content from the right */
@@ -194,8 +219,42 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--pico-table
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 10; }
 .drawer-panel {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 11; margin: 0; border-radius: 0;
-  width: min(44rem, 100vw); overflow-y: auto; padding: 1.25rem 1.5rem;
+  width: min(var(--kt-drawer-width, 44rem), 100vw); overflow-y: auto; padding: 1.25rem 1.5rem;
 }
+/* Full screen: a large window centred over the page, like a modal dialog */
+.drawer-full .drawer-backdrop { background: rgba(0, 0, 0, .55); }
+.drawer-full .drawer-panel {
+  top: 2rem; bottom: 2rem; left: 0; right: 0; margin: 0 auto; width: min(80rem, calc(100vw - 4rem));
+  border-radius: 1rem; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .35);
+}
+.drawer-full .drawer-panel > header { border-radius: 1rem 1rem 0 0; }
+@media (max-width: 700px) { .drawer-full .drawer-panel { inset: 0; width: 100vw; border-radius: 0; } }
+/* Shown at once while the content of a panel loads (kube-tower.js) */
+.drawer-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; color: var(--pico-muted-color); }
+.drawer-loading[aria-busy="true"]::before { width: 1.5rem; height: 1.5rem; margin: 0; }
+/* The left edge of the panel resizes it (not on phones, where it takes the whole width) */
+.drawer-resize { position: fixed; top: 0; bottom: 0; width: .9rem; margin-left: -1.95rem; cursor: ew-resize; z-index: 12; touch-action: none; outline: none; }
+/* Visible cues: a line along the edge and a grip in its middle, both highlighted on hover, focus and drag */
+.drawer-resize::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(50% - 1px); width: 2px; background: var(--pico-muted-border-color); transition: background .15s; }
+.drawer-resize::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: .9rem; height: 3rem; transform: translate(-50%, -50%);
+  border: 1px solid var(--pico-muted-color); border-radius: .45rem; background-color: var(--pico-card-background-color);
+  background-image: radial-gradient(circle, var(--pico-muted-color) 1.5px, transparent 2px);
+  background-size: 100% .6rem; background-position: center; background-repeat: repeat-y;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .15); transition: border-color .15s, background-color .15s;
+}
+.drawer-resize:hover::before, .drawer-resize:focus-visible::before, .drawer-resizing .drawer-resize::before { background: var(--pico-primary-background); }
+.drawer-resize:hover::after, .drawer-resize:focus-visible::after, .drawer-resizing .drawer-resize::after {
+  border-color: var(--pico-primary-background); background-image: radial-gradient(circle, var(--pico-primary-background) 1.5px, transparent 2px);
+}
+.drawer-resizing { user-select: none; cursor: ew-resize; }
+.drawer-full .drawer-resize { display: none; }
+@media (max-width: 700px) { .drawer-resize, .drawer-full-toggle { display: none; } }
+.drawer-buttons { display: flex; gap: .4rem; flex-shrink: 0; }
+.drawer-full-toggle { margin: 0; padding: .3rem .5rem; width: auto; }
+.drawer-full-toggle .icon { margin: 0; }
+.drawer-full-toggle .when-full, .drawer-full .drawer-full-toggle .when-normal { display: none; }
+.drawer-full .drawer-full-toggle .when-full { display: inline; }
 .drawer-panel > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin: -1.25rem -1.5rem 1rem; padding: 1rem 1.5rem; }
 .drawer-panel > header hgroup { margin: 0; overflow-wrap: anywhere; }
 .drawer-panel > header h3 { margin: 0; }
@@ -263,7 +322,6 @@ table.bars .bar { height: .9rem; min-width: 2px; background: var(--kt-sidebar-ac
 table.bars .bar-value { width: 1%; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Administration page */
-.administration article h3 { display: flex; align-items: center; }
 .administration-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
 .administration-row > div, .administration-row > p:first-child { flex: 1; min-width: 16rem; margin: 0; }
 .administration-row p { margin-bottom: 0; }
@@ -275,3 +333,109 @@ table.bars .bar-value { width: 1%; text-align: right; font-variant-numeric: tabu
 .notice { padding: .5rem .75rem; border-radius: .4rem; border: 1px solid; }
 .notice-ok { border-color: #2e7d32; }
 .notice-error { border-color: var(--kt-danger); color: var(--kt-danger); }
+.notice-warn { border-color: #b85000; background: rgba(239, 108, 0, .08); margin-bottom: .75rem; }
+
+/* API links of the Administration page */
+.administration .actions a[role="button"] { padding: .3rem .7rem; font-size: .85rem; margin: 0; width: auto; }
+
+/* Settings: one table per section, values changed from the defaults highlighted */
+.settings table.compact th { width: 40%; font-weight: normal; }
+.settings table.compact code { background: transparent; padding: 0; }
+.settings tr.changed > * { background: rgba(50, 108, 229, .08); }
+.settings + details { margin-top: 1rem; }
+
+/* Keyboard: a link to jump over the sidebar, visible when focused */
+.skip-link { position: absolute; left: -999px; top: .5rem; z-index: 20; padding: .4rem .8rem; border-radius: .4rem; background: var(--kt-sidebar-active); color: #fff; }
+.skip-link:focus { left: .5rem; }
+main:focus { outline: none; }
+th[data-sort]:focus-visible { outline: 2px solid var(--kt-sidebar-active); outline-offset: -2px; }
+
+/* Help icon after a page subtitle: the explanation shows below the title on hover or focus */
+.page-title { position: relative; }
+.help { cursor: help; color: var(--pico-muted-color); }
+.help:focus-visible { outline: 2px solid var(--kt-sidebar-active); border-radius: 50%; }
+.help .icon { margin: 0; }
+.help-text {
+  display: none; position: absolute; left: 0; top: 100%; z-index: 6; max-width: 40rem; margin-top: .35rem; padding: .5rem .75rem;
+  border-radius: var(--pico-border-radius); background: var(--pico-tooltip-background-color); color: var(--pico-tooltip-color);
+  font-size: .85rem; line-height: 1.4; box-shadow: var(--pico-card-box-shadow);
+}
+.help:hover .help-text, .help:focus .help-text { display: block; }
+.page-title p { margin-bottom: 0; }
+.muted-text { color: var(--pico-muted-color); }
+.nowrap { white-space: nowrap; }
+
+/* Image names: registry dimmed, one line, cut with … (full name on hover) */
+.image-cell { display: flex; align-items: center; gap: .1rem; min-width: 0; }
+.image-cell .run-state { display: inline-flex; flex-shrink: 0; }
+.run-state .icon { width: 1.15em; height: 1.15em; }
+.run-state .icon.muted { opacity: .7; }
+.image-name { display: block; min-width: 0; max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.image-name .registry { color: var(--pico-muted-color); }
+td.cell-name { max-width: 30rem; }
+
+/* Versions: the tag, its short digest below; a digest that differs from the current one is highlighted */
+.version-cell { display: inline-flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.version-tag { display: inline-block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.digest-short { font-family: var(--pico-font-family-monospace); font-size: .72rem; color: var(--pico-muted-color); }
+.digest-differs { color: #b85000; font-weight: 600; }
+[data-theme="dark"] .digest-differs { color: #ffb74d; }
+@media only screen and (prefers-color-scheme: dark) { :root:not([data-theme]) .digest-differs { color: #ffb74d; } }
+.drawer-summary { display: flex; align-items: center; gap: .75rem; font-size: 1.1rem; }
+.drawer-summary .arrow { color: var(--pico-muted-color); }
+
+/* Counters of the Vulnerabilities page: number of images */
+.counter-value { display: flex; align-items: baseline; gap: .3rem; }
+.counter-value small { color: var(--pico-muted-color); font-weight: normal; }
+
+/* Small screens: secondary columns hidden, each row of a list becomes a block (name first, then the values
+   side by side), so status and versions stay visible without scrolling sideways */
+@media (max-width: 768px) {
+  .hide-sm { display: none; }
+  table.stack-sm, table.stack-sm tbody { display: block; width: 100%; }
+  table.stack-sm thead { display: none; }
+  table.stack-sm tr { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .9rem; padding: .5rem 0; border-bottom: 1px solid var(--pico-muted-border-color); }
+  table.stack-sm td { border: 0; padding: .1rem 0; background: transparent !important; }
+  table.stack-sm td.cell-name { flex-basis: 100%; max-width: 100%; }
+  table.stack-sm td[colspan] { flex-basis: 100%; }
+  table.stack-sm tr.subchart { padding: .2rem 0 .2rem 1rem; border-bottom: 0; }
+  table.stack-sm tr.subchart td:empty { display: none; }
+  .image-name { max-width: calc(100vw - 4rem); }
+  .scan-status { max-width: 100%; }
+  .scan-state small { display: none; }
+  .page-title p { font-size: .9rem; }
+}
+@media (min-width: 769px) { td.cell-status { min-width: 13rem; } .cluster-origin { white-space: nowrap; } }
+
+/* Trees of the detail panels ("Used by" of an image, subcharts of a chart): lines drawn in CSS */
+.tree-list, .tree-list ul { list-style: none; margin: 0; padding: 0; }
+.tree-list ul { padding-left: 1.1rem; }
+.tree-list li { position: relative; margin: 0; padding: .2rem 0 .2rem .9rem; list-style: none; overflow-wrap: anywhere; }
+.tree-list > li { padding-left: 0; }
+.tree-list ul > li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--kt-tree); }
+.tree-list ul > li::after { content: ""; position: absolute; left: 0; top: 1rem; width: .65rem; border-top: 1px solid var(--kt-tree); }
+.tree-list ul > li:last-child::before { bottom: auto; height: 1rem; }
+.tree-list details { margin: 0; }
+.tree-list summary, .tree-list details[open] > summary { padding: 0; margin: 0; }
+.tree-list summary code { padding: .05rem .35rem; }
+.tree-list .icon { margin-right: .3rem; }
+.usage-kind { color: var(--pico-muted-color); text-transform: lowercase; margin-right: .2rem; }
+.usage-idle { color: var(--pico-muted-color); font-style: italic; }
+.usage-node { margin: .1rem .25rem 0 0; font-size: .8em; }
+
+/* Infinite scroll: the last row of a list loads the next page when it shows */
+.load-more td { text-align: center; color: var(--pico-muted-color); padding: 1rem; }
+.load-more [aria-busy="true"]::before { margin-right: .5rem; }
+/* "N more below": stays at the bottom of the list, over a fade, while rows are left to load. */
+.more-hint {
+  position: sticky; bottom: 0; display: flex; justify-content: center; padding: 2.5rem 0 .75rem; margin-top: -3.25rem;
+  pointer-events: none; background: linear-gradient(to bottom, transparent, var(--pico-background-color) 70%);
+}
+.more-hint[hidden] { display: none; }
+.more-hint button {
+  pointer-events: auto; width: auto; margin: 0; padding: .3rem .9rem; border-radius: 2rem; font-size: .85rem;
+  background: var(--pico-background-color); box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+}
+.more-hint .icon { animation: kt-nudge 1.6s ease-in-out infinite; }
+@keyframes kt-nudge { 50% { transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) { .more-hint .icon { animation: none; } }

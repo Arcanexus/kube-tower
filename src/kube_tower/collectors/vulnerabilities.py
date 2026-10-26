@@ -18,7 +18,9 @@ from kube_tower.registry.oci import parse_image_ref
 log = logging.getLogger(__name__)
 
 GROUP, VERSION, PLURAL = "aquasecurity.github.io", "v1alpha1", "vulnerabilityreports"
-PAGE_SIZE = 100  # reports are large (one entry per vulnerability)
+# Reports are large (one entry per vulnerability), and a page is parsed in one go holding the GIL, which
+# stalls the web pages meanwhile: small pages.
+PAGE_SIZE = 25
 
 
 def _timestamp(value: str | None) -> datetime | None:

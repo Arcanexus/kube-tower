@@ -1,20 +1,37 @@
-{% from "_macros.html" import badge, digest, drawer, icon, links, rescan, severity_counts, tag %}
+{% from "_macros.html" import badge, digest, drawer, icon, links, rescan, severity_counts, tag, version_cell %}
 {% set ref = r.image | string | urlencode %}
+{% macro usage_item(n) -%}
+{# A line of the "Used by" tree (see ui.usage_tree); clusters and namespaces fold. #}
+<li class="usage-{{ n.kind | lower }}">
+  {% if n.kind == "Cluster" %}
+  <details open><summary>{{ icon("clusters") }}<strong>{{ n.name }}</strong> <small class="muted-text">{{ n.pods | plural("pod") }}</small></summary>
+    <ul>{% for c in n.children %}{{ usage_item(c) }}{% endfor %}</ul></details>
+  {% elif n.kind == "Namespace" %}
+  <details open><summary><small class="usage-kind">namespace</small> <code>{{ n.name }}</code></summary>
+    <ul>{% for c in n.children %}{{ usage_item(c) }}{% endfor %}</ul></details>
+  {% elif n.kind == "Nodes" %}
+  {{ icon("database") }}<small class="usage-kind">cached on {{ n.children | length | plural("node") }}</small>
+  {% for c in n.children %}<code class="usage-node">{{ c.name }}</code>{% endfor %}
+  {% elif n.kind == "Pod" %}
+  {{ icon("running", "ok") }}<small class="usage-kind">Pod</small> {{ n.name }}
+  {%- if n.node %} <small class="muted-text">on {{ n.node }}</small>{% endif %}
+  {%- if n.containers %} <small class="muted-text">· {{ n.containers | join(", ") }}</small>{% endif %}
+  {% else %}
+  {{ icon("box") }}<small class="usage-kind">{{ n.kind }}</small> <strong>{{ n.name }}</strong>
+  {%- if n.containers %} <small class="muted-text">· {{ n.containers | join(", ") }}</small>{% endif %}
+  {%- if not n.pods %} <small class="usage-idle">{{ icon("not-running", "muted") }}no pod running</small>{% endif %}
+  {% if n.children %}<ul>{% for c in n.children %}{{ usage_item(c) }}{% endfor %}</ul>{% endif %}
+  {% endif %}
+</li>
+{%- endmacro %}
+
 {% call drawer(r.image.name, r.image.registry) %}
 <p>{{ badge(r.status) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
-{# Rescans cover every image with this name (all tags, used or not, new ones found on the clusters), see Scanner.rescan_image. #}
-{% set tags = "" if same_name < 2 else " (" ~ same_name ~ " tags)" %}
-{% set buttons = [("Check version" ~ ("s" if tags) ~ tags, "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false")] %}
-{% if can_rescan_vulnerabilities %}{% set buttons = buttons + [("Scan vulnerabilities" ~ tags, "api/rescan/image?ref=" ~ ref ~ "&versions=false")] %}{% endif %}
-{{ rescan(buttons, "images/detail?ref=" ~ ref, rescanning, checking_versions) }}
-{% if not rescanning %}<p><small>Rescans cover every tag of <code>{{ r.image.name }}</code>, used or not, and the new ones found on the clusters.</small></p>{% endif %}
+{% set current, latest = image_versions(r) %}
+<p class="drawer-summary" aria-label="Current and latest version">{{ version_cell(current[0], current[1]) }}<span class="arrow" aria-hidden="true">→</span>
+  {%- if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False) }}{% else %}<small class="muted-text">latest unknown</small>{% endif %}</p>
 {% if r.image.is_latest %}
 <p class="tag-latest">{{ icon("warning") }}This image uses <code>latest</code> (or no tag): the running version changes on every pull. Pin a version instead.</p>
-{% endif %}
-{{ links(registry_links(r.image)) }}
-{% if r.vulnerabilities and not r.vulnerabilities.message %}
-<p>{{ icon("shield") }}{{ severity_counts(r.vulnerabilities) }}
-  <a href="#" hx-get="vulnerabilities/detail?ref={{ ref }}" hx-target="#detail"><small>vulnerabilities</small></a></p>
 {% endif %}
 
 <h4>Versions</h4>
@@ -27,6 +44,11 @@
   <tr><th scope="row">Upgrade to</th><td><code>{{ r.image.name }}:{{ r.latest_tag }}</code></td></tr>
   {% endif %}
 </table>
+{{ links(registry_links(r.image)) }}
+{% if r.vulnerabilities and not r.vulnerabilities.message %}
+<p>{{ icon("shield") }}{{ severity_counts(r.vulnerabilities) }}
+  <a href="#" hx-get="vulnerabilities/detail?ref={{ ref }}" hx-target="#detail"><small>vulnerabilities</small></a></p>
+{% endif %}
 
 <h4>Digests</h4>
 {% set published = r.latest_digest if not r.latest_tag else r.tag_digest %}
@@ -48,15 +70,19 @@
 <p><small>{{ icon("warning") }}The tag now points to another image than the one running: the tag was pushed again since the pods started.</small></p>
 {% endif %}
 
-<h4>Used by ({{ r.usages | length }})</h4>
-<div class="overflow-auto">
-<table class="striped">
-  <thead><tr><th>Cluster</th><th>Kind</th><th>Namespace</th><th>Name</th><th>Container</th></tr></thead>
-  <tbody>
-  {% for u in r.usages | sort(attribute="cluster,kind,namespace,name") %}
-    <tr><td>{{ u.cluster }}</td><td>{{ u.kind }}</td><td>{{ u.namespace or "" }}</td><td>{{ u.name }}</td><td>{{ u.container or "" }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
+<h4>Check again</h4>
+{# Rescans cover every image with this name (all tags, used or not, new ones found on the clusters), see Scanner.rescan_image. #}
+{% set tags = "" if same_name < 2 else " (" ~ same_name ~ " tags)" %}
+{% set buttons = [("Check version" ~ ("s" if tags) ~ tags, "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false")] %}
+{% if can_rescan_vulnerabilities %}{% set buttons = buttons + [("Scan vulnerabilities" ~ tags, "api/rescan/image?ref=" ~ ref ~ "&versions=false")] %}{% endif %}
+{{ rescan(buttons, "images/detail?ref=" ~ ref, rescanning, checking_versions) }}
+{% if not rescanning %}<p><small>Rescans cover every tag of <code>{{ r.image.name }}</code>, used or not, and the new ones found on the clusters.</small></p>{% endif %}
+
+<h4>Used by</h4>
+{% set tree = usage_tree(r.usages) %}
+{% if tree %}
+<ul class="tree-list" aria-label="Where the image is used">
+  {% for c in tree %}{{ usage_item(c) }}{% endfor %}
+</ul>
+{% else %}<p><small>Not found on the clusters any more.</small></p>{% endif %}
 {% endcall %}

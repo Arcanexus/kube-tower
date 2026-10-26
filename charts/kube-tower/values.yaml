@@ -73,6 +73,13 @@ config:
       javaDb: false
     # Images never scanned (fnmatch patterns on registry/repository)
     ignore: []
+  registries:
+    # Also use the image pull secrets of the pods and workloads (read in their namespace): adds `get` on
+    # secrets in EVERY namespace to the ClusterRole. Remote clusters need it in their own RBAC.
+    useImagePullSecrets: false
+    # Registries whose TLS certificate is not verified, reached over plain http:// when they do not
+    # answer in https:// (fnmatch patterns, e.g. registry.local:5000). Prefer registries.ca below.
+    insecure: []
 
 # Remote clusters to register (see docs/clusters.md). Each entry either:
 #  - creates a Secret in the kube-tower cluster format (ArgoCD layout or kubeconfig), or
@@ -100,7 +107,15 @@ registries:
   # Applies to container registries, OCI Helm registries and HTTP Helm repositories (basic auth).
   # Either reference an existing Secret (existingSecret wins) or give the password inline and the
   # chart creates the Secret.
+  # `registry` is a host or an fnmatch pattern of hosts. Cloud registries can use the identity of the
+  # pod instead of a Secret (provider: aws, gcp or azure, see docs/registries.md).
   credentials: []
+  #  - registry: "*.dkr.ecr.*.amazonaws.com"   # Amazon ECR, IAM role of the ServiceAccount (IRSA / Pod Identity)
+  #    provider: aws
+  #  - registry: "*-docker.pkg.dev"            # Artifact Registry, GKE Workload Identity
+  #    provider: gcp
+  #  - registry: myacr.azurecr.io              # ACR, AKS Workload Identity (podLabels)
+  #    provider: azure
   #  - registry: docker.io
   #    existingSecret: dockerhub-credentials
   #    usernameKey: username   # optional, omit for token-only registries
@@ -120,6 +135,14 @@ registries:
   #  auths:
   #    docker.io:
   #      auth: "<base64 user:token>"
+
+  # CA certificates (PEM) of internal registries / Helm repositories (Harbor, Artifactory, Nexus...),
+  # trusted in addition to the public CAs by kube-tower and Trivy: an existing ConfigMap...
+  ca:
+    existingConfigMap: ""
+    key: ca.crt
+    # ...or the certificates themselves, the chart then creates the ConfigMap.
+    pem: ""
 
 git:
   # Token for private git repositories (raw Chart.yaml reads): an existing Secret...

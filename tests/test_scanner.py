@@ -721,3 +721,34 @@ async def test_activities_list_what_runs(fakes, monkeypatch):
     await asyncio.gather(*tasks)
     del scanner._rescan_started[("chart", "c")]
     assert scanner.activities() == []
+
+
+def test_ssl_context_and_ca_bundle(tmp_path, monkeypatch, caplog):
+    import certifi
+
+    assert scanner_module.ssl_context("") is True and scanner_module.ca_bundle("") == ""
+    ca = tmp_path / "ca.crt"
+    ca.write_text(open(certifi.where()).read().split("-----END CERTIFICATE-----")[0] + "-----END CERTIFICATE-----\n")
+    context = scanner_module.ssl_context(str(ca))
+    assert context.cert_store_stats()["x509_ca"] > 1
+    monkeypatch.setattr(scanner_module.tempfile, "gettempdir", lambda: str(tmp_path))
+    bundle = scanner_module.ca_bundle(str(ca))
+    assert open(bundle).read().endswith(ca.read_text())
+    assert scanner_module.ca_bundle(str(ca)) == bundle  # unchanged, not written again
+
+    scanner_module.ssl_context(str(tmp_path / "missing.crt"))
+    assert scanner_module.ca_bundle(str(tmp_path / "missing.crt")) == ""
+    assert "registries.caFile" in caplog.text and "not given to Trivy" in caplog.text
+
+
+async def test_clients_use_the_registries_settings(monkeypatch):
+    settings = Settings()
+    settings.registries.insecure = ["registry.local*"]
+    settings.registries.docker_config_path = "/none"
+    scanner = Scanner(settings, FakeRegistry())
+    scanner.pull_secrets = {"harbor.example.com": ("robot", "pw")}
+    async with scanner._clients() as (oci, _, credentials):
+        assert oci.insecure_http is not None and oci.client_for("registry.local:5000") is oci.insecure_http
+        assert await credentials.get("harbor.example.com") == ("robot", "pw")
+    assert scanner.trivy.credentials is credentials and scanner.trivy.insecure == ["registry.local*"]
+    assert credentials.tokens is scanner.registry_tokens  # cloud tokens are kept between scans

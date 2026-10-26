@@ -16,11 +16,15 @@ import contextlib
 import dataclasses
 import fnmatch
 import logging
+import ssl
+import tempfile
 import threading
 from collections.abc import AsyncIterator, Callable, Coroutine
 from datetime import UTC, datetime
 from functools import partial
+from pathlib import Path
 
+import certifi
 import httpx
 
 from kube_tower.checkers import ChartChecker, ImageChecker
@@ -30,10 +34,10 @@ from kube_tower.collectors.images import ImageInventory
 from kube_tower.collectors.vulnerabilities import collect_operator_reports, pick_report
 from kube_tower.config import Settings
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, VulnerabilityReport
-from kube_tower.registry.auth import resolve_credentials
+from kube_tower.registry.auth import AuthResults, Credentials, TokenCache, resolve_credentials
 from kube_tower.registry.helm import HelmClient, IndexCache
 from kube_tower.registry.oci import OCIClient
-from kube_tower.registry.transport import RetryingClient
+from kube_tower.registry.transport import RateLimits, RetryingClient
 from kube_tower.trivy import TrivyScanner, scan_target
 
 log = logging.getLogger(__name__)
@@ -97,6 +101,33 @@ def check_errors(snap: Snapshot) -> list[str]:
     return errors
 
 
+def ssl_context(ca_file: str) -> ssl.SSLContext | bool:
+    """The public CAs, plus those of registries.caFile (e.g. an internal Harbor or Artifactory)."""
+    if not ca_file:
+        return True
+    context = ssl.create_default_context(cafile=certifi.where())
+    try:
+        context.load_verify_locations(cafile=ca_file)
+    except (OSError, ssl.SSLError) as exc:
+        log.error("registries.caFile %s ignored, it cannot be read as PEM certificates: %s", ca_file, exc)
+    return context
+
+
+def ca_bundle(ca_file: str) -> str:
+    """A CA bundle file for Trivy: the public CAs plus registries.caFile ("" without caFile)."""
+    if not ca_file:
+        return ""
+    bundle = Path(tempfile.gettempdir()) / "kube-tower-ca-bundle.pem"
+    try:
+        content = Path(certifi.where()).read_text() + "\n" + Path(ca_file).read_text()
+        if not bundle.is_file() or bundle.read_text() != content:
+            bundle.write_text(content)
+    except OSError as exc:
+        log.error("registries.caFile %s not given to Trivy: %s", ca_file, exc)
+        return ""
+    return str(bundle)
+
+
 class Scanner:
     def __init__(self, settings: Settings, registry: ClusterRegistry | None = None):
         self.settings = settings
@@ -110,6 +141,13 @@ class Scanner:
         self.scans_total = {"success": 0, "failure": 0}  # exported as kube_tower_scans_total
         # Keeps its results between scans; registry credentials are set at each scan.
         self.trivy = TrivyScanner(settings.vulnerabilities.trivy, {})
+        # Short-lived tokens of cloud registries (ECR, Artifact Registry, ACR), kept until shortly before they expire.
+        self.registry_tokens = TokenCache()
+        # Whether each registry accepted the credentials at the last request that sent them (Settings page).
+        self.registry_auth = AuthResults()
+        self.rate_limits = RateLimits()  # registries that answered 429, kept between scans
+        # Credentials of the image pull secrets read at the last scan (registries.useImagePullSecrets).
+        self.pull_secrets: dict[str, tuple[str, str]] = {}
         self.helm_indexes = IndexCache()  # index.yaml of the Helm repositories, revalidated at each scan
         # Keys (see image_key / chart_key) of the images and charts being rescanned on their own.
         self.rescanning: set[tuple] = set()
@@ -199,7 +237,7 @@ class Scanner:
         self._clusters = {c.name: c for c in clusters}
         log.info("%d cluster(s) to scan: %s", len(clusters), ", ".join(c.name for c in clusters) or "none")
 
-        inventory = ImageInventory(self.settings.images)
+        inventory = ImageInventory(self.settings.images, self.settings.registries.use_image_pull_secrets)
         vuln = self.settings.vulnerabilities
         read_operator = self.settings.images.enabled and vuln.enabled and vuln.trivy_operator
 
@@ -224,11 +262,13 @@ class Scanner:
             for key, report in reports:
                 operator_reports.setdefault(str(key), []).append(report)
         snap.images = sorted(inventory.reports.values(), key=lambda r: str(r.image))
+        if self.settings.registries.use_image_pull_secrets:
+            self.pull_secrets = inventory.pull_secrets
         log.info("collection done: %d distinct image(s), %d Helm chart(s)", len(snap.images), len(snap.charts))
         attach_operator_reports(snap.images, operator_reports)
 
         async with self._clients() as (oci, helm, credentials):
-            log.info("registry credentials loaded for: %s", ", ".join(sorted(credentials)) or "none (anonymous access)")
+            log.info("registry credentials loaded for: %s", ", ".join(credentials.describe()) or "none (anonymous access)")
             concurrency = self.settings.registries.concurrency
             await asyncio.gather(
                 ImageChecker(oci, self.settings.images, concurrency).check_all(snap.images),
@@ -247,17 +287,34 @@ class Scanner:
         )
         return snap
 
+    def credentials(self) -> Credentials:
+        """The registry credentials, read again (Secrets may have been rotated), also given to Trivy."""
+        reg = self.settings.registries
+        credentials, _ = resolve_credentials(reg, self.registry_tokens, self.pull_secrets)
+        self.trivy.credentials = credentials
+        self.trivy.insecure = reg.insecure
+        self.trivy.ca_bundle = ca_bundle(reg.ca_file)
+        return credentials
+
     @contextlib.asynccontextmanager
-    async def _clients(self) -> AsyncIterator[tuple[OCIClient, HelmClient, dict[str, tuple[str, str]]]]:
+    async def _clients(self) -> AsyncIterator[tuple[OCIClient, HelmClient, Credentials]]:
         """Registry and Helm repository clients, with the registry credentials read again (Secrets may have been rotated)."""
         reg = self.settings.registries
-        hooks = {"response": [_log_response]}
-        async with RetryingClient(
-            timeout=reg.timeout, headers={"User-Agent": "kube-tower"}, event_hooks=hooks, retries=reg.retries
-        ) as http:
-            credentials, _ = resolve_credentials(reg)
-            self.trivy.credentials = credentials
-            oci = OCIClient(http, credentials, reg.mirrors, self.settings.images.max_tag_pages)
+        options = {
+            "timeout": reg.timeout,
+            "headers": {"User-Agent": "kube-tower"},
+            "event_hooks": {"response": [_log_response]},
+            "retries": reg.retries,
+            "rate_limits": self.rate_limits,
+        }
+        credentials = self.credentials()
+        async with contextlib.AsyncExitStack() as stack:
+            http = await stack.enter_async_context(RetryingClient(verify=ssl_context(reg.ca_file), **options))
+            # TLS certificates of registries.insecure hosts are not verified.
+            insecure = await stack.enter_async_context(RetryingClient(verify=False, **options)) if reg.insecure else None
+            oci = OCIClient(
+                http, credentials, reg.mirrors, self.settings.images.max_tag_pages, reg.insecure, insecure, self.registry_auth
+            )
             yield oci, HelmClient(http, oci, self.settings.git, self.helm_indexes), credentials
 
     async def _scan_vulnerabilities(self, snap: Snapshot) -> None:
@@ -455,7 +512,7 @@ class Scanner:
         """
         if not self.settings.images.enabled or not self._clusters:
             return []
-        inventory = ImageInventory(self.settings.images)
+        inventory = ImageInventory(self.settings.images, self.settings.registries.use_image_pull_secrets)
         clusters = list(self._clusters.values())
         results = await asyncio.gather(
             *(run_in_thread(f"rescan-{c.name}", partial(inventory.collect, c)) for c in clusters), return_exceptions=True
@@ -465,6 +522,7 @@ class Scanner:
                 log.warning("[%s] cannot read the images again: %s", cluster.name, result)
         known = {str(r.image): r for r in snap.images if r.image.name == name}
         new = []
+        self.pull_secrets = {**self.pull_secrets, **inventory.pull_secrets}
         for key, found in inventory.reports.items():
             if found.image.name != name:
                 continue
@@ -510,7 +568,7 @@ class Scanner:
             for r in todo:
                 r.vulnerabilities = VulnerabilityReport("trivy", message=message)
             return
-        self.trivy.credentials, _ = resolve_credentials(self.settings.registries)  # Secrets may have been rotated
+        self.credentials()  # Secrets may have been rotated
         for r in todo:
             self.trivy.cache.pop(scan_target(r)[0], None)  # scanned again, not read from the cache
         await self.trivy.scan_many(todo)

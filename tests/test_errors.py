@@ -11,7 +11,8 @@ def _response(status):
 def test_http_error_message_explains_the_status():
     assert http_error_message("cannot list the tags of docker.io/library/x", _response(429)) == (
         "cannot list the tags of docker.io/library/x: HTTP 429 Too Many Requests - rate limited by "
-        "registry-1.docker.io: add credentials for it (anonymous pulls are limited) or lower registries.concurrency"
+        "registry-1.docker.io, even after waiting as it asked: add credentials for it (anonymous requests are limited), "
+        "use an account with a higher limit, lower registries.concurrency or scan less often"
     )
     assert "registries.credentials" in http_hint(401, "ghcr.io")
     assert "server error" in http_hint(503, "ghcr.io")

@@ -96,10 +96,10 @@ class HelmClient:
         self.index_cache = index_cache or IndexCache()
         self._indexes: dict[str, asyncio.Future[dict]] = {}
 
-    def _auth(self, url: str) -> tuple[str, str] | None:
+    async def _auth(self, url: str) -> tuple[str, str] | None:
         """Basic auth for private HTTP Helm repositories, from the per registry credentials (https:// only)."""
         host = normalize_host(url)
-        credentials = self.oci.credentials.get(host)
+        credentials = await self.oci.credentials.get(host)
         if credentials:
             require_https(url, f"the Helm repository of {host}, which has credentials in registries.credentials,")
         return credentials
@@ -113,9 +113,9 @@ class HelmClient:
 
     async def _fetch_index(self, repository: str) -> dict:
         cached = self.index_cache.get(repository)
-        resp = await self.http.get(
+        resp = await self.oci.client_for(httpx.URL(repository).host).get(
             f"{repository}/index.yaml",
-            auth=self._auth(repository),
+            auth=await self._auth(repository),
             headers=cached[0] if cached else None,
             follow_redirects=True,
         )
@@ -136,8 +136,8 @@ class HelmClient:
         Returns what was checked, raises RegistryError when it fails.
         """
         url = f"{repository.rstrip('/')}/index.yaml"
-        auth = self._auth(repository)
-        async with self.http.stream("GET", url, auth=auth, follow_redirects=True) as resp:
+        auth = await self._auth(repository)
+        async with self.oci.client_for(httpx.URL(url).host).stream("GET", url, auth=auth, follow_redirects=True) as resp:
             if resp.status_code != 200:
                 raise RegistryError(http_error_message(f"cannot read the index.yaml of the Helm repository {repository}", resp))
         return f"index.yaml served {'with credentials' if auth else 'anonymously'}"
@@ -166,7 +166,7 @@ class HelmClient:
         if entry is None:
             raise RegistryError(f"version {version} of chart {chart} is not published in {repository} (removed from the index?)")
         url = urljoin(f"{repository.rstrip('/')}/", entry["urls"][0])
-        resp = await self.http.get(url, auth=self._auth(url), follow_redirects=True)
+        resp = await self.oci.client_for(httpx.URL(url).host).get(url, auth=await self._auth(url), follow_redirects=True)
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot download chart {chart} {version}", resp))
         return chart_yaml_from_archive(resp.content)

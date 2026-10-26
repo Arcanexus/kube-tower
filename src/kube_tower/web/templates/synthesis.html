@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, icon, page_title, severity_counts, tag %}
+{% from "_macros.html" import badge, icon, image_name, page_title, severity_counts, tag, version_cells %}
 
 {% macro pct(n, total) -%}{{ ((n / total * 100) | round | int) if total else 0 }}%{%- endmacro %}
 
@@ -20,14 +20,15 @@
 {% else %}<p><small>Nothing found.</small></p>{% endif %}
 {%- endmacro %}
 
-{% macro bars(items, unit) -%}
-{# Horizontal bars of a single hue: magnitude only, the label names each bar. #}
+{% macro bars(items, unit, link=none) -%}
+{# Horizontal bars of a single hue: magnitude only, the label names each bar. `link`: query parameter of
+   the Images page that the labels link to (e.g. registry=docker.io); "other" (the long tail) has no link. #}
 {% set top = items | map(attribute=1) | max if items else 0 %}
 {% if top %}
 <table class="bars">
   {% for label, n in items %}
   <tr title="{{ label }}: {{ n }} {{ unit }}">
-    <th scope="row">{{ label }}</th>
+    <th scope="row">{% if link and label != "other" %}<a href="images?{{ link }}={{ label | urlencode }}" title="Show these images">{{ label }}</a>{% else %}{{ label }}{% endif %}</th>
     <td><div class="bar" style="width: {{ (n / top * 100) | round(1) }}%"></div></td>
     <td class="bar-value">{{ n }}</td>
   </tr>
@@ -39,6 +40,7 @@
 {% block heading %}{{ page_title("synthesis", "Synthesis", "Overview of the last scan across every cluster.") }}{% endblock %}
 {% block content %}
 {% set s = summary %}
+{% set unknown %}<small class="muted-text">unknown</small>{% endset %}
 {% set reachable = snapshot.clusters | selectattr("reachable") | list | length %}
 
 <div class="tiles">
@@ -56,8 +58,8 @@
   </a>
   {% set v = s.vulnerabilities %}
   <a class="tile" href="vulnerabilities?status=critical">
-    <span>{{ icon("shield") }}Critical CVEs</span><strong class="{{ 'danger' if v.images_with['critical'] }}">{{ v.images_with["critical"] }}</strong>
-    <small>image(s) · {{ v.fixable_critical_high }} critical/high CVEs fixable</small>
+    <span>{{ icon("shield") }}Images with critical CVEs</span><strong class="{{ 'danger' if v.images_with['critical'] }}">{{ v.images_with["critical"] }}</strong>
+    <small>{{ v.fixable_critical_high | plural("critical or high CVE", "critical or high CVEs") }} with a fix, all images</small>
   </a>
   <a class="tile" href="images?q=:latest">
     <span>{{ icon("warning") }}<code>latest</code> tags</span><strong class="{{ 'danger' if s.latest_images }}">{{ s.latest_images }}</strong>
@@ -78,11 +80,11 @@
   </article>
   <article>
     <header>{{ icon("outdated") }}Pending image updates</header>
-    {{ bars(s.updates, "image(s)") }}
+    {{ bars(s.updates, "images", "update") }}
   </article>
   <article>
     <header>{{ icon("box") }}Images by registry</header>
-    {{ bars(s.registries, "image(s)") }}
+    {{ bars(s.registries, "images", "registry") }}
   </article>
 </div>
 
@@ -100,7 +102,7 @@
     <li><a href="vulnerabilities{{ '?status=' ~ k if k in Severity._value2member_map_ else '' }}"><span class="sev segment-sev-{{ k | replace(' ', '-') }}">{{ k }}</span></a><strong>{{ v.worst[k] }}</strong><small>{{ pct(v.worst[k], s.images_total) }}</small></li>
     {% endif %}{% endfor %}
   </ul>
-  {% if v.eosl %}<p><small class="danger">{{ icon("warning") }}{{ v.eosl }} image(s) on an end of life OS release (no more security fixes).</small></p>{% endif %}
+  {% if v.eosl %}<p><small class="danger">{{ icon("warning") }}{{ v.eosl | plural("image") }} on an end of life OS release (no more security fixes).</small></p>{% endif %}
   {% else %}<p><small>Nothing found.</small></p>{% endif %}
 </article>
 
@@ -108,13 +110,13 @@
   <header>{{ icon("shield") }}Most vulnerable images</header>
   {% if v.top %}
   <div class="overflow-auto">
-  <table>
-    <thead><tr><th>Image</th><th>Tag</th><th>Vulnerabilities</th><th>Fixable</th><th>Used by</th></tr></thead>
+  <table class="stack-sm">
+    <thead><tr><th>Image</th><th>Tag</th><th>Vulnerabilities</th><th>Fixable</th><th class="hide-sm">Used by</th></tr></thead>
     <tbody>
     {% for r in v.top %}
       <tr class="clickable" tabindex="0" hx-get="vulnerabilities/detail?ref={{ r.image | string | urlencode }}" hx-target="#detail" hx-trigger="click, keyup[key=='Enter']">
-        <td><code>{{ r.image.name }}</code></td><td>{{ tag(r.image.tag) }}</td><td>{{ severity_counts(r.vulnerabilities) }}</td>
-        <td>{{ r.vulnerabilities.fixable }}</td><td><small>{{ r.usages | length }} usage(s) · {{ r.clusters | join(", ") }}</small></td>
+        <td class="cell-name">{{ image_name(r) }}</td><td><span class="version-tag" title="{{ r.image.tag or '' }}">{{ tag(r.image.tag) }}</span></td><td>{{ severity_counts(r.vulnerabilities) }}</td>
+        <td>{{ r.vulnerabilities.fixable }}</td><td class="hide-sm nowrap"><small>{{ r.usages | length | plural("usage") }} · {{ r.clusters | join(", ") }}</small></td>
       </tr>
     {% endfor %}
     </tbody>
@@ -127,13 +129,13 @@
   <header>{{ icon("outdated") }}Most used outdated images</header>
   {% if s.top_outdated %}
   <div class="overflow-auto">
-  <table>
-    <thead><tr><th>Image</th><th>Current</th><th>Latest</th><th>Update</th><th>Used by</th></tr></thead>
+  <table class="stack-sm">
+    <thead><tr><th>Image</th><th>Current</th><th>Latest</th><th>Update</th><th class="hide-sm">Used by</th></tr></thead>
     <tbody>
     {% for r in s.top_outdated %}
       <tr class="clickable" tabindex="0" hx-get="images/detail?ref={{ r.image | string | urlencode }}" hx-target="#detail" hx-trigger="click, keyup[key=='Enter']">
-        <td><code>{{ r.image.name }}</code></td><td>{{ tag(r.image.tag) }}</td><td>{{ r.latest_tag or "new digest" }}</td>
-        <td>{{ s.update_of[r.image | string] }}</td><td><small>{{ r.usages | length }} usage(s) · {{ r.clusters | join(", ") }}</small></td>
+        <td class="cell-name">{{ image_name(r) }}</td>{{ version_cells(r) }}
+        <td>{{ s.update_of[r.image | string] }}</td><td class="hide-sm nowrap"><small>{{ r.usages | length | plural("usage") }} · {{ r.clusters | join(", ") }}</small></td>
       </tr>
     {% endfor %}
     </tbody>
@@ -146,16 +148,16 @@
   <header>{{ icon("clusters") }}By cluster</header>
   <div class="overflow-auto">
   <table>
-    <thead><tr><th>Cluster</th><th>Version</th><th>Images</th><th>Outdated images</th><th>Charts</th><th>Outdated charts</th><th>Critical CVEs</th></tr></thead>
+    <thead><tr><th>Cluster</th><th>Version</th><th>Images</th><th>Outdated images</th><th>Charts</th><th>Outdated charts</th><th>With critical CVEs</th></tr></thead>
     <tbody>
     {% for c in s.clusters %}
       {% set ni, nc = c.images.values() | sum, c.charts.values() | sum %}
       <tr>
         <td>{% if c.reachable %}{{ icon("ok", "ok") }}{% else %}{{ icon("error", "danger") }}{% endif %}<a href="images?cluster={{ c.name | urlencode }}">{{ c.name }}</a></td>
-        <td>{{ c.version or "" }}</td>
+        <td>{{ c.version or unknown }}</td>
         <td>{{ ni }}</td><td>{{ c.images["outdated"] }} <small>({{ pct(c.images["outdated"], ni) }})</small></td>
         <td>{{ nc }}</td><td>{{ c.charts["outdated"] }} <small>({{ pct(c.charts["outdated"], nc) }})</small></td>
-        <td>{% if c.critical_images %}<a class="danger" href="vulnerabilities?status=critical&amp;cluster={{ c.name | urlencode }}">{{ c.critical_images }} image(s)</a>{% else %}0{% endif %}</td>
+        <td>{% if c.critical_images %}<a class="danger" href="vulnerabilities?status=critical&amp;cluster={{ c.name | urlencode }}">{{ c.critical_images | plural("image") }}</a>{% else %}0{% endif %}</td>
       </tr>
     {% else %}
       <tr><td colspan="7">No cluster discovered yet.</td></tr>

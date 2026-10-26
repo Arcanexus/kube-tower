@@ -5,7 +5,7 @@ import httpx
 import pytest
 import respx
 
-from kube_tower.registry.oci import OCIClient, RegistryError, load_docker_credentials, parse_image_ref
+from kube_tower.registry.oci import OCIClient, RegistryError, load_docker_credentials, parse_docker_config, parse_image_ref
 
 
 @pytest.mark.parametrize(
@@ -47,6 +47,15 @@ async def test_list_tags_with_token_and_pagination():
         assert await OCIClient(http).list_tags("registry.example.com", "app") == ["1.0", "1.1"]
     assert token.called
     assert tags.calls[-1].request.headers["authorization"] == "Bearer t0k"
+
+
+@respx.mock
+async def test_list_tags_warns_when_pages_are_cut(caplog):
+    next_page = {"link": '</v2/app/tags/list?n=1000&last=1.0>; rel="next"'}
+    respx.get("https://registry.example.com/v2/app/tags/list?n=1000").respond(200, json={"tags": ["1.0"]}, headers=next_page)
+    async with httpx.AsyncClient() as http:
+        assert await OCIClient(http, max_tag_pages=1).list_tags("registry.example.com", "app") == ["1.0"]
+    assert "registry.example.com/app has more than 1 tags: only the first 1 pages were read" in caplog.text
 
 
 @respx.mock
@@ -265,3 +274,93 @@ async def test_redirect_target_gets_its_own_credentials():
             await OCIClient(http, {"registry.example.com": ("user", "secret")}).list_tags("registry.example.com", "app")
     assert target.calls[1].request.headers["authorization"] == "Basic " + base64.b64encode(b"other:pw").decode()
     assert "authorization" not in target.calls[calls_before].request.headers
+
+
+def test_docker_config_formats(tmp_path, caplog):
+    cfg = tmp_path / "config.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "auths": {
+                    "myacr.azurecr.io": {"identitytoken": "refresh"},
+                    "Harbor.Example.com": {"auth": base64.b64encode(b"robot$ci:pw").decode()},
+                    "empty.example.com": {},
+                    "odd.example.com": "not an object",
+                },
+                "credsStore": "desktop",
+            }
+        )
+    )
+    assert load_docker_credentials(str(cfg)) == {
+        "myacr.azurecr.io": ("00000000-0000-0000-0000-000000000000", "refresh"),
+        "harbor.example.com": ("robot$ci", "pw"),
+    }
+    assert "credsStore/credHelpers are not supported" in caplog.text
+    # The legacy .dockercfg format of kubernetes.io/dockercfg Secrets: the auths map itself
+    assert parse_docker_config({"quay.io": {"auth": base64.b64encode(b"q:p").decode()}}) == {"quay.io": ("q", "p")}
+
+
+@respx.mock
+async def test_insecure_registry_falls_back_to_http():
+    """registries.insecure: TLS not verified, plain http:// when https:// does not answer; no password over http://."""
+    respx.get("https://registry.local:5000/v2/app/tags/list?n=1000").mock(side_effect=httpx.ConnectError("wrong version number"))
+    plain = respx.get("http://registry.local:5000/v2/app/tags/list?n=1000")
+    plain.side_effect = [
+        httpx.Response(200, json={"tags": ["1.0"]}),
+        httpx.Response(401, headers={"www-authenticate": 'Basic realm="registry"'}),
+    ]
+    respx.get("http://registry.local:5000/v2/").respond(401, headers={"www-authenticate": 'Basic realm="registry"'})
+    async with httpx.AsyncClient() as http, httpx.AsyncClient() as insecure:
+        oci = OCIClient(http, {"registry.local:5000": ("u", "p")}, insecure=["registry.local*"], insecure_http=insecure)
+        assert oci.client_for("registry.local") is insecure and oci.client_for("ghcr.io") is http
+        assert await oci.list_tags("registry.local:5000", "app") == ["1.0"]
+        with pytest.raises(RegistryError, match="401"):
+            await oci.list_tags("registry.local:5000", "app")
+        assert "authorization" not in plain.calls[-1].request.headers
+        with pytest.raises(RegistryError, match="asks for a password.*only https"):
+            await oci.ping("registry.local:5000")
+
+        # Hosts not listed in registries.insecure never fall back to http://
+        respx.get("https://other.local/v2/app/tags/list?n=1000").mock(side_effect=httpx.ConnectError("refused"))
+        with pytest.raises(httpx.ConnectError):
+            await oci.list_tags("other.local", "app")
+
+
+@respx.mock
+async def test_ping_insecure_anonymous_over_http():
+    respx.get("https://registry.local/v2/").mock(side_effect=httpx.ConnectError("refused"))
+    respx.get("http://registry.local/v2/").respond(200)
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http, insecure=["registry.local"])
+        assert await oci.ping("registry.local") == "answers anonymously over plain http://"
+
+
+@respx.mock
+async def test_authentication_results_are_recorded():
+    challenge = 'Bearer realm="https://{0}/token",service="{0}"'
+    for host in ("good.example.com", "bad.example.com", "anon.example.com"):
+        respx.get(f"https://{host}/v2/app/tags/list?n=1000").mock(
+            side_effect=[httpx.Response(401, headers={"www-authenticate": challenge.format(host)}), httpx.Response(200, json={})]
+        )
+    respx.get("https://good.example.com/token").respond(200, json={"token": "t"})
+    respx.get("https://bad.example.com/token").respond(401, json={"details": "incorrect username or password"})
+    respx.get("https://anon.example.com/token").respond(200, json={"token": "t"})
+    basic = 'Basic realm="x"'
+    respx.get("https://basic.example.com/v2/app/tags/list?n=1000").mock(
+        side_effect=[httpx.Response(401, headers={"www-authenticate": basic}), httpx.Response(200, json={})]
+    )
+    respx.get("https://wrong.example.com/v2/app/tags/list?n=1000").respond(401, headers={"www-authenticate": basic})
+    credentials = {h: ("u", "p") for h in ("good.example.com", "bad.example.com", "basic.example.com", "wrong.example.com")}
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http, credentials)
+        for host in ("good.example.com", "anon.example.com", "basic.example.com"):
+            await oci.list_tags(host, "app")
+        for host in ("bad.example.com", "wrong.example.com"):
+            with pytest.raises(RegistryError):
+                await oci.list_tags(host, "app")
+    results = oci.auth_results
+    assert results.get("good.example.com").ok and results.get("basic.example.com").ok
+    assert results.get("anon.example.com") is None  # anonymous: says nothing about credentials
+    bad = results.get("bad.example.com")
+    assert not bad.ok and "bad.example.com refused the credentials: HTTP 401" in bad.message
+    assert not results.get("wrong.example.com").ok

@@ -52,6 +52,8 @@ class Usage:
     namespace: str | None
     name: str
     container: str | None = None
+    owner: str | None = None  # pods: their workload, `Deployment/web` (the ReplicaSet of a Deployment is skipped)
+    node: str | None = None  # pods: the node they run on
 
 
 class Severity(StrEnum):

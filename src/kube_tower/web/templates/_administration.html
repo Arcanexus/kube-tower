@@ -12,7 +12,7 @@
   {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
 
   <article id="scans">
-    <h3>{{ icon("clock") }}In progress</h3>
+    <header>{{ icon("clock") }}In progress</header>
     {% set activities = scanner.activities() %}
     {% set actions = {"trivy-db": "Trivy database update", "connectivity": "Connectivity test"} %}
     {% if activities or m.running %}
@@ -37,24 +37,24 @@
   </article>
 
   <article>
-    <h3>{{ icon("refresh") }}Scans</h3>
+    <header>{{ icon("refresh") }}Scans</header>
     <div class="administration-row">
       <div>
         <strong>Full scan</strong>
         <p><small>Collects every cluster again and checks every image, chart and vulnerability report.
           {% if checking_versions %}<span aria-busy="true">Scan in progress…</span>{% elif scanning %}<span aria-busy="true">Vulnerability scan in progress…</span>{% elif scanner.busy %}{{ scanner.busy }}…{% endif %}</small></p>
       </div>
-      {{ action("scan", "Scan everything", disabled=locked, why="A scan or an administration action is running") }}
+      {{ action("scan", "Scan now", disabled=locked, why="A scan or an administration action is running") }}
     </div>
     <div class="administration-row">
       <div>
         <strong>Retry what failed</strong>
         <p><small>
           {% if failed.images or failed.vulnerabilities or failed.charts %}
-          Failed in the last scan: {{ failed.images | length }} image version check(s), {{ failed.vulnerabilities | length }} vulnerability scan(s),
-          {{ failed.charts | length }} chart(s) (with their subcharts). Only these are checked again.
+          Failed in the last scan: {{ failed.images | length | plural("image version check") }}, {{ failed.vulnerabilities | length | plural("vulnerability scan") }},
+          {{ failed.charts | length | plural("chart") }} (with their subcharts). Only these are checked again.
           {% else %}Nothing failed in the last scan.{% endif %}
-          {% if scanner.rescanning %}<span aria-busy="true">{{ scanner.rescanning | length }} rescan(s) in progress…</span>{% endif %}
+          {% if scanner.rescanning %}<span aria-busy="true">{{ scanner.rescanning | length | plural("rescan") }} in progress…</span>{% endif %}
         </small></p>
       </div>
       {{ action("retry-failed", "Retry what failed", disabled=locked or ("retry-failed",) in scanner.rescanning or not (failed.images or failed.vulnerabilities or failed.charts),
@@ -69,8 +69,8 @@
     </div>
   </article>
 
-  <article>
-    <h3>{{ icon("database") }}Trivy</h3>
+  <article id="trivy">
+    <header>{{ icon("database") }}Trivy</header>
     {% set t = trivy_settings.trivy %}
     {% if not trivy_settings.enabled or not t.enabled %}
     <p><small>Trivy scans are disabled (vulnerabilities.enabled / vulnerabilities.trivy.enabled).</small></p>
@@ -107,8 +107,8 @@
     <div class="administration-row">
       <div>
         <strong>Results cache</strong>
-        <p><small>{{ scanner.trivy.cache | length }} image(s) cached: they are not scanned again before {{ (t.rescan_interval / 3600) | round(1) }} h
-          (vulnerabilities.trivy.rescanInterval). Clearing it makes the next scan scan every image again.</small></p>
+        <p><small>{{ scanner.trivy.cache | length | plural("image") }} cached: they are not scanned again before {{ t.rescan_interval | duration }}
+          (vulnerabilities.trivy.rescanInterval). After clearing it, the next scan scans every image again.</small></p>
       </div>
       <p class="actions">
         {{ action("trivy-cache", "Clear", "trash", cls="outline secondary", confirm="Forget the Trivy results? The next scan scans every image again.") }}
@@ -120,7 +120,7 @@
   </article>
 
   <article>
-    <h3>{{ icon("plug") }}Connectivity</h3>
+    <header>{{ icon("plug") }}Connectivity</header>
     <div class="administration-row">
       <p><small>Tests every cluster (its Kubernetes API), every container registry and Helm repository of the last scan, with kube-tower's credentials{% if trivy_settings.trivy.server_url %}, and the Trivy server{% endif %}.</small></p>
       {% if "connectivity" in m.running %}<span aria-busy="true">Testing…</span>
@@ -146,7 +146,7 @@
   </article>
 
   <article>
-    <h3>{{ icon("trash") }}Unused node images</h3>
+    <header>{{ icon("trash") }}Unused node images</header>
     <p><small>Images cached on nodes that no workload of their cluster uses (Pods, Deployments, StatefulSets, DaemonSets, CronJobs),
       from the last scan. kube-tower does not remove them: the kubelet deletes unused images by itself when the disk of a node goes over
       <code>imageGCHighThresholdPercent</code> (85 % by default). To remove one now, run on the node: <code>crictl rmi &lt;image&gt;</code>,
@@ -156,7 +156,7 @@
     {% else %}
     {% for cluster, rows in unused | groupby("cluster") %}
     <details>
-      <summary>{{ icon("clusters", "muted") }}{{ cluster }}: {{ rows | length }} unused image(s)</summary>
+      <summary>{{ icon("clusters", "muted") }}{{ cluster }}: {{ rows | length | plural("unused image") }}</summary>
       <table class="striped">
         <thead><tr><th>Image</th><th>Nodes</th><th>Command</th></tr></thead>
         <tbody>
@@ -168,5 +168,17 @@
     </details>
     {% endfor %}
     {% endif %}
+  </article>
+
+  <article id="api">
+    <header>{{ icon("box") }}API</header>
+    <div class="administration-row">
+      <p><small>The data of the UI as JSON (read-only, except the scan and rescan endpoints), and Prometheus metrics.</small></p>
+      <p class="actions">
+        <a href="api/docs" target="_blank" rel="noopener" role="button" class="outline small">{{ icon("external-link") }}API documentation</a>
+        <a href="api/snapshot" target="_blank" rel="noopener" role="button" class="outline secondary small">{{ icon("external-link") }}Last scan (JSON)</a>
+        <a href="metrics" target="_blank" rel="noopener" role="button" class="outline secondary small">{{ icon("external-link") }}Metrics</a>
+      </p>
+    </div>
   </article>
 </div>
