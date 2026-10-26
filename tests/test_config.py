@@ -42,15 +42,31 @@ def test_unknown_key(tmp_path):
         load_settings(str(cfg))
 
 
-def test_roles_default_to_all_and_partial_roles_are_refused(tmp_path, monkeypatch):
-    monkeypatch.delenv("KUBE_TOWER_ROLES", raising=False)
+def test_roles(tmp_path, monkeypatch):
+    for name in ("KUBE_TOWER_ROLES", "KUBE_TOWER_INTERNAL_TOKEN", "KUBE_TOWER_CONTROLLER_URL"):
+        monkeypatch.delenv(name, raising=False)
+    missing = str(tmp_path / "missing.yaml")
     every = ["ui", "controller", "worker", "trivy"]
-    assert load_settings(str(tmp_path / "missing.yaml")).roles == every
+    settings = load_settings(missing)
+    assert settings.roles == every and not settings.distributed
     monkeypatch.setenv("KUBE_TOWER_ROLES", "trivy, worker,ui,controller")  # every role, listed: same as all
-    assert load_settings(str(tmp_path / "missing.yaml")).roles == every
+    assert load_settings(missing).roles == every
+    # roles apart: the internal API needs its token, and the controller URL where the controller is not
     monkeypatch.setenv("KUBE_TOWER_ROLES", "worker,trivy")
-    with pytest.raises(ValueError, match="roles trivy, worker: running only some roles .* not available yet"):
-        load_settings(str(tmp_path / "missing.yaml"))
+    with pytest.raises(ValueError, match="roles worker, trivy: set the internal API token in \\$KUBE_TOWER_INTERNAL_TOKEN"):
+        load_settings(missing)
+    monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", "secret")
+    with pytest.raises(ValueError, match="set internal.controllerUrl"):
+        load_settings(missing)
+    monkeypatch.setenv("KUBE_TOWER_CONTROLLER_URL", "http://kube-tower-controller:8081")
+    settings = load_settings(missing)
+    assert settings.roles == ["worker", "trivy"] and settings.distributed
+    assert settings.internal.controller_url == "http://kube-tower-controller:8081"
+    monkeypatch.setenv("KUBE_TOWER_ROLES", "controller,ui")
+    assert load_settings(missing).roles == ["ui", "controller"]
+    monkeypatch.setenv("KUBE_TOWER_ROLES", "ui")
+    with pytest.raises(ValueError, match="role ui without controller"):
+        load_settings(missing)
     monkeypatch.delenv("KUBE_TOWER_ROLES")
     (tmp_path / "config.yaml").write_text("roles: [ui, scanner]\n")
     with pytest.raises(ValueError, match="unknown role\\(s\\) 'scanner'"):

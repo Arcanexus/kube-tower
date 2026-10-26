@@ -5,7 +5,7 @@ chart, this file is rendered from `.Values.config`. Keys are camelCase; unknown 
 at startup so typos are caught early.
 
 ```yaml
-roles: [all]                   # what this process runs (only every role together for now)
+roles: [all]                   # what this process runs: all, or a list of ui, controller, worker, trivy
 refreshInterval: 6h            # 30s, 15m, 6h, 1d or seconds
 logs:
   level: INFO                  # DEBUG, INFO, WARNING, ERROR
@@ -71,17 +71,35 @@ git:
     github.com: https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}
     gitlab.com: https://gitlab.com/{owner}/{repo}/-/raw/{ref}/{path}
   tokenEnv: GIT_TOKEN
+internal:                      # between the processes, when the roles run apart
+  port: 8081                   # internal API of the controller
+  controllerUrl: ""            # where worker and trivy processes reach it
+  tokenEnv: KUBE_TOWER_INTERNAL_TOKEN
+  taskTimeout: 30m             # a task not answered by then is given to another process
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
 
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLES`
-(comma-separated).
+(comma-separated), `KUBE_TOWER_CONTROLLER_URL`.
 
 `roles` prepares the horizontal scaling of the next major release (see
 [ADR 0002](adr/0002-horizontal-scaling.md)): one image whose pods run any combination of the `ui`,
-`controller`, `worker` and `trivy` roles, all in one pod or apart and scaled independently. Today a
-process runs every role (`all`, or the four listed); other combinations are refused at startup.
+`controller`, `worker` and `trivy` roles, all in one pod or apart and scaled independently. By default
+a process runs every role (`all`), as before.
+
+The roles can already run apart, as a preview (the Helm chart still deploys one pod with every role):
+
+- the process with `controller` schedules the scans and serves its internal API on `internal.port`;
+  the tasks of the roles it does not run wait there;
+- processes with `worker` and/or `trivy` (and no `controller`) pull these tasks from
+  `internal.controllerUrl`, run them and send the results back; a `worker` reads the cluster list itself;
+- `ui` needs `controller` in the same process for now;
+- every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
+  the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
+
+The administration actions (Trivy database, cache, connectivity test) and the registry status of the
+Settings page still act on the process of the UI.
 
 ## Vulnerabilities (Trivy)
 

@@ -9,6 +9,14 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from kube_tower.administration import unused_node_images
 
 router = APIRouter()
+# Processes without the ui role (controller, worker, trivy) only answer the probes: alive once started.
+probes = APIRouter()
+
+
+@probes.get("/healthz", include_in_schema=False)
+@probes.get("/readyz", include_in_schema=False)
+async def alive() -> dict:
+    return {"status": "ok"}
 
 
 @router.get("/healthz", include_in_schema=False)
