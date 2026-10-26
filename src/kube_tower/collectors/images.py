@@ -24,6 +24,42 @@ log = logging.getLogger(__name__)
 PAGE_SIZE = 250
 
 
+class _Raw:
+    """Read-only attribute view of a Kubernetes object read as plain JSON: `pod.spec.node_name` reads
+    `pod["spec"]["nodeName"]` (None when absent), like the client models.
+
+    The lists are read without the client models: building them (one Python object per field of every
+    pod) took most of the CPU of a scan and, holding the GIL in the collector threads, slowed the web
+    pages down to several seconds while a scan ran.
+    """
+
+    __slots__ = ("_data",)
+    _KEYS = {"image_id": "imageID", "_continue": "continue"}  # not plain camelCase
+    _MAPS = {"labels", "annotations"}  # free-form maps: plain dicts, as in the models
+
+    def __init__(self, data: dict):
+        self._data = data
+
+    def __getattr__(self, name: str):
+        key = self._KEYS.get(name) or name.split("_")[0] + "".join(w.title() for w in name.split("_")[1:])
+        value = self._data.get(key)
+        return value if name in self._MAPS else _wrap(value)
+
+
+def _wrap(value):
+    if isinstance(value, dict):
+        return _Raw(value)
+    if isinstance(value, list):
+        return [_wrap(v) for v in value]
+    return value
+
+
+def _read_list(fn, **kwargs):
+    """A page of a list call, as JSON viewed with attributes (see _Raw). Fakes in tests return models."""
+    response = fn(**kwargs, _preload_content=False)
+    return _Raw(json.loads(response.data)) if hasattr(response, "data") and isinstance(response.data, bytes) else response
+
+
 def _pod_spec_images(spec: client.V1PodSpec | None) -> Iterable[tuple[str, str]]:
     if spec is None:
         return
@@ -110,7 +146,7 @@ class ImageInventory:
             items, token = [], None
             try:
                 while True:
-                    page = fn(limit=PAGE_SIZE, _continue=token) if token else fn(limit=PAGE_SIZE)
+                    page = _read_list(fn, limit=PAGE_SIZE, **({"_continue": token} if token else {}))
                     items += page.items
                     token = page.metadata._continue if page.metadata else None
                     if not token:

@@ -64,7 +64,7 @@
 {# Detail panel, loaded by htmx into #detail (see base.html). #}
 <div class="drawer-backdrop" onclick="ktCloseDetail()"></div>
 <article class="drawer-panel" role="dialog" aria-label="{{ title }}">
-  {# Drag (or arrow keys) to resize; the width and the full screen choice are kept for the next panels. #}
+  {# Drag (or arrow keys) to resize, or open full screen: until the panel is closed (the next one opens at the default size). #}
   <div class="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize the panel" title="Drag to resize"
        tabindex="0" onpointerdown="ktResizeStart(event)" onkeydown="ktResizeKey(event)" ondblclick="ktResizeReset()"></div>
   <header>

@@ -873,3 +873,19 @@ def test_administration_api_links():
     page = _client()[0].get("/administration").text
     assert 'href="api/docs"' in page and 'href="api/snapshot"' in page and 'href="metrics"' in page
     assert ">Scan now</button>" in page and 'id="trivy"' in page
+
+
+async def test_watch_event_loop_warns_when_blocked(monkeypatch, caplog):
+    import asyncio
+    import time
+
+    from kube_tower import main
+
+    monkeypatch.setattr(main, "LAG_CHECK", 0.01)
+    monkeypatch.setattr(main, "LAG_WARNING", 0.05)
+    task = asyncio.create_task(main.watch_event_loop())
+    await asyncio.sleep(0)  # the watch starts its first check
+    time.sleep(0.1)  # blocks the event loop, as a scan holding the GIL would
+    await asyncio.sleep(0.05)
+    task.cancel()
+    assert "the web server was blocked for 0.1s" in caplog.text

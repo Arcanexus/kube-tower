@@ -132,7 +132,7 @@ def test_image_inventory_paginates(monkeypatch):
     }
     calls = []
 
-    def list_pods(limit, _continue=None):
+    def list_pods(limit, _continue=None, **_):
         calls.append((limit, _continue))
         return pages[_continue]
 
@@ -256,3 +256,75 @@ def test_pod_owner():
     assert _pod_owner(pod("Job", "backup-28839120")) == "Job/backup-28839120"
     assert _pod_owner(pod("ReplicaSet", "web-7d9f", "7d9f", controller=False)) is None
     assert _pod_owner(pod()) is None
+
+
+def test_image_inventory_reads_raw_json(monkeypatch):
+    """The lists are read as plain JSON (no client models): same result as with the models."""
+    import json
+
+    pod = client.V1Pod(
+        metadata=client.V1ObjectMeta(
+            name="web-7d9f-x2k9p",
+            namespace="shop",
+            labels={"pod-template-hash": "7d9f"},
+            owner_references=[
+                client.V1OwnerReference(api_version="apps/v1", kind="ReplicaSet", name="web-7d9f", uid="u", controller=True)
+            ],
+        ),
+        spec=client.V1PodSpec(
+            node_name="node-1",
+            image_pull_secrets=[client.V1LocalObjectReference(name="regcred")],
+            init_containers=[client.V1Container(name="init", image="busybox:1.36")],
+            containers=[client.V1Container(name="web", image="nginx:1.25")],
+        ),
+        status=client.V1PodStatus(
+            container_statuses=[
+                client.V1ContainerStatus(name="web", image="nginx:1.25", image_id="nginx@sha256:aaa", ready=True, restart_count=0)
+            ]
+        ),
+    )
+    template = client.V1PodTemplateSpec(spec=client.V1PodSpec(containers=[client.V1Container(name="web", image="nginx:1.25")]))
+    deploy = client.V1Deployment(
+        metadata=_meta("web", "shop"), spec=client.V1DeploymentSpec(selector=client.V1LabelSelector(), template=template)
+    )
+    cron = client.V1CronJob(
+        metadata=_meta("backup", "ops"),
+        spec=client.V1CronJobSpec(
+            schedule="@daily", job_template=client.V1JobTemplateSpec(spec=client.V1JobSpec(template=template))
+        ),
+    )
+    node = client.V1Node(
+        metadata=_meta("node-1"),
+        status=client.V1NodeStatus(images=[client.V1ContainerImage(names=["redis@sha256:bbb", "redis:7.2"])]),
+    )
+    lists = {
+        "list_pod_for_all_namespaces": [pod],
+        "list_node": [node],
+        "list_deployment_for_all_namespaces": [deploy],
+        "list_stateful_set_for_all_namespaces": [],
+        "list_daemon_set_for_all_namespaces": [],
+        "list_cron_job_for_all_namespaces": [cron],
+    }
+
+    def collect(raw):
+        apis = MagicMock()
+        for fn, items in lists.items():
+            if raw:
+                body = client.ApiClient().sanitize_for_serialization({"items": items, "metadata": {}})
+                getattr(apis, fn).return_value = NS(data=json.dumps(body).encode())
+            else:
+                getattr(apis, fn).return_value = NS(items=items, metadata=client.V1ListMeta())
+        for name in ("CoreV1Api", "AppsV1Api", "BatchV1Api"):
+            monkeypatch.setattr(images_collector.client, name, lambda _: apis)
+        apis.read_namespaced_secret.side_effect = client.ApiException(status=404)
+        inventory = ImageInventory(ImagesSettings(), pull_secrets=True)
+        assert inventory.collect(Cluster("c1", "https://x", "in-cluster", None)) == []
+        assert apis.read_namespaced_secret.call_args.args == ("regcred", "shop")
+        return {ref: (r.usages, r.running_digests) for ref, r in inventory.reports.items()}
+
+    raw = collect(raw=True)
+    assert raw == collect(raw=False)
+    usages, digests = raw["docker.io/library/nginx:1.25"]
+    assert Usage("c1", "Pod", "shop", "web-7d9f-x2k9p", "web", "Deployment/web", "node-1") in usages
+    assert digests == {"sha256:aaa"}
+    assert set(raw) == {"docker.io/library/nginx:1.25", "docker.io/library/busybox:1.36", "docker.io/library/redis:7.2"}
