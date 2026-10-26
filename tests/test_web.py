@@ -220,6 +220,23 @@ def test_images_running_only_switch():
     assert 'name="running"' not in client.get("/charts").text
 
 
+def test_images_registry_and_update_filters():
+    """Set by the links of the Synthesis, shown as removable chips that the filter form keeps."""
+    client, _ = _client()
+    page = client.get("/images?registry=docker.io").text
+    assert "library/nginx" in page and "library/redis" in page and "org/app" not in page
+    assert (
+        'class="filter-chip">Registry <strong>docker.io</strong><input type="hidden" name="registry" value="docker.io">' in page
+    )
+    assert 'onclick="ktRemoveFilter(this)"' in page
+    page = client.get("/images?update=minor").text
+    assert "library/nginx" in page and "library/redis" not in page and "org/app" not in page
+    assert 'name="update" value="minor"' in page
+    assert "library/nginx" not in client.get("/images?update=minor&registry=ghcr.io").text
+    assert "filter-chip" not in client.get("/images").text
+    assert "ktRemoveFilter" in client.get("/static/kube-tower.js").text
+
+
 def test_maintenance_redirects_to_administration():
     client, _ = _client()
     resp = client.get("/maintenance", follow_redirects=False)
@@ -460,8 +477,14 @@ def test_synthesis_is_the_home_page():
     # 3 images: 2 outdated (nginx minor, redis digest), 1 up to date; 1 chart outdated through its subchart
     assert re.search(r"Images</span><strong>3</strong>\s*<small>33% up to date · 2 outdated", page)
     assert 'href="images?status=outdated"' in page and 'href="charts?status=outdated"' in page
-    assert re.search(r"<th scope=\"row\">minor</th>.*?<td class=\"bar-value\">1</td>", page, re.S)
-    assert re.search(r"<th scope=\"row\">docker.io</th>.*?<td class=\"bar-value\">2</td>", page, re.S)
+    assert re.search(
+        r"<th scope=\"row\"><a href=\"images\?update=minor\"[^>]*>minor</a></th>.*?<td class=\"bar-value\">1</td>", page, re.S
+    )
+    assert re.search(
+        r"<th scope=\"row\"><a href=\"images\?registry=docker.io\"[^>]*>docker.io</a></th>.*?<td class=\"bar-value\">2</td>",
+        page,
+        re.S,
+    )
     assert "Subcharts: 1 outdated out of 3." in page
     assert "1 unreachable" in page
 

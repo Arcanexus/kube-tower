@@ -19,6 +19,7 @@ from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, 
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
+from kube_tower.web.metrics import image_update
 from kube_tower.web.summary import UPDATE_KINDS, WORST_ORDER, summarize
 
 HERE = Path(__file__).parent
@@ -335,15 +336,35 @@ def mount(app: FastAPI) -> None:
     async def images(request: Request):
         q, status, cluster = filters(request)
         running = bool(request.query_params.get("running"))
+        # Set by the links of the Synthesis: a registry, a kind of pending update (major, minor...).
+        registry, update = request.query_params.get("registry", ""), request.query_params.get("update", "")
+        chips = [
+            (name, label, value)
+            for name, label, value in (("registry", "Registry", registry), ("update", "Update", update))
+            if value
+        ]
         # Counters ignore the status filter: they are the buttons that set it.
         matching = [
             r
             for r in request.app.state.scanner.snapshot.images
-            if _matches(str(r.image), q) and (not cluster or cluster in r.clusters) and (not running or r.running)
+            if _matches(str(r.image), q)
+            and (not cluster or cluster in r.clusters)
+            and (not running or r.running)
+            and (not registry or r.image.registry == registry)
+            and (not update or image_update(r) == update)
         ]
         rows = [r for r in matching if not status or r.status.value == status]
         return render(
-            request, "images", tab="images", rows=rows, matching=matching, q=q, status=status, cluster=cluster, running=running
+            request,
+            "images",
+            tab="images",
+            rows=rows,
+            matching=matching,
+            q=q,
+            status=status,
+            cluster=cluster,
+            running=running,
+            chips=chips,
         )
 
     @app.get("/images/detail", response_class=HTMLResponse, include_in_schema=False)
