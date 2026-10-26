@@ -172,7 +172,7 @@ class GitSettings:
 # What one kube-tower process runs. `all`: everything in one process (UI, API, scans). The other roles
 # split it for horizontal scaling (see docs/adr/0002-horizontal-scaling.md); they are not available yet.
 ROLES = ("all",)
-PLANNED_ROLES = ("ui", "controller", "worker")
+PLANNED_ROLES = ("ui", "controller", "worker", "trivy")
 
 
 @dataclass

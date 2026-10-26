@@ -19,7 +19,14 @@ One image, one role per process, chosen with `KUBE_TOWER_ROLE` or `role:` in the
 | `all` (default) | 1 | everything, as today | yes | yes |
 | `ui` | 1..N | pages, JSON API, `/metrics`; reads the snapshot from the controller, forwards actions | none | no |
 | `controller` | 1 active + standby (`Lease`) | schedules scans and rescans, holds the snapshot and the task queue, merges results | cluster Secrets, `Lease` | no |
-| `worker` | 1..N (HPA) | pulls tasks: collect one cluster, check a batch of images / charts, scan a batch with Trivy | read the clusters | yes |
+| `worker` | 1..N (HPA) | pulls tasks: collect one cluster, check a batch of images / charts | read the clusters | yes |
+| `trivy` | 1..N (HPA) | pulls vulnerability tasks: scan a batch of images with the Trivy CLI | none (Trivy Operator reports are read by `worker` with the cluster) | yes |
+
+Trivy runs in its own role: it is the heavy part (CPU, memory, a database of about 1.6 GB, minutes per
+image) while version checks are many light HTTP requests. Apart, each scales and is sized on its own,
+only the `trivy` pods get the Trivy binary (chart init container) and its cache, and slow scans never
+hold back the version checks. Tasks carry their kind; each role pulls only its own kinds. The optional
+Trivy server of the chart stays: the `trivy` pods then run as its clients and share its database.
 
 Shared state, chosen by the maintainer:
 
@@ -48,5 +55,5 @@ Redis). The chart gets `mode: single | distributed`; `single` renders today's De
    (JSON round trip of the snapshot, needed to send it between processes).
 2. The web layer talks to a backend interface instead of the `Scanner` internals.
 3. The scan split in serializable tasks, run locally by `all`.
-4. Internal API, `ui` / `controller` / `worker` roles, `Lease` election, Redis option.
+4. Internal API, `ui` / `controller` / `worker` / `trivy` roles, `Lease` election, Redis option.
 5. Chart `mode: distributed`, documentation, release candidate.

@@ -77,8 +77,8 @@ Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m
 
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLE`.
 
-`role` prepares the horizontal scaling of the next major release (separate `ui`, `controller` and
-`worker` processes, see [ADR 0002](adr/0002-horizontal-scaling.md)). Only `all`, everything in one
+`role` prepares the horizontal scaling of the next major release (separate `ui`, `controller`,
+`worker` and `trivy` processes, see [ADR 0002](adr/0002-horizontal-scaling.md)). Only `all`, everything in one
 process, is available today; other values are refused at startup.
 
 ## Vulnerabilities (Trivy)
