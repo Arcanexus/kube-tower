@@ -1,6 +1,6 @@
 # ADR 0002: horizontal scaling with roles
 
-- Status: accepted (design), implementation planned for the next major release
+- Status: accepted, implemented for v1.0.0
 - Date: 2026-10-24 (updated 2026-10-26: separate `trivy` role, roles combined per pod)
 
 ## Context
@@ -91,5 +91,11 @@ its replicas, resources and HPA.
    (`RedisSnapshotStore`, a thread writing the last version) and read back when a controller starts,
    which then waits for the rest of the refresh interval. The task queue stays in memory: its tasks
    belong to the scan the controller runs, which is lost with it anyway; a new controller starts a new
-   scan when one is due. Next: the chart.
+   scan when one is due.
 5. Chart `mode: distributed`, documentation, release candidate.
+   Done so far: `mode: distributed` (see [scaling](../scaling.md)): one Deployment per entry of
+   `distributed.groups` (roles, replicas, resources, autoscaling), `<release>-internal` Service to the
+   active controller (readiness `/leaderz`), internal token Secret, `Lease` RBAC, NetworkPolicies on
+   the internal port, ServiceMonitor on the controller. The trivy group always has one replica (one
+   copy of the Trivy databases and results for every cluster). `redis.valkey.enabled` deploys a
+   Valkey, `redis.url` uses an existing Redis. Next: an end-to-end test on kind in CI.

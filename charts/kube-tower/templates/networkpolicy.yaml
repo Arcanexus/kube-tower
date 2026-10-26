@@ -21,6 +21,16 @@ spec:
       from:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+    {{- if include "kube-tower.distributed" . }}
+    # Internal API of the controller: from the kube-tower pods only
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: internal
+          protocol: TCP
+    {{- end }}
   egress:
     - ports:
         - port: 53
@@ -42,9 +52,51 @@ spec:
         - port: {{ .Values.trivy.server.port }}
           protocol: TCP
     {{- end }}
+    {{- if include "kube-tower.distributed" . }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: {{ .Values.distributed.internal.port }}
+          protocol: TCP
+    {{- end }}
+    {{- if .Values.redis.valkey.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.valkeySelectorLabels" . | nindent 14 }}
+      ports:
+        - port: {{ .Values.redis.valkey.port }}
+          protocol: TCP
+    {{- end }}
     {{- with $np.egress.extra }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+{{- if .Values.redis.valkey.enabled }}
+---
+# Valkey: only kube-tower reaches it; it reaches nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-valkey
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: valkey
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kube-tower.valkeySelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: valkey
+          protocol: TCP
+{{- end }}
 {{- if .Values.trivy.server.enabled }}
 ---
 # Trivy server: only kube-tower reaches it; it only reaches DNS and the egress ports (database download).

@@ -222,7 +222,9 @@ def test_standby_is_not_ready(monkeypatch, roles):
         assert http.get("/healthz").status_code == 200
         answer = http.get("/readyz")
         assert answer.status_code == 503
+        assert http.get("/leaderz").json() == {"leader": False}
         election.leader = True
+        assert http.get("/leaderz").status_code == 200  # whatever the UI shows
         if roles == ["controller"]:
             assert http.get("/readyz").status_code == 200
 

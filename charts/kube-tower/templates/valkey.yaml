@@ -1,0 +1,103 @@
+{{- if .Values.redis.valkey.enabled }}
+{{- $name := printf "%s-valkey" (include "kube-tower.fullname" .) }}
+{{- $valkey := .Values.redis.valkey }}
+# Valkey keeping a copy of the inventory for the controller (redis.valkey.enabled), in memory only
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: valkey
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kube-tower.valkeySelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kube-tower.valkeySelectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/credentials: {{ include (print $.Template.BasePath "/credential-secrets.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: valkey
+          image: "{{ $valkey.image.repository }}:{{ $valkey.image.tag }}"
+          imagePullPolicy: {{ $valkey.image.pullPolicy }}
+          {{- $secret := include "kube-tower.redisSecretName" . }}
+          args:
+            - valkey-server
+            - --port
+            - {{ $valkey.port | quote }}
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            {{- if $secret }}
+            - --requirepass
+            - $(VALKEY_PASSWORD)
+            {{- end }}
+          {{- if $secret }}
+          env:
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: {{ ternary .Values.redis.passwordKey "password" (not (empty .Values.redis.existingSecret)) }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: valkey
+              containerPort: {{ $valkey.port }}
+          readinessProbe:
+            tcpSocket:
+              port: valkey
+          livenessProbe:
+            tcpSocket:
+              port: valkey
+            periodSeconds: 20
+          resources:
+            {{- toYaml $valkey.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: valkey
+spec:
+  selector:
+    {{- include "kube-tower.valkeySelectorLabels" . | nindent 4 }}
+  ports:
+    - name: valkey
+      port: {{ $valkey.port }}
+      targetPort: valkey
+{{- end }}

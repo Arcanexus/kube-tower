@@ -90,12 +90,11 @@ Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLES`
 (comma-separated), `KUBE_TOWER_CONTROLLER_URL`, `KUBE_TOWER_REDIS_URL`.
 
-`roles` prepares the horizontal scaling of the next major release (see
+`roles` is the horizontal scaling (see [scaling](scaling.md) and
 [ADR 0002](adr/0002-horizontal-scaling.md)): one image whose pods run any combination of the `ui`,
 `controller`, `worker` and `trivy` roles, all in one pod or apart and scaled independently. By default
-a process runs every role (`all`), as before.
-
-The roles can already run apart, as a preview (the Helm chart still deploys one pod with every role):
+a process runs every role (`all`). The chart sets all of this with `mode: distributed`; when the roles
+run apart:
 
 - the process with `controller` schedules the scans and serves its internal API on `internal.port`;
   the tasks of the roles it does not run wait there;
@@ -109,7 +108,7 @@ The roles can already run apart, as a preview (the Helm chart still deploys one 
 - with `internal.leaderElection: true`, several replicas can run the `controller` role: they share
   the `internal.leaseName` Lease of their namespace (RBAC: get, create and update `leases` in
   `coordination.k8s.io`). The holder schedules the scans and serves the internal API; the others wait,
-  answer 503 on `/readyz` (no Service routes to them) and take over about 15 seconds after the active
+  answer 503 on `/readyz` and `/leaderz` (no Service routes to them) and take over about 15 seconds after the active
   one stopped. A controller that cannot renew its Lease in time stops and is restarted as a standby.
   The new controller starts with a full scan, unless `redis.url` is set (below), and the worker and
   trivy processes pull from it;

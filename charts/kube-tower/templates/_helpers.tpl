@@ -97,3 +97,99 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-ca" (include "kube-tower.fullname" .) }}
 {{- end }}
 {{- end }}
+
+{{- /* The Deployments of kube-tower, as JSON {name: group}. Single mode: one, named "", with every role.
+Distributed mode: one per entry of distributed.groups, its roles and its replicas, resources... with the
+defaults of the top-level values. The group running trivy has one replica and no autoscaling. */ -}}
+{{- define "kube-tower.groups" -}}
+{{- $roles := list "ui" "controller" "worker" "trivy" }}
+{{- $groups := dict }}
+{{- if eq .Values.mode "distributed" }}
+{{- $count := dict "ui" 0 "controller" 0 "worker" 0 "trivy" 0 }}
+{{- range $name, $g := .Values.distributed.groups }}
+{{- if $g }}
+{{- $groupRoles := required (printf "distributed.groups.%s.roles is required" $name) $g.roles }}
+{{- if has "all" $groupRoles }}
+{{- $groupRoles = $roles }}
+{{- end }}
+{{- range $groupRoles }}
+{{- if not (has . $roles) }}
+{{- fail (printf "distributed.groups.%s.roles: unknown role %q (expected all, ui, controller, worker or trivy)" $name .) }}
+{{- end }}
+{{- $_ := set $count . (add1 (get $count .)) }}
+{{- end }}
+{{- $single := has "trivy" $groupRoles }}
+{{- $autoscaling := $g.autoscaling | default dict }}
+{{- if or $single (has "controller" $groupRoles) }}
+{{- $autoscaling = dict }}
+{{- end }}
+{{- $_ := set $groups $name (dict
+  "roles" $groupRoles
+  "replicas" (ternary 1 ($g.replicas | default 1) $single)
+  "autoscaling" $autoscaling
+  "resources" ($g.resources | default $.Values.resources)
+  "nodeSelector" ($g.nodeSelector | default $.Values.nodeSelector)
+  "tolerations" ($g.tolerations | default $.Values.tolerations)
+  "affinity" ($g.affinity | default $.Values.affinity)) }}
+{{- end }}
+{{- end }}
+{{- range $role, $n := $count }}
+{{- if eq (int $n) 0 }}
+{{- fail (printf "mode distributed: no group of distributed.groups runs the %s role" $role) }}
+{{- end }}
+{{- if and (gt (int $n) 1) (has $role (list "controller" "trivy")) }}
+{{- fail (printf "mode distributed: the %s role must run in one group of distributed.groups only" $role) }}
+{{- end }}
+{{- end }}
+{{- else if eq .Values.mode "single" }}
+{{- $_ := set $groups "" (dict
+  "roles" $roles
+  "replicas" .Values.replicaCount
+  "autoscaling" dict
+  "resources" .Values.resources
+  "nodeSelector" .Values.nodeSelector
+  "tolerations" .Values.tolerations
+  "affinity" .Values.affinity) }}
+{{- else }}
+{{- fail (printf "mode: %q is not single or distributed" .Values.mode) }}
+{{- end }}
+{{- toJson $groups }}
+{{- end }}
+
+{{- define "kube-tower.distributed" -}}
+{{- if eq .Values.mode "distributed" }}true{{ end }}
+{{- end }}
+
+{{- /* Secret holding the token of the internal API (distributed mode) */ -}}
+{{- define "kube-tower.internalSecretName" -}}
+{{- if .Values.distributed.internal.existingSecret }}
+{{- .Values.distributed.internal.existingSecret }}
+{{- else if .Values.distributed.internal.token }}
+{{- printf "%s-internal" (include "kube-tower.fullname" .) }}
+{{- else }}
+{{- fail "mode distributed: set distributed.internal.token (e.g. openssl rand -hex 32) or distributed.internal.existingSecret" }}
+{{- end }}
+{{- end }}
+
+{{- /* Redis / Valkey URL of the controller, empty when the snapshot stays in memory */ -}}
+{{- define "kube-tower.redisUrl" -}}
+{{- if .Values.redis.valkey.enabled }}
+{{- printf "redis://%s-valkey:%v/0" (include "kube-tower.fullname" .) .Values.redis.valkey.port }}
+{{- else }}
+{{- .Values.redis.url }}
+{{- end }}
+{{- end }}
+
+{{- define "kube-tower.valkeySelectorLabels" -}}
+app.kubernetes.io/name: {{ include "kube-tower.name" . }}-valkey
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{- /* Secret holding the Redis / Valkey password: the existing one or the chart's, empty when none */ -}}
+{{- define "kube-tower.redisSecretName" -}}
+{{- if .Values.redis.existingSecret }}
+{{- .Values.redis.existingSecret }}
+{{- else if .Values.redis.password }}
+{{- printf "%s-redis" (include "kube-tower.fullname" .) }}
+{{- end }}
+{{- end }}

@@ -24,6 +24,16 @@ async def alive() -> dict:
     return {"status": "ok"}
 
 
+@probes.get("/leaderz", include_in_schema=False)
+@router.get("/leaderz", include_in_schema=False)
+async def leader(request: Request, response: Response) -> dict:
+    """Readiness of the controller pods (chart, distributed mode): 503 on a standby, whatever its other roles."""
+    if _standby(request):
+        response.status_code = 503
+        return {"leader": False}
+    return {"leader": True}
+
+
 @probes.get("/readyz", include_in_schema=False)
 async def ready(request: Request, response: Response) -> dict:
     if _standby(request):

@@ -6,8 +6,97 @@ image:
 
 imagePullSecrets: []
 
-# kube-tower is stateless and keeps its inventory in memory: keep a single replica.
+# single: one Deployment whose pod runs every role (ui, controller, worker, trivy).
+# distributed: one Deployment per entry of distributed.groups, each running some roles, scaled apart.
+mode: single
+
+# Single mode: the inventory is in the memory of the pod, keep a single replica.
 replicaCount: 1
+
+# Distributed mode (see docs/scaling.md). Every role runs in at least one group; controller and trivy
+# in one only. Set a group to null to remove it, e.g. to run controller and ui together.
+distributed:
+  groups:
+    controller:
+      roles: [controller]
+      # One active controller, the others wait as standbys and take over (Kubernetes Lease)
+      replicas: 2
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+    ui:
+      roles: [ui]
+      replicas: 2
+      resources:
+        requests:
+          cpu: 20m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      autoscaling:
+        enabled: false
+        minReplicas: 2
+        maxReplicas: 5
+        targetCPUUtilizationPercentage: 80
+    worker:
+      roles: [worker]
+      replicas: 2
+      resources:
+        requests:
+          cpu: 50m
+          memory: 192Mi
+        limits:
+          memory: 768Mi
+      autoscaling:
+        enabled: false
+        minReplicas: 2
+        maxReplicas: 5
+        targetCPUUtilizationPercentage: 80
+    trivy:
+      roles: [trivy]
+      # Always one replica (it keeps the Trivy databases and results), never autoscaled
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          memory: 1536Mi
+  # Internal API of the controller, between the pods. It carries registry credentials: never expose it.
+  internal:
+    port: 8081
+    # Token shared by the pods, required: an existing Secret...
+    existingSecret: ""
+    secretKey: token
+    # ...or the token itself (e.g. openssl rand -hex 32), the chart then creates the Secret.
+    token: ""
+
+# Optional Redis / Valkey where the controller keeps a copy of the inventory: a restarted controller
+# (or a standby taking over) shows it at once instead of scanning first. Both modes.
+redis:
+  # A Valkey deployed by the chart (one pod, data in memory)...
+  valkey:
+    enabled: false
+    image:
+      repository: docker.io/valkey/valkey
+      tag: "8.1.1"
+      pullPolicy: IfNotPresent
+    port: 6379
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+  # ...or an existing Redis / Valkey: redis://host:6379/0, rediss:// for TLS.
+  url: ""
+  # Password (optional, also set on the chart's Valkey): an existing Secret...
+  existingSecret: ""
+  passwordKey: password
+  # ...or the password itself, the chart then creates the Secret.
+  password: ""
 
 serviceAccount:
   create: true

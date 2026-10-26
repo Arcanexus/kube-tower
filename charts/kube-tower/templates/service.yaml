@@ -13,3 +13,31 @@ spec:
       name: http
   selector:
     {{- include "kube-tower.selectorLabels" . | nindent 4 }}
+    {{- if include "kube-tower.distributed" . }}
+    kube-tower.arcanexus.com/ui: "true"
+    {{- end }}
+{{- if include "kube-tower.distributed" . }}
+---
+# The active controller (only it is ready): its internal API, for the other pods, and /metrics
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-internal
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.distributed.internal.port }}
+      targetPort: internal
+      protocol: TCP
+      name: internal
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "kube-tower.selectorLabels" . | nindent 4 }}
+    kube-tower.arcanexus.com/controller: "true"
+{{- end }}

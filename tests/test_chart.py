@@ -405,3 +405,157 @@ def test_image_pull_secrets_rbac(tmp_path):
     assert secrets_rule in docs[("ClusterRole", "kt-kube-tower")]["rules"]
     settings = app_settings(tmp_path, docs).registries
     assert settings.use_image_pull_secrets and settings.insecure == ["registry.local:5000"] and settings.ca_file == ""
+
+
+DISTRIBUTED = {"mode": "distributed", "distributed": {"internal": {"token": "t0ken"}}}
+
+
+def with_groups(groups):
+    return {"mode": "distributed", "distributed": {"internal": {"token": "t"}, "groups": groups}}
+
+
+def deployment(docs, group):
+    return docs[("Deployment", f"kt-kube-tower-{group}")]["spec"]
+
+
+def env(spec):
+    return {e["name"]: e.get("value", e.get("valueFrom")) for e in spec["template"]["spec"]["containers"][0]["env"]}
+
+
+def test_single_mode_is_one_pod_with_every_role(tmp_path):
+    docs = render(tmp_path, {})
+    assert [k for k in docs if k[0] == "Deployment"] == [("Deployment", "kt-kube-tower")]
+    assert "KUBE_TOWER_ROLES" not in env(docs[("Deployment", "kt-kube-tower")]["spec"])
+    assert ("Service", "kt-kube-tower-internal") not in docs
+    assert not [k for k in docs if k[0] in ("HorizontalPodAutoscaler", "Role")]
+    assert app_settings(tmp_path, docs).internal.leader_election is False
+
+
+def test_distributed_mode(tmp_path):
+    docs = render(tmp_path, DISTRIBUTED | {"serviceMonitor": {"enabled": True}, "registries": {"ca": {"pem": "x"}}})
+    assert sorted(k[1] for k in docs if k[0] == "Deployment") == [
+        "kt-kube-tower-controller",
+        "kt-kube-tower-trivy",
+        "kt-kube-tower-ui",
+        "kt-kube-tower-worker",
+    ]
+    roles = {g: env(deployment(docs, g))["KUBE_TOWER_ROLES"] for g in ("controller", "ui", "worker", "trivy")}
+    assert roles == {"controller": "controller", "ui": "ui", "worker": "worker", "trivy": "trivy"}
+    assert {g: deployment(docs, g)["replicas"] for g in roles} == {"controller": 2, "ui": 2, "worker": 2, "trivy": 1}
+    assert docs[("Secret", "kt-kube-tower-internal")]["stringData"] == {"token": "t0ken"}
+    for group in roles:
+        spec = deployment(docs, group)
+        assert env(spec)["KUBE_TOWER_INTERNAL_TOKEN"] == {"secretKeyRef": {"name": "kt-kube-tower-internal", "key": "token"}}
+        assert spec["selector"]["matchLabels"]["app.kubernetes.io/component"] == group
+        assert spec["template"]["metadata"]["labels"][f"kube-tower.arcanexus.com/{group}"] == "true"
+        url = env(spec).get("KUBE_TOWER_CONTROLLER_URL")
+        assert url == (None if group == "controller" else "http://kt-kube-tower-internal:8081")
+
+    controller = deployment(docs, "controller")["template"]["spec"]
+    assert controller["containers"][0]["readinessProbe"]["httpGet"]["path"] == "/leaderz"
+    assert {"name": "internal", "containerPort": 8081} in controller["containers"][0]["ports"]
+    # The ui pods reach no Kubernetes API nor registry: no token, no credentials
+    ui = deployment(docs, "ui")["template"]["spec"]
+    assert ui["automountServiceAccountToken"] is False
+    assert ui["containers"][0]["readinessProbe"]["httpGet"]["path"] == "/healthz"
+    assert {m["name"] for m in ui["containers"][0]["volumeMounts"]} == {"config", "tmp"}
+    # The Trivy CLI and its cache in the trivy pod only
+    trivy = deployment(docs, "trivy")["template"]["spec"]
+    assert [c["name"] for c in trivy["initContainers"]] == ["trivy"]
+    assert "initContainers" not in deployment(docs, "worker")["template"]["spec"]
+    assert "trivy-cache" not in {v["name"] for v in deployment(docs, "worker")["template"]["spec"]["volumes"]}
+    assert "registry-ca" in {v["name"] for v in deployment(docs, "worker")["template"]["spec"]["volumes"]}
+
+    # The UI Service reaches the ui pods, the internal one the controller (only the active one is ready)
+    assert docs[("Service", "kt-kube-tower")]["spec"]["selector"]["kube-tower.arcanexus.com/ui"] == "true"
+    internal = docs[("Service", "kt-kube-tower-internal")]["spec"]
+    assert internal["selector"]["kube-tower.arcanexus.com/controller"] == "true"
+    monitored = docs[("ServiceMonitor", "kt-kube-tower")]["spec"]["selector"]["matchLabels"]
+    assert monitored["app.kubernetes.io/component"] == "controller"
+    lease = docs[("Role", "kt-kube-tower-leader-election")]["rules"]
+    assert lease[1]["resourceNames"] == ["kt-kube-tower-controller"] and lease[1]["verbs"] == ["get", "update"]
+
+    settings = app_settings(tmp_path, docs)
+    assert settings.internal.leader_election is True and settings.internal.lease_name == "kt-kube-tower-controller"
+
+
+def test_distributed_groups(tmp_path):
+    autoscaling = {"enabled": True, "maxReplicas": 6}
+    docs = render(
+        tmp_path,
+        DISTRIBUTED
+        | {
+            "distributed": {
+                "internal": {"existingSecret": "kt-internal", "secretKey": "key"},
+                "groups": {
+                    # controller and ui together, trivy with more replicas and autoscaling (ignored)
+                    "controller": {"roles": ["controller", "ui"], "replicas": 3},
+                    "ui": None,
+                    "worker": {"autoscaling": autoscaling},
+                    "trivy": {"replicas": 4, "autoscaling": autoscaling},
+                },
+            }
+        },
+    )
+    assert sorted(k[1] for k in docs if k[0] == "Deployment") == [f"kt-kube-tower-{g}" for g in ("controller", "trivy", "worker")]
+    assert not [k for k in docs if k[0] == "Secret"]
+    controller = env(deployment(docs, "controller"))
+    assert controller["KUBE_TOWER_INTERNAL_TOKEN"]["secretKeyRef"] == {"name": "kt-internal", "key": "key"}
+    assert controller["KUBE_TOWER_ROLES"] == "controller,ui"
+    assert deployment(docs, "controller")["replicas"] == 3
+    assert deployment(docs, "trivy")["replicas"] == 1
+    assert "replicas" not in deployment(docs, "worker")
+    hpa = docs[("HorizontalPodAutoscaler", "kt-kube-tower-worker")]["spec"]
+    assert hpa["scaleTargetRef"]["name"] == "kt-kube-tower-worker" and hpa["maxReplicas"] == 6 and hpa["minReplicas"] == 2
+    assert [k for k in docs if k[0] == "HorizontalPodAutoscaler"] == [("HorizontalPodAutoscaler", "kt-kube-tower-worker")]
+
+
+@pytest.mark.parametrize(
+    ("values", "error"),
+    [
+        ({"mode": "multi"}, 'mode: "multi" is not single or distributed'),
+        ({"mode": "distributed"}, "set distributed.internal.token"),
+        (with_groups({"trivy": None}), "runs the trivy role"),
+        (with_groups({"ui": {"roles": ["ui", "controller"]}}), "the controller role must run in one group"),
+        (with_groups({"ui": {"roles": ["web"]}}), 'unknown role "web"'),
+        (with_groups({"web": {"replicas": 2}}), "web.roles is required"),
+    ],
+)
+def test_distributed_mode_errors(tmp_path, values, error):
+    assert error in render_error(tmp_path, values)
+
+
+def test_valkey(tmp_path):
+    docs = render(tmp_path, {"redis": {"valkey": {"enabled": True}, "password": "pw"}, "networkPolicy": {"enabled": True}})
+    pod = env(docs[("Deployment", "kt-kube-tower")]["spec"])
+    assert pod["KUBE_TOWER_REDIS_URL"] == "redis://kt-kube-tower-valkey:6379/0"
+    assert pod["KUBE_TOWER_REDIS_PASSWORD"] == {"secretKeyRef": {"name": "kt-kube-tower-redis", "key": "password"}}
+    valkey = docs[("Deployment", "kt-kube-tower-valkey")]["spec"]["template"]["spec"]
+    assert valkey["containers"][0]["args"][-2:] == ["--requirepass", "$(VALKEY_PASSWORD)"]
+    assert valkey["automountServiceAccountToken"] is False
+    assert docs[("Service", "kt-kube-tower-valkey")]["spec"]["ports"][0]["port"] == 6379
+    ingress = docs[("NetworkPolicy", "kt-kube-tower-valkey")]["spec"]["ingress"][0]
+    assert ingress["from"][0]["podSelector"]["matchLabels"]["app.kubernetes.io/name"] == "kube-tower"
+    egress = docs[("NetworkPolicy", "kt-kube-tower")]["spec"]["egress"]
+    assert {"port": 6379, "protocol": "TCP"} in egress[-1]["ports"]
+
+
+def test_existing_redis_in_distributed_mode(tmp_path):
+    docs = render(
+        tmp_path,
+        DISTRIBUTED | {"redis": {"url": "rediss://redis.example:6380/1", "existingSecret": "redis", "passwordKey": "pass"}},
+    )
+    assert ("Deployment", "kt-kube-tower-valkey") not in docs
+    controller = env(deployment(docs, "controller"))
+    assert controller["KUBE_TOWER_REDIS_URL"] == "rediss://redis.example:6380/1"
+    assert controller["KUBE_TOWER_REDIS_PASSWORD"] == {"secretKeyRef": {"name": "redis", "key": "pass"}}
+    assert "KUBE_TOWER_REDIS_URL" not in env(deployment(docs, "worker"))  # the controller only
+    render(tmp_path, {"redis": {"url": "redis://r:6379/0"}})  # no password
+
+
+def test_distributed_network_policy(tmp_path):
+    docs = render(tmp_path, DISTRIBUTED | {"networkPolicy": {"enabled": True}})
+    spec = docs[("NetworkPolicy", "kt-kube-tower")]["spec"]
+    assert spec["ingress"][1]["ports"] == [{"port": "internal", "protocol": "TCP"}]
+    assert spec["ingress"][1]["from"][0]["podSelector"]["matchLabels"]["app.kubernetes.io/instance"] == "kt"
+    assert {"port": 8081, "protocol": "TCP"} in spec["egress"][-1]["ports"]
