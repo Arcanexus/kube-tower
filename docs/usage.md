@@ -26,9 +26,9 @@ that status (click it again to show everything). Filters are kept in the URL, so
 can be bookmarked or shared. Clicking a line opens a detail panel on the right; close it with its
 button, a click outside or `Esc`. The panel starts with what was found (status, current → latest
 version) and ends with the buttons that check the item again. Drag its left edge, marked by a
-grip (⋮) in its middle, to resize it (or focus the edge and use the arrow keys; a double click restores the default width), or open it
-full screen with the button next to the close one. The width and the full screen choice are kept
-in the browser for the next panels.
+grip (⋮) in its middle, to resize it (or focus the edge and use the arrow keys; a double click
+restores the default width), or open it full screen with the button next to the close one.
+The width and the full screen choice are kept in the browser for the next panels.
 
 The Images page shows the current and the latest version of each image, each with the start of its
 digest below (the running digest, else the one pinned or published for the tag), so they can be
@@ -151,8 +151,6 @@ when filtering on `outdated`; the badge of the chart line shows that same status
 links to the repository and Artifact Hub, and the subchart tree: the chart, then each subchart with
 its version (→ the latest one when it is behind), status and repository, drawn like the **Used by**
 tree of the images.
-
-![Chart details](images/chart-detail.png)
 
 ![Chart details](images/chart-detail.png)
 
