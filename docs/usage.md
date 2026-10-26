@@ -25,7 +25,10 @@ On the Images, Helm charts and Vulnerabilities pages, the counters at the top ar
 that status (click it again to show everything). Filters are kept in the URL, so a filtered view
 can be bookmarked or shared. Clicking a line opens a detail panel on the right; close it with its
 button, a click outside or `Esc`. The panel starts with what was found (status, current → latest
-version) and ends with the buttons that check the item again.
+version) and ends with the buttons that check the item again. Drag its left edge to resize it
+(or focus the edge and use the arrow keys; a double click restores the default width), or open it
+full screen with the button next to the close one. The width and the full screen choice are kept
+in the browser for the next panels.
 
 The Images page shows the current and the latest version of each image, each with the start of its
 digest below (the running digest, else the one pinned or published for the tag), so they can be

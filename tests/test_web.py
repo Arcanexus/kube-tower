@@ -1,6 +1,7 @@
 import re
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -383,6 +384,9 @@ def test_image_detail():
     client, _ = _client()
     detail = client.get("/images/detail", params={"ref": "docker.io/library/redis:latest"}).text
     assert "<html" not in detail and 'role="dialog"' in detail
+    assert 'class="drawer-resize" role="separator"' in detail and 'onclick="ktToggleFull()"' in detail
+    sprite = (Path(__file__).parents[1] / "src/kube_tower/web/static/icons.svg").read_text()
+    assert all(f'id="i-{name}"' in sprite for name in re.findall(r"icons\.svg#i-([\w-]+)", detail))
     # a click on the backdrop (on another row) is passed on, so one click opens that row
     assert 'class="drawer-backdrop" onclick="ktCloseDetail()"' in detail
     assert 'contains("drawer-backdrop")' in client.get("/static/kube-tower.js").text
