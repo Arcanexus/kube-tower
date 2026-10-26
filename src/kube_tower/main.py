@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import signal
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -52,6 +54,15 @@ class InternalServer(uvicorn.Server):
     def capture_signals(self):
         yield
 
+    async def serve(self, sockets=None) -> None:
+        try:
+            await super().serve(sockets)
+        except (OSError, SystemExit) as exc:  # e.g. the port is taken
+            if not self.should_exit:
+                # The workers and UIs could not reach this controller: stop, Kubernetes restarts the pod.
+                logging.getLogger(__name__).critical("the internal API cannot listen, stopping: %s", exc)
+                os.kill(os.getpid(), signal.SIGTERM)
+
 
 def create_app(
     settings: Settings | None = None,
@@ -73,14 +84,14 @@ def create_app(
         scanner = scanner or Scanner(settings)
         runs.append(scanner.run_forever)
         administration = administration or Administration(scanner)
-        backend = LocalBackend(scanner, administration)
+        backend = LocalBackend(scanner, administration, log_buffer)
         if settings.distributed:
             # The tasks of the roles that run elsewhere are pulled over the internal API.
             scanner.runner = runner = QueueRunner(
                 scanner.worker,
                 set(roles) & {"worker", "trivy"},
                 settings.internal.task_timeout,
-                context=lambda: {"pull_secrets": encode(scanner.pull_secrets)},
+                context=lambda: {"pull_secrets": encode(scanner.pull_secrets), "trivy": administration.generations},
             )
             config = uvicorn.Config(
                 create_internal_app(runner, internal_token(settings), backend),

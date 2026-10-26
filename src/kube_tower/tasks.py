@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from kube_tower.models import ChartReport, ImageReport, VulnerabilityReport, decode, encode
+from kube_tower.trivy import TrivyStatus
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -69,6 +70,13 @@ class ScanVulnerabilitiesTask:
     fresh: bool = False
 
 
+@dataclass
+class TrivyAdminTask:
+    """Administration of Trivy in a trivy process: read its status, or (`update_db`) refresh its databases first."""
+
+    update_db: bool = False
+
+
 # Results
 
 
@@ -106,8 +114,17 @@ class ScanVulnerabilitiesResult:
     errors: list[str] = field(default_factory=list)
 
 
-type Task = CollectTask | CheckImagesTask | CheckChartsTask | ScanVulnerabilitiesTask
-type Result = CollectResult | CheckImagesResult | CheckChartsResult | ScanVulnerabilitiesResult
+@dataclass
+class TrivyAdminResult:
+    available: bool
+    binary: str
+    cached: int  # images whose results this process keeps
+    status: TrivyStatus | None = None
+    error: str | None = None  # why the databases could not be refreshed
+
+
+type Task = CollectTask | CheckImagesTask | CheckChartsTask | ScanVulnerabilitiesTask | TrivyAdminTask
+type Result = CollectResult | CheckImagesResult | CheckChartsResult | ScanVulnerabilitiesResult | TrivyAdminResult
 
 # Task kind: its task and result types, and the role that runs it.
 KINDS: dict[str, tuple[type, type, str]] = {
@@ -115,6 +132,7 @@ KINDS: dict[str, tuple[type, type, str]] = {
     "check-images": (CheckImagesTask, CheckImagesResult, "worker"),
     "check-charts": (CheckChartsTask, CheckChartsResult, "worker"),
     "scan-vulnerabilities": (ScanVulnerabilitiesTask, ScanVulnerabilitiesResult, "trivy"),
+    "trivy-admin": (TrivyAdminTask, TrivyAdminResult, "trivy"),
 }
 
 

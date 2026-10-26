@@ -18,6 +18,7 @@ import httpx
 
 from kube_tower.administration import Administration, ConnectivityReport
 from kube_tower.config import Settings, internal_token
+from kube_tower.logbuffer import LogBuffer, LogLine
 from kube_tower.models import ChartReport, ImageReport, Snapshot, decode, encode
 from kube_tower.registry.auth import AuthResult, CredentialStatus, resolve_credentials
 from kube_tower.scanner import Activity, Scanner, can_rescan_vulnerabilities, failed_items, same_name_images
@@ -64,6 +65,8 @@ class Backend(Protocol):
     @property
     def trivy_cached(self) -> int: ...  # images whose Trivy results are cached
     @property
+    def trivy_remote(self) -> bool: ...  # Trivy runs in trivy processes apart from the controller
+    @property
     def trivy_status(self) -> TrivyStatus | None: ...
     @property
     def trivy_message(self) -> str | None: ...  # outcome of the last database update
@@ -73,16 +76,23 @@ class Backend(Protocol):
     def admin_running(self) -> set[str]: ...  # administration actions in progress: trivy-db, connectivity
     async def refresh_trivy_status(self) -> TrivyStatus: ...
     async def update_trivy_db(self) -> str | None: ...
-    async def clear_trivy_cache(self) -> int: ...
+    async def clear_trivy_cache(self) -> int: ...  # -1: the trivy processes forget theirs at their next task
     async def test_connectivity(self) -> str | None: ...
+
+    # The last log lines of the process with the controller (Logs page), after this sequence number
+    async def log_lines(self, after: int = 0) -> list[LogLine]: ...
 
 
 class LocalBackend:
     """Every role in this process: the Scanner and the Administration of the process, as before."""
 
-    def __init__(self, scanner: Scanner, administration: Administration):
+    def __init__(self, scanner: Scanner, administration: Administration, log_buffer: LogBuffer | None = None):
         self.scanner = scanner
         self.administration = administration
+        self.log_buffer = log_buffer or LogBuffer()
+
+    async def log_lines(self, after: int = 0) -> list[LogLine]:
+        return self.log_buffer.since(after)
 
     @property
     def snapshot(self) -> Snapshot:
@@ -142,7 +152,7 @@ class LocalBackend:
 
     @property
     def trivy_available(self) -> bool:
-        return self.scanner.trivy.available
+        return self.administration.trivy_available
 
     @property
     def trivy_binary(self) -> str:
@@ -150,7 +160,11 @@ class LocalBackend:
 
     @property
     def trivy_cached(self) -> int:
-        return len(self.scanner.trivy.cache)
+        return self.administration.trivy_cached
+
+    @property
+    def trivy_remote(self) -> bool:
+        return self.administration.trivy_remote
 
     @property
     def trivy_status(self) -> TrivyStatus | None:
@@ -200,6 +214,7 @@ class LocalBackend:
             trivy_available=self.trivy_available,
             trivy_binary=self.trivy_binary,
             trivy_cached=self.trivy_cached,
+            trivy_remote=self.trivy_remote,
             trivy_status=self.trivy_status,
             trivy_message=self.trivy_message,
             connectivity=self.connectivity,
@@ -249,6 +264,7 @@ class BackendState:
     trivy_available: bool = False
     trivy_binary: str = ""
     trivy_cached: int = 0
+    trivy_remote: bool = False
     trivy_status: TrivyStatus | None = None
     trivy_message: str | None = None
     connectivity: ConnectivityReport | None = None
@@ -382,6 +398,10 @@ class RemoteBackend:
         return self.state.trivy_cached
 
     @property
+    def trivy_remote(self) -> bool:
+        return self.state.trivy_remote
+
+    @property
     def trivy_status(self) -> TrivyStatus | None:
         return self.state.trivy_status
 
@@ -411,3 +431,12 @@ class RemoteBackend:
 
     async def test_connectivity(self) -> str | None:
         return await self._action("connectivity")
+
+    async def log_lines(self, after: int = 0) -> list[LogLine]:
+        try:
+            answer = await self.http.post("/internal/v1/logs", json={"after": after})
+            answer.raise_for_status()
+        except httpx.HTTPError as exc:
+            log.warning("log lines not read: %s", UNREACHABLE.format(exc))
+            return []
+        return decode(list[LogLine], answer.json())

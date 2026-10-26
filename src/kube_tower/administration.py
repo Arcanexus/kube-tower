@@ -2,6 +2,11 @@
 
 The rescans (all, failed items, one item) are run by the Scanner; this module holds the
 other actions and their last results, in memory like everything else.
+
+When the trivy role runs in other processes (ADR 0002), the Trivy actions go to them: the status is
+read from one of them (a task), a database update runs in one of them and the others refresh theirs
+before their next task, a cleared cache is forgotten by each one at its next task (the generations
+sent with the tasks, see TaskPuller).
 """
 
 from __future__ import annotations
@@ -14,14 +19,19 @@ from datetime import UTC, datetime
 
 import httpx
 
+from kube_tower.config import check_roles
 from kube_tower.errors import explain
 from kube_tower.models import Snapshot
 from kube_tower.registry.helm import is_oci
 from kube_tower.registry.oci import RegistryError
 from kube_tower.scanner import Scanner, run_in_thread
+from kube_tower.tasks import TrivyAdminResult, TrivyAdminTask
 from kube_tower.trivy import TrivyStatus
 
 log = logging.getLogger(__name__)
+
+REMOTE_STATUS_TIMEOUT = 30  # seconds a trivy process has to answer the status
+REMOTE_UPDATE_TIMEOUT = 15 * 60  # and to download its databases
 
 
 @dataclass
@@ -77,6 +87,11 @@ class Administration:
         self.trivy_message: str | None = None  # outcome of the last database update
         self.connectivity: ConnectivityReport | None = None
         self._tasks: set[asyncio.Task] = set()
+        settings = getattr(scanner, "settings", None)
+        self.trivy_remote = bool(settings and settings.distributed and "trivy" not in check_roles(settings.roles))
+        self.remote: TrivyAdminResult | None = None  # the last answer of a trivy process
+        # Sent with each task: a trivy process seeing a newer one refreshes its databases / forgets its results.
+        self.generations = {"db": 0, "cache": 0}
 
     @property
     def trivy(self):
@@ -99,19 +114,48 @@ class Administration:
 
     # Trivy
 
+    @property
+    def trivy_available(self) -> bool:
+        if self.trivy_remote:  # unknown until a trivy process answered
+            return self.remote is None or self.remote.available
+        return self.trivy.available
+
+    @property
+    def trivy_cached(self) -> int:
+        if self.trivy_remote:
+            return self.remote.cached if self.remote else 0
+        return len(self.trivy.cache)
+
     async def refresh_trivy_status(self) -> TrivyStatus:
+        if self.trivy_remote:
+            await self._ask_trivy(TrivyAdminTask(), REMOTE_STATUS_TIMEOUT)
+            return self.trivy_status
         self.trivy_status = await run_in_thread("trivy-status", lambda: asyncio.run(self.trivy.status()))
         return self.trivy_status
+
+    async def _ask_trivy(self, task: TrivyAdminTask, timeout: float) -> TrivyAdminResult | None:
+        """Run the task in one trivy process; None when none answered in time (the status says so)."""
+        try:
+            self.remote = await asyncio.wait_for(self.scanner.runner.run(task), timeout)
+        except TimeoutError:
+            self.trivy_status = TrivyStatus(datetime.now(UTC), message=f"no trivy process answered within {timeout:.0f}s")
+            return None
+        self.trivy_status = self.remote.status
+        return self.remote
 
     def update_trivy_db(self) -> str | None:
         """Download the Trivy databases when a newer one is published. Returns why it cannot start, None when started."""
         settings = self.trivy.settings
         if settings.server_url:
             return f"client/server mode: the databases are updated by the Trivy server ({settings.server_url})"
-        if not settings.enabled or not self.trivy.available:
+        if not settings.enabled or not self.trivy_available:
             return f"Trivy is disabled or its binary {settings.binary!r} is not found"
         if "trivy-db" in self.running:
             return "the Trivy database is already being updated"
+        if self.trivy_remote:
+            self.generations["db"] += 1  # the other trivy processes refresh theirs before their next task
+            self._start("trivy-db", self._update_remote_trivy_db)
+            return None
         if self.scanner.locked:
             return "a scan is running: it updates the Trivy database itself"
         if self.scanner.rescanning:
@@ -136,8 +180,25 @@ class Administration:
             self.trivy_message = "already up to date: no newer database published yet"
             log.info("Trivy database already up to date")
 
+    async def _update_remote_trivy_db(self) -> None:
+        log.info("updating the Trivy database of the trivy processes")
+        if (result := await self._ask_trivy(TrivyAdminTask(update_db=True), REMOTE_UPDATE_TIMEOUT)) is None:
+            self.trivy_message = "no trivy process answered: they refresh their databases before their next task"
+        elif result.error:
+            self.trivy_message = result.error
+            log.error(result.error)
+        else:
+            self.trivy_message = "database refreshed in one trivy process; the others refresh theirs before their next task"
+            log.info(self.trivy_message)
+
     def clear_trivy_cache(self) -> int:
-        """Forget the Trivy scan results: the next scan scans every image again. Returns how many were forgotten."""
+        """Forget the Trivy scan results: the next scan scans every image again. Returns how many were forgotten,
+        -1 when the trivy processes forget theirs at their next task."""
+        if self.trivy_remote:
+            self.generations["cache"] += 1
+            self.remote = None
+            log.info("Trivy results cache cleared: each trivy process forgets its results at its next task")
+            return -1
         count = len(self.trivy.cache)
         self.trivy.cache.clear()
         log.info("Trivy results cache cleared (%d image(s)): the next scan scans every image again", count)

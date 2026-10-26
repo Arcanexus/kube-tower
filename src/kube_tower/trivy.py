@@ -282,6 +282,10 @@ class TrivyScanner:
         age = (datetime.now(UTC) - cached.scanned_at).total_seconds()
         return cached if age < self.settings.rescan_interval else None
 
+    def expire_databases(self) -> None:
+        """The next scans refresh the databases first."""
+        self._prepared_at = None
+
     async def scan_all(self, reports: list[ImageReport]) -> list[str]:
         """Scan the images of a full scan: the cache forgets the images gone. Returns error messages."""
         targets = {scan_target(r)[0] for r in reports}
