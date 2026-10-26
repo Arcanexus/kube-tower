@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Synthesis: the types of **Pending image updates** and the registries of **Images by registry** open
+  the Images page filtered on them (`images?update=major`, `images?registry=docker.io`), shown as a
+  removable chip next to the other filters.
+
 - Images page: a **Running only** switch next to the filters keeps the images that a pod runs
   (`images?running=1`); the counters follow it.
 - Image details: **Used by** is a tree (cluster > namespace > workload > pods, then the nodes caching

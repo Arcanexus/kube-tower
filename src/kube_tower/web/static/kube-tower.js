@@ -8,6 +8,15 @@ function ktFilterStatus(status) {
   select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+// Filters set by a link (Synthesis): their chip removes them and reloads the results.
+function ktRemoveFilter(button) {
+  const form = button.closest("form");
+  const chips = button.closest(".filter-chips");
+  button.closest(".filter-chip").remove();
+  if (chips && !chips.children.length) chips.remove();
+  form.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 // Detail panel (images, charts): loaded by htmx into #detail, closed by emptying it.
 // Each panel opens at the default size: closing it forgets its width and full screen mode.
 function ktCloseDetail() {
