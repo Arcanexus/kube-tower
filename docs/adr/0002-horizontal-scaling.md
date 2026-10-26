@@ -43,7 +43,8 @@ Shared state, chosen by the maintainer:
 The snapshot store and the task queue are therefore an interface with two implementations (memory,
 Redis). Roles in the same process talk in memory, without the internal API; roles in other pods go
 through it. A pod running the controller role with several replicas has one active controller (the
-`Lease` holder); the others stand by, while their other roles (e.g. `ui`) keep serving.
+`Lease` holder); the others stand by and are not ready, so no Service routes to them. To scale the
+`ui`, run it in its own pods: a standby with `ui` too would only show an empty inventory.
 
 The chart gets `mode: single | distributed`: `single` renders today's Deployment (every role)
 unchanged; `distributed` renders one Deployment per group of roles listed in the values, each with
@@ -82,5 +83,9 @@ its replicas, resources and HPA.
    backend actions are async for that. The Trivy actions of the Administration page reach the trivy
    processes (a `trivy-admin` task for the status and a database update, generations sent with each
    task for the others), and the warnings of each task come back with its result to the controller's
-   logs, which the Logs page of every `ui` process shows. Next: `Lease` election.
+   logs, which the Logs page of every `ui` process shows. With `internal.leaderElection`, the controller
+   replicas share a `Lease` (`election.py`): the holder renews it every 5 seconds and runs the scans
+   and the internal API; a standby runs neither and answers 503 on `/readyz` until the `Lease` expires
+   (15 seconds), then takes it. A controller that cannot renew it in time stops, to be restarted as a
+   standby. Next: the Redis option.
 5. Chart `mode: distributed`, documentation, release candidate.

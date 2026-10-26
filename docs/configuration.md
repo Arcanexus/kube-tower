@@ -77,6 +77,8 @@ internal:                      # between the processes, when the roles run apart
   tokenEnv: KUBE_TOWER_INTERNAL_TOKEN
   taskTimeout: 30m             # a task not answered by then is given to another process
   batchSize: 50                # images or charts per task: a scan is shared by the worker and trivy processes
+  leaderElection: false        # several controller replicas: one active, elected through a Lease
+  leaseName: kube-tower-controller
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
@@ -100,6 +102,13 @@ The roles can already run apart, as a preview (the Helm chart still deploys one 
 - a process with `ui` and no `controller` shows the state of the controller, read every 2 seconds
   from `internal.controllerUrl`, and sends it the actions of the users; any number of them can serve
   the pages. The metrics of the snapshot are served by the process with `controller` only;
+- with `internal.leaderElection: true`, several replicas can run the `controller` role: they share
+  the `internal.leaseName` Lease of their namespace (RBAC: get, create and update `leases` in
+  `coordination.k8s.io`). The holder schedules the scans and serves the internal API; the others wait,
+  answer 503 on `/readyz` (no Service routes to them) and take over about 15 seconds after the active
+  one stopped. A controller that cannot renew its Lease in time stops and is restarted as a standby.
+  The new controller starts with a full scan (the snapshot stays in the memory of the controller until
+  the Redis option), and the worker and trivy processes pull from it;
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
 

@@ -13,9 +13,22 @@ router = APIRouter()
 probes = APIRouter()
 
 
+def _standby(request: Request) -> bool:
+    """A controller replica waiting for the Lease (internal.leaderElection): no Service routes to it."""
+    election = getattr(request.app.state, "election", None)
+    return election is not None and not election.leader
+
+
 @probes.get("/healthz", include_in_schema=False)
-@probes.get("/readyz", include_in_schema=False)
 async def alive() -> dict:
+    return {"status": "ok"}
+
+
+@probes.get("/readyz", include_in_schema=False)
+async def ready(request: Request, response: Response) -> dict:
+    if _standby(request):
+        response.status_code = 503
+        return {"ready": False, "standby": True}
     return {"status": "ok"}
 
 
@@ -27,7 +40,7 @@ async def healthz() -> dict:
 @router.get("/readyz", include_in_schema=False)
 async def readyz(request: Request, response: Response) -> dict:
     # Ready once the first scan finished, so the UI never shows an empty inventory.
-    ready = request.app.state.backend.snapshot.finished_at is not None
+    ready = request.app.state.backend.snapshot.finished_at is not None and not _standby(request)
     response.status_code = 200 if ready else 503
     return {"ready": ready}
 

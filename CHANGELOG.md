@@ -22,7 +22,8 @@ All notable changes to this project are documented here. The format follows
   shared by these processes. Processes with `ui` and no `controller` show the state of the controller
   and send it the actions, over the same internal API. The Trivy actions of the Administration page
   reach the trivy processes, and the Logs page shows the controller's lines with the warnings of the
-  worker and trivy processes.
+  worker and trivy processes. With `internal.leaderElection`, several controller replicas elect the
+  active one through a Kubernetes `Lease`; the standbys are not ready until they take over.
 - Images, Helm charts and Vulnerabilities load 30 rows at a time, the next ones when the bottom of the list
   comes into view, with an animated loading row, a count of the rows shown and a "N more below" button while rows are left to load;
   the column sort of these lists is done by the server.
