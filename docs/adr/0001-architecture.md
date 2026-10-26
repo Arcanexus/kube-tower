@@ -44,6 +44,7 @@ A single Python 3.13 process (FastAPI + uvicorn) packaged as one multi-arch imag
 | `collectors/vulnerabilities.py`, `trivy.py` | Vulnerabilities: Trivy Operator `VulnerabilityReports`, else scans with the Trivy CLI (see [vulnerabilities](../vulnerabilities.md)). |
 | `checkers.py` | Computes the status of each image / chart / subchart, querying each repository once per scan. |
 | `scanner.py` | Runs a full scan periodically and keeps the last `Snapshot` in memory. |
+| `backend.py` | The interface the web layer uses for the snapshot, the scans and the administration actions (see [ADR 0002](0002-horizontal-scaling.md)). |
 | `web/` | Server-rendered UI, JSON API (`/api/snapshot`, `/api/refresh`, `/api/rescan/*`), Prometheus `/metrics`. |
 
 New sources (e.g. Flux HelmReleases, plain Helm release secrets) are added as a new collector,
