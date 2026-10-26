@@ -66,7 +66,8 @@ docs/                  documentation and ADRs
 - New kind of workload or inventory (e.g. Flux `HelmRelease`): add a collector in `collectors/`
   returning `ImageReport` / `ChartReport` objects, and call it from the collect task of `worker.py`.
   Tasks and results stay dataclasses of models, so they can be sent to another process as JSON
-  (see `test_scan_tasks_survive_json`).
+  (see `test_scan_tasks_survive_json` and `test_rescans_and_retry_are_tasks`): the scanner sends
+  every task through its runner, it never calls a collector, a checker or Trivy itself.
 - New kind of registry: add a client in `registry/` and use it from `checkers.py`.
 - New page: add a route in `web/ui.py`, a template in `web/templates/` extending `base.html`
   (title in `{% block heading %}`, content in `{% block content %}`), a link in the sidebar of

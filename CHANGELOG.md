@@ -13,7 +13,8 @@ All notable changes to this project are documented here. The format follows
   encoding of `/api/snapshot`. The UI, the API and the metrics go through a `Backend` interface
   (`backend.py`) instead of the scanner, ready for `ui` pods that ask the controller. A full scan is
   split in tasks that can be sent as JSON (collect a cluster, check images, check charts, scan with
-  Trivy), run by the worker of the process; the snapshot is kept behind a `SnapshotStore`.
+  Trivy), run by the worker of the process; the rescans and the retry of failed items are tasks too.
+  The snapshot is kept behind a `SnapshotStore`.
 - Images, Helm charts and Vulnerabilities load 30 rows at a time, the next ones when the bottom of the list
   comes into view, with an animated loading row, a count of the rows shown and a "N more below" button while rows are left to load;
   the column sort of these lists is done by the server.
