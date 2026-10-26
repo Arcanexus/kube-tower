@@ -39,7 +39,7 @@ async def snapshot(request: Request) -> dict:
 
 @router.post("/api/refresh", status_code=202)
 async def refresh(request: Request) -> dict:
-    return {"started": request.app.state.backend.trigger()}
+    return {"started": await request.app.state.backend.trigger()}
 
 
 def _rescan_answer(response: Response, error: str | None) -> dict:
@@ -57,7 +57,7 @@ async def rescan_image(
     backend = request.app.state.backend
     if (report := backend.snapshot.image(ref)) is None:
         raise HTTPException(404, f"image {ref!r} not found in the last scan")
-    return _rescan_answer(response, backend.rescan_image(report, versions, vulnerabilities))
+    return _rescan_answer(response, await backend.rescan_image(report, versions, vulnerabilities))
 
 
 @router.post("/api/rescan/chart", status_code=202)
@@ -68,31 +68,31 @@ async def rescan_chart(request: Request, response: Response, cluster: str, names
         raise HTTPException(
             404, f"chart {chart!r} of application {namespace}/{app} in cluster {cluster!r} not found in the last scan"
         )
-    return _rescan_answer(response, backend.rescan_chart(report))
+    return _rescan_answer(response, await backend.rescan_chart(report))
 
 
 @router.post("/api/administration/retry-failed", status_code=202)
 async def retry_failed(request: Request, response: Response) -> dict:
     """Check again everything that failed in the last scan (image versions, vulnerability scans, charts)."""
-    return _rescan_answer(response, request.app.state.backend.retry_failed())
+    return _rescan_answer(response, await request.app.state.backend.retry_failed())
 
 
 @router.post("/api/administration/trivy-db", status_code=202)
 async def update_trivy_db(request: Request, response: Response) -> dict:
     """Download the Trivy databases when a newer one is published (standalone mode)."""
-    return _rescan_answer(response, request.app.state.backend.update_trivy_db())
+    return _rescan_answer(response, await request.app.state.backend.update_trivy_db())
 
 
 @router.delete("/api/administration/trivy-cache")
 async def clear_trivy_cache(request: Request) -> dict:
     """Forget the cached Trivy results: the next scan scans every image again."""
-    return {"cleared": request.app.state.backend.clear_trivy_cache()}
+    return {"cleared": await request.app.state.backend.clear_trivy_cache()}
 
 
 @router.post("/api/administration/connectivity", status_code=202)
 async def test_connectivity(request: Request, response: Response) -> dict:
     """Test the clusters, registries, Helm repositories and Trivy server; results in GET /api/administration/connectivity."""
-    return _rescan_answer(response, request.app.state.backend.test_connectivity())
+    return _rescan_answer(response, await request.app.state.backend.test_connectivity())
 
 
 @router.get("/api/administration/connectivity")

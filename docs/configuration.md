@@ -97,12 +97,14 @@ The roles can already run apart, as a preview (the Helm chart still deploys one 
   `internal.controllerUrl`, run them and send the results back; a `worker` reads the cluster list itself.
   The version checks and Trivy scans of a scan are split in tasks of `internal.batchSize` images or
   charts (the tags of one image stay together), so several processes share them;
-- `ui` needs `controller` in the same process for now;
+- a process with `ui` and no `controller` shows the state of the controller, read every 2 seconds
+  from `internal.controllerUrl`, and sends it the actions of the users; any number of them can serve
+  the pages. The metrics of the snapshot are served by the process with `controller` only;
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
 
-The administration actions (Trivy database, cache, connectivity test) and the registry status of the
-Settings page still act on the process of the UI.
+The administration actions (Trivy database, cache, connectivity test) act on the process of the
+controller, and the Logs page shows the lines of the process that serves it.
 
 ## Vulnerabilities (Trivy)
 

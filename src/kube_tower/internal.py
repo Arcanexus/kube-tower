@@ -1,5 +1,6 @@
 """The internal API of the distributed mode (ADR 0002): worker and trivy processes pull tasks from the
-controller and send their results back.
+controller and send their results back; `ui` processes read the state of the controller (its snapshot,
+what runs) and send it the actions of the users (see backend.RemoteBackend).
 
 The controller serves it on its own port (internal.port), apart from the UI, behind a token shared by
 the processes: the tasks carry the credentials of image pull secrets, it must never be exposed.
@@ -11,7 +12,7 @@ import asyncio
 import hmac
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -19,8 +20,12 @@ from pydantic import BaseModel
 
 from kube_tower.clusters import ClusterRegistry
 from kube_tower.config import Settings, internal_token
+from kube_tower.models import encode
 from kube_tower.tasks import CollectTask, QueueRunner, decode_task, encode_result, role_of
 from kube_tower.worker import Worker
+
+if TYPE_CHECKING:
+    from kube_tower.backend import LocalBackend
 
 log = logging.getLogger(__name__)
 
@@ -35,12 +40,16 @@ class Pull(BaseModel):
     wait: float = WAIT
 
 
+class StateRequest(BaseModel):
+    revision: int = -1  # the revision of the snapshot the UI process has
+
+
 class Answer(BaseModel):
     result: dict[str, Any] | None = None
     error: str | None = None
 
 
-def create_internal_app(runner: QueueRunner, token: str) -> FastAPI:
+def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend | None = None) -> FastAPI:
     def authorized(request: Request) -> None:
         sent = request.headers.get("Authorization", "")
         if not hmac.compare_digest(sent.encode(), f"Bearer {token}".encode()):
@@ -65,6 +74,21 @@ def create_internal_app(runner: QueueRunner, token: str) -> FastAPI:
             done = runner.complete(task_id, answer.result or {})
         if not done:  # given to another process meanwhile, or the scan is over
             raise HTTPException(404, f"task {task_id} is not waiting for a result")
+
+    if backend is not None:
+
+        @app.post(f"{PREFIX}/state", dependencies=[Depends(authorized)])
+        async def state(asked: StateRequest) -> dict:
+            # Encoded in a thread: a large snapshot would hold the event loop meanwhile.
+            return await asyncio.to_thread(lambda: encode(backend.state(asked.revision)))
+
+        @app.post(f"{PREFIX}/actions/{{name}}", dependencies=[Depends(authorized)])
+        async def action(name: str, request: Request) -> dict:
+            params = await request.json() if await request.body() else {}
+            try:
+                return {"result": await backend.action(name, params)}
+            except ValueError as exc:
+                raise HTTPException(404, str(exc)) from exc
 
     return app
 

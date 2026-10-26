@@ -76,6 +76,9 @@ its replicas, resources and HPA.
    processes pull them (`TaskPuller`) with the credentials of image pull secrets as context. The
    version checks and Trivy scans are split in batches (`internal.batchSize`) shared by the processes;
    a Trivy process refreshes its databases at most every 10 minutes and forgets the results too old to
-   be used (a batch cannot tell which images are gone). Next: a `ui` asking a remote controller, the
-   administration actions and logs of the remote roles, `Lease` election.
+   be used (a batch cannot tell which images are gone). A `ui` process without the controller uses the
+   `RemoteBackend`: it reads the state of the controller (`/internal/v1/state`, with the snapshot only
+   when its revision changed or something runs) and sends the actions (`/internal/v1/actions/...`); the
+   backend actions are async for that. Next: the administration actions and logs of the remote roles,
+   `Lease` election.
 5. Chart `mode: distributed`, documentation, release candidate.

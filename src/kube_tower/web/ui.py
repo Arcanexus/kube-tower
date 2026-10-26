@@ -657,22 +657,22 @@ def mount(app: FastAPI) -> None:
         backend = request.app.state.backend
         notice = error = None
         if action == "scan":
-            error = None if backend.trigger() else "a scan or an administration action is already running"
+            error = None if await backend.trigger() else "a scan or an administration action is already running"
             notice = "Full scan started."
         elif action == "retry-failed":
-            error, notice = backend.retry_failed(), "Retry of the failed items started."
+            error, notice = await backend.retry_failed(), "Retry of the failed items started."
         elif action == "trivy-db":
-            error, notice = backend.update_trivy_db(), "Trivy database update started."
+            error, notice = await backend.update_trivy_db(), "Trivy database update started."
         elif action == "trivy-status":
             await backend.refresh_trivy_status()
             notice = "Trivy status read again."
         elif action in ("trivy-cache", "trivy-cache-scan"):
-            notice = f"Trivy results cache cleared ({plural(backend.clear_trivy_cache(), 'image')})."
+            notice = f"Trivy results cache cleared ({plural(await backend.clear_trivy_cache(), 'image')})."
             if action == "trivy-cache-scan":
-                started = backend.trigger()
+                started = await backend.trigger()
                 notice += " Full scan started." if started else " A scan is already running: the next one scans every image."
         elif action == "connectivity":
-            error, notice = backend.test_connectivity(), "Connectivity test started."
+            error, notice = await backend.test_connectivity(), "Connectivity test started."
         else:
             return Response(status_code=404)
         return render_administration(request, "" if error else notice, error or "")
