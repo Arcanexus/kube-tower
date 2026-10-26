@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -27,7 +28,7 @@ from kube_tower import __version__
 from kube_tower.clusters import ClusterRegistry
 from kube_tower.config import Settings, internal_token
 from kube_tower.logbuffer import LogBuffer, LogLine
-from kube_tower.models import decode, encode
+from kube_tower.models import decode, encode, to_json
 from kube_tower.processes import STARTED, process_name
 from kube_tower.tasks import CollectTask, QueueRunner, decode_task, encode_result, role_of
 from kube_tower.worker import Worker
@@ -96,7 +97,10 @@ def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend |
         return task if task is not None else Response(status_code=204)
 
     @app.post(f"{PREFIX}/tasks/{{task_id}}/result", status_code=204, dependencies=[Depends(authorized)])
-    async def task_result(task_id: str, answer: Answer) -> None:
+    async def task_result(task_id: str, request: Request) -> None:
+        # Parsed in a thread: a result can weigh megabytes (the vulnerabilities of a batch of images).
+        raw = await request.body()
+        answer = await asyncio.to_thread(lambda: Answer.model_validate_json(raw))
         if backend is not None:
             backend.process_registry.task(answer.source)
         if answer.error is not None:
@@ -109,9 +113,10 @@ def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend |
     if backend is not None:
 
         @app.post(f"{PREFIX}/state", dependencies=[Depends(authorized)])
-        async def state(asked: StateRequest) -> dict:
-            # Encoded in a thread: a large snapshot would hold the event loop meanwhile.
-            return await asyncio.to_thread(lambda: encode(backend.state(asked.revision)))
+        async def state(asked: StateRequest) -> Response:
+            # Encoded in a thread, to JSON too: a large snapshot would hold the event loop meanwhile.
+            body = await asyncio.to_thread(lambda: to_json(backend.state(asked.revision)))
+            return Response(body, media_type="application/json")
 
         @app.post(f"{PREFIX}/logs", dependencies=[Depends(authorized)])
         async def logs(asked: LogsRequest) -> list:
@@ -176,14 +181,17 @@ class TaskPuller:
     async def answer(self, http: httpx.AsyncClient, data: dict[str, Any]) -> None:
         task_id = data["id"]
         try:
-            answer: dict[str, Any] = {"result": encode_result(await self.execute(data))}
+            result = await self.execute(data)
+            answer: dict[str, Any] = {"result": await asyncio.to_thread(encode_result, result)}
         except Exception as exc:  # noqa: BLE001 - reported to the controller, the loop goes on
             log.exception("task %s failed", task_id)
             answer = {"error": f"{type(exc).__name__}: {exc}"}
         answer["source"] = self.source
+        body = await asyncio.to_thread(lambda: json.dumps(answer).encode())
+        headers = {"Content-Type": "application/json"}
         for delay in (*RETRY, None):
             try:
-                sent = await http.post(f"{self.url}{PREFIX}/tasks/{task_id}/result", json=answer)
+                sent = await http.post(f"{self.url}{PREFIX}/tasks/{task_id}/result", content=body, headers=headers)
                 if sent.status_code == 404:
                     log.warning("result of task %s not needed anymore (given to another process, or the scan is over)", task_id)
                 else:
@@ -197,7 +205,7 @@ class TaskPuller:
                 await asyncio.sleep(delay)
 
     async def execute(self, data: dict[str, Any]) -> Any:
-        task = decode_task(data)
+        task = await asyncio.to_thread(decode_task, data)
         if role_of(task) not in self.roles:
             raise ValueError(f"a {role_of(task)} task was sent to a process with roles {', '.join(self.roles)}")
         context = data.get("context") or {}

@@ -230,7 +230,9 @@ class QueueRunner:
         self.queue.append(queued)
         self._added.set()
         try:
-            return decode_result(kind, await queued.future)
+            # In a thread: decoding a large result (e.g. the vulnerabilities of 50 images) takes seconds, and this
+            # event loop also serves the internal API and, in a process with the ui role, the pages.
+            return await asyncio.to_thread(decode_result, kind, await queued.future)
         finally:  # done, or the scan was cancelled: forget it
             if queued in self.queue:
                 self.queue.remove(queued)

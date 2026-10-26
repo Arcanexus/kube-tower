@@ -9,6 +9,7 @@ controller over its internal API (ADR 0002): the web layer does not change.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -212,8 +213,8 @@ class LocalBackend:
         return self.administration.test_connectivity()
 
     def state(self, revision: int | None = None) -> BackendState:
-        """What a RemoteBackend shows, with the snapshot unless the UI has this revision and nothing runs
-        (results are set in the snapshot while scans and rescans run)."""
+        """What a RemoteBackend shows, with the snapshot unless the UI has this revision (every change of the
+        snapshot gives it a new revision: a large snapshot is sent, and decoded by the UIs, only when needed)."""
         scanner = self.scanner
         credentials, auth = self.registry_credentials(scanner.settings)
         activities = self.activities()
@@ -237,7 +238,7 @@ class LocalBackend:
             connectivity=self.connectivity,
             admin_running=sorted(self.admin_running),
             processes=self.processes(),
-            snapshot=self.snapshot if revision != scanner.revision or activities else None,
+            snapshot=self.snapshot if revision != scanner.revision else None,
         )
 
     async def action(self, name: str, params: dict[str, Any]) -> Any:
@@ -329,9 +330,11 @@ class RemoteBackend:
         if self._unreachable:
             log.info("the controller answers again")
         self._unreachable = False
-        self.state = decode(BackendState, answer.json())
-        if self.state.snapshot is not None:
-            self._snapshot, self.state.snapshot = self.state.snapshot, None
+        # In a thread: a new snapshot takes a while to decode, the pages of this process wait for nothing.
+        state = await asyncio.to_thread(lambda: decode(BackendState, json.loads(answer.content)))
+        if state.snapshot is not None:
+            self._snapshot, state.snapshot = state.snapshot, None
+        self.state = state
 
     async def _action(self, name: str, unreachable: Any = None, **params: Any) -> Any:
         try:

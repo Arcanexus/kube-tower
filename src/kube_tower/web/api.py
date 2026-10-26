@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -56,8 +58,11 @@ async def readyz(request: Request, response: Response) -> dict:
 
 
 @router.get("/api/snapshot")
-async def snapshot(request: Request) -> dict:
-    return request.app.state.backend.snapshot.to_dict()
+async def snapshot(request: Request) -> Response:
+    # Serialized in a thread: a large snapshot would hold the pages meanwhile.
+    snap = request.app.state.backend.snapshot
+    body = await asyncio.to_thread(lambda: json.dumps(snap.to_dict(), separators=(",", ":")).encode())
+    return Response(body, media_type="application/json")
 
 
 @router.post("/api/refresh", status_code=202)

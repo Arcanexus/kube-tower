@@ -39,18 +39,23 @@ SWITCH_INTERVAL = 0.001
 LAG_CHECK, LAG_WARNING = 0.5, 1.0  # seconds
 
 
-async def watch_event_loop() -> None:
-    """Log when the web server could not answer for a while (the pages and the API wait meanwhile)."""
+async def watch_event_loop(ui: bool = True) -> None:
+    """Log when the event loop could not run for a while: in a process with the ui role, the pages and the API
+    wait meanwhile (a warning); in a worker or trivy process only its task pulls and reports do."""
     log = logging.getLogger(__name__)
     while True:
         start = time.monotonic()
         await asyncio.sleep(LAG_CHECK)
-        if (lag := time.monotonic() - start - LAG_CHECK) > LAG_WARNING:
+        if (lag := time.monotonic() - start - LAG_CHECK) <= LAG_WARNING:
+            continue
+        if ui:
             log.warning(
                 "the web server was blocked for %.1fs: pages and API calls answered late meanwhile (a scan using the "
                 "CPU: give the pod more CPU, or report it with the logs around this line)",
                 lag,
             )
+        else:
+            log.info("the event loop was busy for %.1fs (a task using the CPU): no page is served by this process", lag)
 
 
 class InternalServer(uvicorn.Server):
@@ -151,7 +156,8 @@ def create_app(
     async def lifespan(app: FastAPI):
         if isinstance(getattr(scanner, "runner", None), QueueRunner):
             scanner.runner.loop = asyncio.get_running_loop()
-        tasks = [asyncio.create_task(run()) for run in [*runs, watch_event_loop]] if background else []
+        watch = lambda: watch_event_loop(ui="ui" in roles)  # noqa: E731
+        tasks = [asyncio.create_task(run()) for run in [*runs, watch]] if background else []
         yield
         if internal is not None:
             internal.should_exit = True
