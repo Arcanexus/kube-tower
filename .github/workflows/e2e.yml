@@ -1,0 +1,33 @@
+name: E2E
+
+# Installs the chart in distributed mode on a kind cluster with the image of this commit and checks
+# that the pods work together: scan, UI, standby controller taking over (tests/e2e/distributed.sh).
+on:
+  pull_request:
+    paths: ["src/**", "charts/**", "Dockerfile", "tests/e2e/**", ".github/workflows/e2e.yml"]
+  push:
+    branches: ["main"]
+    paths: ["src/**", "charts/**", "Dockerfile", "tests/e2e/**", ".github/workflows/e2e.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  distributed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Build the image
+        run: docker build -t kube-tower:e2e .
+      - uses: azure/setup-helm@v5
+      - name: Create the kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: e2e
+      - name: Load the image
+        run: kind load docker-image kube-tower:e2e --name e2e
+      - name: Distributed mode
+        run: tests/e2e/distributed.sh

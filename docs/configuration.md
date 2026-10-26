@@ -113,9 +113,9 @@ run apart:
   The new controller starts with a full scan, unless `redis.url` is set (below), and the worker and
   trivy processes pull from it;
 - with `redis.url`, the controller also writes the snapshot to Redis or Valkey (compressed, at each
-  change, the last version only) and reads it back when it starts: a restarted controller, or a standby
-  taking over, shows the last inventory at once and waits for the rest of `refreshInterval` before
-  scanning. Only the controller connects to it. A scan in progress is not kept: it starts again;
+  change, the last version only) and reads it back when it becomes the active controller: a restarted
+  controller, or a standby taking over, shows the last inventory at once and waits for the rest of
+  `refreshInterval` before scanning. Only the controller connects to it. A scan in progress is not kept: it starts again;
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
 

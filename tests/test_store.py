@@ -47,6 +47,7 @@ def test_memory_store():
     snap = _snapshot()
     store.set(snap)
     store.changed()
+    store.load()
     assert store.get() is snap
 
 
@@ -54,6 +55,7 @@ def test_redis_store_writes_and_reads_back(caplog):
     caplog.set_level(logging.INFO)
     fake = FakeRedis()
     store = RedisSnapshotStore(fake, "kube-tower:snapshot")
+    store.load()
     assert store.get().finished_at is None and "no snapshot in Redis" in caplog.text
     store.set(_snapshot())
     assert store.flush(5)
@@ -63,7 +65,9 @@ def test_redis_store_writes_and_reads_back(caplog):
     assert store.flush(5)
     assert _stored(fake).images[0].latest_tag == "1.27"
 
-    again = RedisSnapshotStore(fake, "kube-tower:snapshot")  # a new controller
+    again = RedisSnapshotStore(fake, "kube-tower:snapshot")  # a standby
+    assert again.get().images == []  # read when it becomes the active controller only
+    again.load()
     assert again.get().images[0].latest_tag == "1.27"
     assert "snapshot read from Redis: 1 images and 0 charts" in caplog.text
 
@@ -83,6 +87,7 @@ def test_redis_store_survives_errors(monkeypatch, caplog):
     fake = FakeRedis()
     fake.fail_reads = 1
     store = RedisSnapshotStore(fake, "k")
+    store.load()
     assert store.get().images == [] and "cannot read the snapshot from Redis" in caplog.text
     fake.fail_writes = 2
     store.set(_snapshot())
@@ -91,7 +96,9 @@ def test_redis_store_survives_errors(monkeypatch, caplog):
     assert _stored(fake, "k").images
 
     fake.data["k"] = b"not a snapshot"
-    assert RedisSnapshotStore(fake, "k").get().images == []
+    store = RedisSnapshotStore(fake, "k")
+    store.load()
+    assert store.get().images == []
     assert "cannot decode the snapshot" in caplog.text
 
 

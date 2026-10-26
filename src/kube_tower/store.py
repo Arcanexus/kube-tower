@@ -25,6 +25,9 @@ class SnapshotStore(Protocol):
     def changed(self) -> None:
         """The snapshot was changed in place (a rescan, the Trivy phase of a scan)."""
 
+    def load(self) -> None:
+        """Read the stored snapshot, when this process becomes the active controller (blocking)."""
+
 
 class MemorySnapshotStore:
     """The Snapshot in the memory of this process: rebuilt by a scan after a restart."""
@@ -41,17 +44,20 @@ class MemorySnapshotStore:
     def changed(self) -> None:
         pass
 
+    def load(self) -> None:
+        pass
+
 
 class RedisSnapshotStore:
-    """The Snapshot in memory, also written to Redis / Valkey: read back when the controller starts.
+    """The Snapshot in memory, also written to Redis / Valkey: read back when the controller starts (or a
+    standby takes over, see election.py), never again after: only the active controller writes it.
 
     The writes run in a thread of their own, the last version only (a scan changes the snapshot often).
-    Redis is never read again after the start: one active controller writes it (see election.py).
     """
 
     def __init__(self, redis: Any, key: str):
         self.redis, self.key = redis, key
-        self._snapshot = self._load()
+        self._snapshot = Snapshot()
         self._wanted = self._written = 0  # versions of the snapshot asked to be written, and written
         self._cond = threading.Condition()
         threading.Thread(target=self._write_loop, name="redis-store", daemon=True).start()
@@ -77,6 +83,9 @@ class RedisSnapshotStore:
             snapshot.finished_at,
         )
         return snapshot
+
+    def load(self) -> None:
+        self._snapshot = self._load()
 
     def get(self) -> Snapshot:
         return self._snapshot
