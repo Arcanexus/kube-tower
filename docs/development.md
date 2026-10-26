@@ -47,7 +47,8 @@ src/kube_tower/
   checkers.py          version comparison, one lookup per repository per scan
   versions.py          tag parsing and ordering
   scanner.py           full scan, rescans and in-memory snapshot
-  administration.py       Administration page actions (Trivy database, connectivity tests, unused node images)
+  administration.py    Administration page actions (Trivy database, connectivity tests, unused node images)
+  backend.py           Backend interface: all the web layer may use of the scans and the administration
   errors.py            explicit error messages (what failed, status, what to do)
   logger.py            log formats; logbuffer.py keeps the last lines for the Logs page
   web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Synthesis figures), api.py,
@@ -68,6 +69,10 @@ docs/                  documentation and ADRs
   relative (no leading `/`), see `test_links_are_relative`. Icons come from the sprite
   `static/icons.svg` ([Lucide](https://lucide.dev) icons, add a `<symbol id="i-name">` to use
   `icon("name")`).
+- Pages, API and metrics read and act through `request.app.state.backend` (`backend.py`), never
+  the scanner or the administration directly (see `test_web_layer_only_talks_to_the_backend`): in the
+  distributed mode of [ADR 0002](adr/0002-horizontal-scaling.md) the `ui` pods get a backend that asks
+  the controller. Something new the web needs from the scans is added to the `Backend` interface.
 - List page: add `{% block layout %}list-page{% endblock %}` and wrap the table in
   `<div class="overflow-auto table-wrap">`: only the table scrolls, its header stays. Add
   `data-sort` to the sortable `<th>` (`data-sort="desc"` to sort descending first) and, when the

@@ -18,7 +18,6 @@ from kube_tower import __version__
 from kube_tower.administration import unused_node_images
 from kube_tower.config import Settings
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status, Usage
-from kube_tower.registry.auth import resolve_credentials
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
 from kube_tower.web.metrics import image_update
@@ -344,12 +343,12 @@ def warnings(request: Request) -> list[str]:
     """Problems of kube-tower itself (not of the last scan), shown with the scan errors of the status pill."""
     found = []
     vulns = request.app.state.settings.vulnerabilities
-    scanner, administration = request.app.state.scanner, request.app.state.administration
+    backend = request.app.state.backend
     if vulns.enabled and vulns.trivy.enabled:
-        status = administration.trivy_status
-        if not scanner.trivy.available:
+        status = backend.trivy_status
+        if not backend.trivy_available:
             found.append(
-                f"Trivy: binary {scanner.trivy.settings.binary!r} not found, images without a Trivy Operator report "
+                f"Trivy: binary {backend.trivy_binary!r} not found, images without a Trivy Operator report "
                 "are not scanned for vulnerabilities (see Administration)."
             )
         elif status and status.message:
@@ -390,7 +389,7 @@ def mount(app: FastAPI) -> None:
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
     def render(request: Request, name: str, **context) -> HTMLResponse:
-        scanner = request.app.state.scanner
+        backend = request.app.state.backend
         # htmx requests only get the table fragment, full page loads get the layout.
         partial = request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "results"
         # The next page of a list (infinite scroll): only its rows.
@@ -400,9 +399,9 @@ def mount(app: FastAPI) -> None:
             request,
             f"{name}.html",
             {
-                "snapshot": scanner.snapshot,
-                "scanning": scanner.running,
-                "checking_versions": scanner.checking_versions,
+                "snapshot": backend.snapshot,
+                "scanning": backend.running,
+                "checking_versions": backend.checking_versions,
                 "warnings": warnings(request),
                 "partial": partial,
                 "rows_only": rows_only,
@@ -414,8 +413,8 @@ def mount(app: FastAPI) -> None:
         """A detail panel. While its item is rescanned the panel polls itself (`polling=1`); the poll
         that sees the rescan over tells the page (event kt-rescanned) to reload its results.
         """
-        scanner = request.app.state.scanner
-        rescanning = key in scanner.rescanning
+        backend = request.app.state.backend
+        rescanning = key in backend.rescanning
         response = render(request, name, rescanning=rescanning, **context)
         if request.query_params.get("polling") and not rescanning:
             response.headers["HX-Trigger"] = "kt-rescanned"
@@ -428,7 +427,7 @@ def mount(app: FastAPI) -> None:
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     @app.get("/synthesis", response_class=HTMLResponse, include_in_schema=False)
     async def synthesis(request: Request):
-        summary = summarize(request.app.state.scanner.snapshot)
+        summary = summarize(request.app.state.backend.snapshot)
         return render(request, "synthesis", tab="synthesis", summary=summary, update_kinds=UPDATE_KINDS, worst_order=WORST_ORDER)
 
     @app.get("/images", response_class=HTMLResponse, include_in_schema=False)
@@ -445,7 +444,7 @@ def mount(app: FastAPI) -> None:
         # Counters ignore the status filter: they are the buttons that set it.
         matching = [
             r
-            for r in request.app.state.scanner.snapshot.images
+            for r in request.app.state.backend.snapshot.images
             if _matches(str(r.image), q)
             and (not cluster or cluster in r.clusters)
             and (not running or r.running)
@@ -469,11 +468,11 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/images/detail", response_class=HTMLResponse, include_in_schema=False)
     async def image_detail(request: Request, ref: str = ""):
-        scanner = request.app.state.scanner
-        if (report := scanner.snapshot.image(ref)) is None:
+        backend = request.app.state.backend
+        if (report := backend.snapshot.image(ref)) is None:
             return Response(status_code=404)
-        can_scan = scanner.can_rescan_vulnerabilities(report)
-        same_name = len(scanner.same_name_images(report))
+        can_scan = backend.can_rescan_vulnerabilities(report)
+        same_name = len(backend.same_name_images(report))
         return render_detail(
             request, "_image_detail", image_key(report), r=report, can_rescan_vulnerabilities=can_scan, same_name=same_name
         )
@@ -485,7 +484,7 @@ def mount(app: FastAPI) -> None:
         cve = request.query_params.get("cve", "")
         terms = cve_terms(cve)
         found = {}  # image reference -> its vulnerabilities whose ID matches the CVE filter
-        for r in request.app.state.scanner.snapshot.images:
+        for r in request.app.state.backend.snapshot.images:
             if terms and (hits := matching_vulnerabilities(r, terms)):
                 # One badge per ID (a CVE often affects several packages), most severe first
                 unique = {}
@@ -496,7 +495,7 @@ def mount(app: FastAPI) -> None:
         matching = sorted(
             (
                 r
-                for r in request.app.state.scanner.snapshot.images
+                for r in request.app.state.backend.snapshot.images
                 if _matches(str(r.image), q) and (not cluster or cluster in r.clusters) and (not terms or str(r.image) in found)
             ),
             key=vulnerability_sort_key,
@@ -522,10 +521,10 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/vulnerabilities/detail", response_class=HTMLResponse, include_in_schema=False)
     async def vulnerability_detail(request: Request, ref: str = "", cve: str = ""):
-        scanner = request.app.state.scanner
-        if (report := scanner.snapshot.image(ref)) is None:
+        backend = request.app.state.backend
+        if (report := backend.snapshot.image(ref)) is None:
             return Response(status_code=404)
-        can_scan = scanner.can_rescan_vulnerabilities(report)
+        can_scan = backend.can_rescan_vulnerabilities(report)
         highlighted = {v.id for v in matching_vulnerabilities(report, cve_terms(cve))}
         return render_detail(
             request,
@@ -533,7 +532,7 @@ def mount(app: FastAPI) -> None:
             image_key(report),
             r=report,
             can_rescan_vulnerabilities=can_scan,
-            same_name=len(scanner.same_name_images(report)),
+            same_name=len(backend.same_name_images(report)),
             cve=cve,
             highlighted=highlighted,
         )
@@ -543,7 +542,7 @@ def mount(app: FastAPI) -> None:
         q, status, cluster = filters(request)
         matching = [
             c
-            for c in request.app.state.scanner.snapshot.charts
+            for c in request.app.state.backend.snapshot.charts
             if _matches(f"{c.application} {c.chart} {c.repository}", q) and (not cluster or c.cluster == cluster)
         ]
         listing = list_page(
@@ -563,7 +562,7 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/charts/detail", response_class=HTMLResponse, include_in_schema=False)
     async def chart_detail(request: Request, cluster: str = "", namespace: str = "", app: str = "", chart: str = ""):
-        if (report := request.app.state.scanner.snapshot.chart(cluster, namespace, app, chart)) is None:
+        if (report := request.app.state.backend.snapshot.chart(cluster, namespace, app, chart)) is None:
             return Response(status_code=404)
         return render_detail(request, "_chart_detail", chart_key(report), c=report)
 
@@ -591,7 +590,7 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/clusters", response_class=HTMLResponse, include_in_schema=False)
     async def clusters(request: Request):
-        summaries = {c.name: c for c in summarize(request.app.state.scanner.snapshot).clusters}
+        summaries = {c.name: c for c in summarize(request.app.state.backend.snapshot).clusters}
         return render(request, "clusters", tab="clusters", summaries=summaries)
 
     @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
@@ -599,9 +598,7 @@ def mount(app: FastAPI) -> None:
         # Settings only hold references to secrets (paths, env var names), never their values.
         settings = request.app.state.settings
         rendered = yaml.safe_dump(_camel(dataclasses.asdict(settings)), sort_keys=False)
-        scanner = request.app.state.scanner
-        _, credentials = resolve_credentials(settings.registries, pull_secrets=scanner.pull_secrets)
-        auth = {c.registry: scanner.registry_auth.get(c.registry) for c in credentials}
+        credentials, auth = request.app.state.backend.registry_credentials(settings)
         return render(
             request,
             "settings",
@@ -616,24 +613,23 @@ def mount(app: FastAPI) -> None:
         """The Administration page, or only its actions (`#administration`) for htmx. While an action runs the
         actions poll themselves (`polling=1`); the poll that sees them all over reloads the page.
         """
-        scanner, administration = request.app.state.scanner, request.app.state.administration
-        images, vulnerabilities, charts = scanner.failed_items()
-        busy = bool(scanner.locked or scanner.rescanning or administration.running)
+        backend = request.app.state.backend
+        images, vulnerabilities, charts = backend.failed_items()
+        busy = bool(backend.locked or backend.rescanning or backend.admin_running)
         response = templates.TemplateResponse(
             request,
             "administration.html" if full else "_administration.html",
             {
                 "tab": "administration",
-                "snapshot": scanner.snapshot,
-                "scanning": scanner.running,
-                "checking_versions": scanner.checking_versions,
+                "snapshot": backend.snapshot,
+                "scanning": backend.running,
+                "checking_versions": backend.checking_versions,
                 "warnings": warnings(request),
                 "partial": False,
-                "scanner": scanner,
-                "m": administration,
+                "backend": backend,
                 "busy": busy,
                 "failed": {"images": images, "vulnerabilities": vulnerabilities, "charts": charts},
-                "unused": unused_node_images(scanner.snapshot),
+                "unused": unused_node_images(backend.snapshot),
                 "trivy_settings": request.app.state.settings.vulnerabilities,
                 "notice": notice,
                 "error": error,
@@ -645,9 +641,9 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/administration", response_class=HTMLResponse, include_in_schema=False)
     async def administration(request: Request):
-        m, trivy = request.app.state.administration, request.app.state.settings.vulnerabilities
-        if m.trivy_status is None and trivy.enabled and trivy.trivy.enabled:
-            await m.refresh_trivy_status()
+        backend, trivy = request.app.state.backend, request.app.state.settings.vulnerabilities
+        if backend.trivy_status is None and trivy.enabled and trivy.trivy.enabled:
+            await backend.refresh_trivy_status()
         fragment = request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "administration"
         return render_administration(request, full=not fragment)
 
@@ -658,25 +654,25 @@ def mount(app: FastAPI) -> None:
 
     @app.post("/administration/{action}", response_class=HTMLResponse, include_in_schema=False)
     async def administration_action(request: Request, action: str):
-        scanner, m = request.app.state.scanner, request.app.state.administration
+        backend = request.app.state.backend
         notice = error = None
         if action == "scan":
-            error = None if scanner.trigger() else "a scan or an administration action is already running"
+            error = None if backend.trigger() else "a scan or an administration action is already running"
             notice = "Full scan started."
         elif action == "retry-failed":
-            error, notice = scanner.retry_failed(), "Retry of the failed items started."
+            error, notice = backend.retry_failed(), "Retry of the failed items started."
         elif action == "trivy-db":
-            error, notice = m.update_trivy_db(), "Trivy database update started."
+            error, notice = backend.update_trivy_db(), "Trivy database update started."
         elif action == "trivy-status":
-            await m.refresh_trivy_status()
+            await backend.refresh_trivy_status()
             notice = "Trivy status read again."
         elif action in ("trivy-cache", "trivy-cache-scan"):
-            notice = f"Trivy results cache cleared ({plural(m.clear_trivy_cache(), 'image')})."
+            notice = f"Trivy results cache cleared ({plural(backend.clear_trivy_cache(), 'image')})."
             if action == "trivy-cache-scan":
-                started = scanner.trigger()
+                started = backend.trigger()
                 notice += " Full scan started." if started else " A scan is already running: the next one scans every image."
         elif action == "connectivity":
-            error, notice = m.test_connectivity(), "Connectivity test started."
+            error, notice = backend.test_connectivity(), "Connectivity test started."
         else:
             return Response(status_code=404)
         return render_administration(request, "" if error else notice, error or "")
@@ -684,7 +680,7 @@ def mount(app: FastAPI) -> None:
     @app.get("/status", response_class=HTMLResponse, include_in_schema=False)
     async def scan_status(request: Request):
         response = render(request, "_status")
-        if request.query_params.get("polling") and not request.app.state.scanner.running:
+        if request.query_params.get("polling") and not request.app.state.backend.running:
             # The scan the page was waiting for is over: reload it to show the new results.
             response.headers["HX-Refresh"] = "true"
         return response

@@ -41,14 +41,14 @@ def _workload_usages(r: ImageReport) -> set[tuple[str, str, str, str, str]]:
 
 
 class SnapshotCollector(Collector):
-    def __init__(self, scanner):
-        self.scanner = scanner
+    def __init__(self, backend):
+        self.backend = backend
 
     def describe(self):
         return []  # labels depend on the snapshot: nothing to check at registration
 
     def collect(self):
-        snap: Snapshot = self.scanner.snapshot
+        snap: Snapshot = self.backend.snapshot
         yield from self._images(snap)
         yield from self._vulnerabilities(snap)
         yield from self._charts(snap)
@@ -203,9 +203,9 @@ class SnapshotCollector(Collector):
                 duration.add_metric([], (snap.finished_at - snap.started_at).total_seconds())
             errors.add_metric([], len(snap.errors))
         yield from (last, duration, errors, vulnerabilities)
-        yield GaugeMetricFamily("kube_tower_scan_in_progress", "1 while a scan is running", value=int(bool(self.scanner.running)))
+        yield GaugeMetricFamily("kube_tower_scan_in_progress", "1 while a scan is running", value=int(bool(self.backend.running)))
         scans = CounterMetricFamily("kube_tower_scans", "Scans since start, by result", labels=["result"])
-        for result, count in sorted(getattr(self.scanner, "scans_total", {}).items()):
+        for result, count in sorted(self.backend.scans_total.items()):
             scans.add_metric([result], count)
         yield scans
 
@@ -213,5 +213,5 @@ class SnapshotCollector(Collector):
 @router.get("/metrics", include_in_schema=False)
 async def metrics(request: Request) -> Response:
     registry = CollectorRegistry(auto_describe=False)
-    registry.register(SnapshotCollector(request.app.state.scanner))
+    registry.register(SnapshotCollector(request.app.state.backend))
     return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)

@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from kube_tower.administration import Administration
+from kube_tower.backend import LocalBackend
 from kube_tower.config import Settings, load_settings
 from kube_tower.logbuffer import LogBuffer
 from kube_tower.logger import get_logger
@@ -66,6 +67,8 @@ def create_app(
     app.state.settings = settings
     app.state.scanner = scanner
     app.state.administration = administration or Administration(scanner)
+    # The web layer only talks to this backend (see backend.py), never to the scanner directly.
+    app.state.backend = LocalBackend(scanner, app.state.administration)
     app.state.log_buffer = log_buffer
     app.include_router(api.router)
     app.include_router(metrics.router)

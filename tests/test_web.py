@@ -964,3 +964,14 @@ async def test_watch_event_loop_warns_when_blocked(monkeypatch, caplog):
     await asyncio.sleep(0.05)
     task.cancel()
     assert "the web server was blocked for 0.1s" in caplog.text
+
+
+def test_web_layer_only_talks_to_the_backend():
+    # The distributed mode (ADR 0002) swaps the backend of `ui` pods for one that asks the controller:
+    # pages, API and metrics must not reach the scanner or the administration directly.
+    web = Path(__file__).parent.parent / "src" / "kube_tower" / "web"
+    for path in [*web.glob("*.py"), *web.glob("templates/*.html")]:
+        text = path.read_text()
+        assert not re.search(r"state\.(scanner|administration)\b|\bscanner\.", text), path.name
+    client, _ = _client()
+    assert client.get("/administration").status_code == 200

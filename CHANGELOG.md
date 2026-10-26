@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - Groundwork for horizontal scaling ([ADR 0002](docs/adr/0002-horizontal-scaling.md)): `roles`
   setting (`KUBE_TOWER_ROLES`, only every role together for now) and `Snapshot.from_dict`, the inverse of the JSON
-  encoding of `/api/snapshot`.
+  encoding of `/api/snapshot`. The UI, the API and the metrics go through a `Backend` interface
+  (`backend.py`) instead of the scanner, ready for `ui` pods that ask the controller.
 - Images, Helm charts and Vulnerabilities load 30 rows at a time, the next ones when the bottom of the list
   comes into view, with an animated loading row, a count of the rows shown and a "N more below" button while rows are left to load;
   the column sort of these lists is done by the server.

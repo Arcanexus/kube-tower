@@ -5,7 +5,7 @@
         {% if disabled %}disabled title="{{ why }}"{% endif %}>{{ icon(ico) }}{{ label }}</button>
 {%- endmacro %}
 {% macro date(value) -%}{{ value.strftime("%Y-%m-%d %H:%M UTC") if value else "" }}{%- endmacro %}
-{% set locked = checking_versions or scanner.busy %}
+{% set locked = checking_versions or backend.busy %}
 <div id="administration" class="administration"
      {% if busy %}hx-get="administration?polling=1" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML"{% endif %}>
   {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
@@ -13,9 +13,9 @@
 
   <article id="scans">
     <header>{{ icon("clock") }}In progress</header>
-    {% set activities = scanner.activities() %}
+    {% set activities = backend.activities() %}
     {% set actions = {"trivy-db": "Trivy database update", "connectivity": "Connectivity test"} %}
-    {% if activities or m.running %}
+    {% if activities or backend.admin_running %}
     <table class="striped compact activities">
       <thead><tr><th>Activity</th><th>State</th><th>Started</th></tr></thead>
       <tbody>
@@ -24,7 +24,7 @@
           <td>{% if a.state == "running" %}<span aria-busy="true">running</span>{% else %}<small>waiting for the current Trivy phase</small>{% endif %}</td>
           <td>{% if a.started_at %}<time datetime="{{ a.started_at.isoformat() }}" class="ago">{{ date(a.started_at) }}</time>{% endif %}</td></tr>
         {% endfor %}
-        {% for action in m.running | sort %}
+        {% for action in backend.admin_running | sort %}
         <tr><td>{{ actions.get(action, action) }}</td><td><span aria-busy="true">running</span></td><td></td></tr>
         {% endfor %}
       </tbody>
@@ -42,7 +42,7 @@
       <div>
         <strong>Full scan</strong>
         <p><small>Collects every cluster again and checks every image, chart and vulnerability report.
-          {% if checking_versions %}<span aria-busy="true">Scan in progress…</span>{% elif scanning %}<span aria-busy="true">Vulnerability scan in progress…</span>{% elif scanner.busy %}{{ scanner.busy }}…{% endif %}</small></p>
+          {% if checking_versions %}<span aria-busy="true">Scan in progress…</span>{% elif scanning %}<span aria-busy="true">Vulnerability scan in progress…</span>{% elif backend.busy %}{{ backend.busy }}…{% endif %}</small></p>
       </div>
       {{ action("scan", "Scan now", disabled=locked, why="A scan or an administration action is running") }}
     </div>
@@ -54,10 +54,10 @@
           Failed in the last scan: {{ failed.images | length | plural("image version check") }}, {{ failed.vulnerabilities | length | plural("vulnerability scan") }},
           {{ failed.charts | length | plural("chart") }} (with their subcharts). Only these are checked again.
           {% else %}Nothing failed in the last scan.{% endif %}
-          {% if scanner.rescanning %}<span aria-busy="true">{{ scanner.rescanning | length | plural("rescan") }} in progress…</span>{% endif %}
+          {% if backend.rescanning %}<span aria-busy="true">{{ backend.rescanning | length | plural("rescan") }} in progress…</span>{% endif %}
         </small></p>
       </div>
-      {{ action("retry-failed", "Retry what failed", disabled=locked or ("retry-failed",) in scanner.rescanning or not (failed.images or failed.vulnerabilities or failed.charts),
+      {{ action("retry-failed", "Retry what failed", disabled=locked or ("retry-failed",) in backend.rescanning or not (failed.images or failed.vulnerabilities or failed.charts),
                 why="Nothing failed, or a scan is running") }}
     </div>
     <div class="administration-row">
@@ -75,7 +75,7 @@
     {% if not trivy_settings.enabled or not t.enabled %}
     <p><small>Trivy scans are disabled (vulnerabilities.enabled / vulnerabilities.trivy.enabled).</small></p>
     {% else %}
-    {% set s = m.trivy_status %}
+    {% set s = backend.trivy_status %}
     <table class="striped compact">
       <tbody>
         <tr><th>Mode</th><td>{% if t.server_url %}client of the Trivy server <code>{{ t.server_url }}</code>{% else %}standalone, databases in <code>{{ t.cache_dir }}</code>{% endif %}</td></tr>
@@ -94,20 +94,20 @@
           {% endif %}
         {% endfor %}
         {% if s %}<tr><th>Checked</th><td><small>{{ date(s.checked_at) }}</small></td></tr>{% endif %}
-        {% if m.trivy_message %}<tr><th>Last update</th><td><small>{{ m.trivy_message }}</small></td></tr>{% endif %}
+        {% if backend.trivy_message %}<tr><th>Last update</th><td><small>{{ backend.trivy_message }}</small></td></tr>{% endif %}
       </tbody>
     </table>
     <p class="actions">
       {% if not t.server_url %}
-      {% if "trivy-db" in m.running %}<span aria-busy="true">Updating the database…</span>
-      {% else %}{{ action("trivy-db", "Update the database", "database", disabled=scanner.locked or scanner.rescanning, why="Wait for the scan or the rescans to finish") }}{% endif %}
+      {% if "trivy-db" in backend.admin_running %}<span aria-busy="true">Updating the database…</span>
+      {% else %}{{ action("trivy-db", "Update the database", "database", disabled=backend.locked or backend.rescanning, why="Wait for the scan or the rescans to finish") }}{% endif %}
       {% endif %}
       {{ action("trivy-status", "Read the status again", cls="outline secondary") }}
     </p>
     <div class="administration-row">
       <div>
         <strong>Results cache</strong>
-        <p><small>{{ scanner.trivy.cache | length | plural("image") }} cached: they are not scanned again before {{ t.rescan_interval | duration }}
+        <p><small>{{ backend.trivy_cached | plural("image") }} cached: they are not scanned again before {{ t.rescan_interval | duration }}
           (vulnerabilities.trivy.rescanInterval). After clearing it, the next scan scans every image again.</small></p>
       </div>
       <p class="actions">
@@ -123,10 +123,10 @@
     <header>{{ icon("plug") }}Connectivity</header>
     <div class="administration-row">
       <p><small>Tests every cluster (its Kubernetes API), every container registry and Helm repository of the last scan, with kube-tower's credentials{% if trivy_settings.trivy.server_url %}, and the Trivy server{% endif %}.</small></p>
-      {% if "connectivity" in m.running %}<span aria-busy="true">Testing…</span>
+      {% if "connectivity" in backend.admin_running %}<span aria-busy="true">Testing…</span>
       {% else %}{{ action("connectivity", "Test the connectivity", "plug") }}{% endif %}
     </div>
-    {% set c = m.connectivity %}
+    {% set c = backend.connectivity %}
     {% if c and c.checks %}
     <p><small>{% if c.finished_at %}{{ date(c.finished_at) }}: {{ c.checks | length - c.failed }}/{{ c.checks | length }} OK{% else %}Started {{ date(c.started_at) }}{% endif %}</small></p>
     <table class="striped">
