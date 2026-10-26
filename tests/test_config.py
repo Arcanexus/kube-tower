@@ -64,9 +64,8 @@ def test_roles(tmp_path, monkeypatch):
     assert settings.internal.controller_url == "http://kube-tower-controller:8081"
     monkeypatch.setenv("KUBE_TOWER_ROLES", "controller,ui")
     assert load_settings(missing).roles == ["ui", "controller"]
-    monkeypatch.setenv("KUBE_TOWER_ROLES", "ui")
-    with pytest.raises(ValueError, match="role ui without controller"):
-        load_settings(missing)
+    monkeypatch.setenv("KUBE_TOWER_ROLES", "ui")  # asks the controller at its URL
+    assert load_settings(missing).roles == ["ui"]
     monkeypatch.delenv("KUBE_TOWER_ROLES")
     (tmp_path / "config.yaml").write_text("roles: [ui, scanner]\n")
     with pytest.raises(ValueError, match="unknown role\\(s\\) 'scanner'"):

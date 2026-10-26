@@ -13,7 +13,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from kube_tower.administration import Administration
-from kube_tower.backend import LocalBackend
+from kube_tower.backend import LocalBackend, RemoteBackend
 from kube_tower.config import Settings, check_roles, internal_token, load_settings
 from kube_tower.internal import TaskPuller, create_internal_app
 from kube_tower.logbuffer import LogBuffer
@@ -68,9 +68,12 @@ def create_app(
     roles = check_roles(settings.roles)
     runs: list = []  # what the process runs in the background: coroutine functions
     internal: InternalServer | None = None
+    backend: LocalBackend | RemoteBackend | None = None
     if "controller" in roles:
         scanner = scanner or Scanner(settings)
         runs.append(scanner.run_forever)
+        administration = administration or Administration(scanner)
+        backend = LocalBackend(scanner, administration)
         if settings.distributed:
             # The tasks of the roles that run elsewhere are pulled over the internal API.
             scanner.runner = runner = QueueRunner(
@@ -80,7 +83,7 @@ def create_app(
                 context=lambda: {"pull_secrets": encode(scanner.pull_secrets)},
             )
             config = uvicorn.Config(
-                create_internal_app(runner, internal_token(settings)),
+                create_internal_app(runner, internal_token(settings), backend),
                 host="0.0.0.0",  # noqa: S104 - reached by the other pods; NetworkPolicies keep it internal
                 port=settings.internal.port,
                 log_level="warning",
@@ -89,8 +92,12 @@ def create_app(
             )
             internal = InternalServer(config)
             runs.append(internal.serve)
-    elif pulled := [r for r in roles if r in ("worker", "trivy")]:
-        runs.append(TaskPuller(settings, Worker(settings), pulled).run_forever)
+    else:
+        if pulled := [r for r in roles if r in ("worker", "trivy")]:
+            runs.append(TaskPuller(settings, Worker(settings), pulled).run_forever)
+        if "ui" in roles:  # the pages show the state of the controller, read over its internal API
+            backend = RemoteBackend(settings)
+            runs.append(backend.run_forever)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -108,17 +115,17 @@ def create_app(
     app = FastAPI(title="kube-tower", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.settings = settings
     app.state.log_buffer = log_buffer
+    # The web layer only talks to this backend (see backend.py), never to the scanner directly.
+    app.state.backend = backend
+    if "controller" in roles:
+        app.state.scanner, app.state.administration = scanner, administration
+        app.include_router(metrics.router)  # the metrics of the snapshot: once, from the controller
     if "ui" in roles:
-        app.state.scanner = scanner
-        app.state.administration = administration or Administration(scanner)
-        # The web layer only talks to this backend (see backend.py), never to the scanner directly.
-        app.state.backend = LocalBackend(scanner, app.state.administration)
         app.include_router(api.router)
-        app.include_router(metrics.router)
         ui.mount(app)
         add_csrf_protection(app)
     else:
-        app.include_router(api.probes)  # no UI, API or metrics: only the health probes
+        app.include_router(api.probes)  # no UI or API: only the health probes
     log = logging.getLogger(__name__)
     log.info("kube-tower started with roles %s (refresh every %ss)", ", ".join(roles), settings.refresh_interval)
     if internal is not None:

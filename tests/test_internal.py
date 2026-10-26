@@ -9,10 +9,12 @@ from fastapi.testclient import TestClient
 
 from kube_tower import internal
 from kube_tower import worker as worker_module
+from kube_tower.administration import Administration
+from kube_tower.backend import UNREACHABLE, LocalBackend, RemoteBackend
 from kube_tower.config import Settings
 from kube_tower.internal import TaskPuller, create_internal_app
 from kube_tower.main import create_app
-from kube_tower.models import ImageRef, ImageReport, Status, Usage, VulnerabilityReport, encode
+from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, Usage, VulnerabilityReport, encode
 from kube_tower.scanner import Scanner
 from kube_tower.tasks import CheckImagesTask, CollectTask, QueueRunner, ScanVulnerabilitiesTask, TaskFailed
 from kube_tower.trivy import scans_failed
@@ -162,6 +164,15 @@ def test_processes_by_role(monkeypatch):
     app = create_app(_settings(["ui", "controller"]), background=False)
     assert isinstance(app.state.scanner.runner, QueueRunner) and app.state.scanner.runner.local_roles == set()
     assert TestClient(app).get("/healthz").status_code == 200
+    # controller alone: the metrics of the snapshot, no UI
+    client = TestClient(create_app(_settings(["controller"]), background=False))
+    assert client.get("/metrics").status_code == 200 and client.get("/").status_code == 404
+    # ui alone: the pages show what the controller sends, no metrics (they would be duplicated)
+    app = create_app(_settings(["ui"]), background=False)
+    assert isinstance(app.state.backend, RemoteBackend)
+    client = TestClient(app)
+    assert client.get("/readyz").status_code == 503  # no snapshot from the controller yet
+    assert client.get("/metrics").status_code == 404
 
 
 def test_processes_run_their_roles(monkeypatch, caplog):
@@ -240,3 +251,93 @@ async def test_distributed_scan_in_batches(fakes, monkeypatch):  # noqa: F811 - 
     ]
     assert all(r.status == Status.OUTDATED and r.vulnerabilities.message == "boom" for r in snap.images)
     assert snap.errors.count(scans_failed(4)) == 1  # the failed scans of the batches, counted together
+
+
+def _controller(settings=None):
+    """A controller process with a snapshot, and its internal API."""
+    scanner = Scanner(settings or _settings(["controller"]), TwoClusters())
+    image = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), [Usage("a", "Pod", "default", "web")])
+    chart = ChartReport("a", "app", "argocd", "app", "https://charts.example.com", "1.0.0", "helm")
+    scanner.snapshot = Snapshot(images=[image], charts=[chart], started_at=datetime.now(UTC), finished_at=datetime.now(UTC))
+    backend = LocalBackend(scanner, Administration(scanner))
+    return scanner, create_internal_app(QueueRunner(scanner.worker, set()), TOKEN, backend)
+
+
+async def test_ui_process_reads_the_controller(monkeypatch):
+    monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
+    scanner, app = _controller()
+    remote = RemoteBackend(_settings(["ui"]), transport=httpx.ASGITransport(app))
+    await remote.refresh()
+    assert [str(r.image) for r in remote.snapshot.images] == ["docker.io/library/nginx:1.25"]
+    assert remote.state.revision == scanner.revision and not remote.running and not remote.locked
+    assert remote.scans_total == {"success": 0, "failure": 0} and remote.activities() == []
+    assert remote.trivy_binary == "trivy" and remote.trivy_cached == 0 and remote.admin_running == set()
+    assert remote.registry_credentials(Settings()) == ([], {})
+    report = remote.snapshot.images[0]
+    assert remote.same_name_images(report) == [report] and remote.can_rescan_vulnerabilities(report)
+    assert remote.failed_items() == ([], [], [])
+    # the snapshot is sent again only when it changed (or while something runs)
+    snapshot = remote.snapshot
+    await remote.refresh()
+    assert remote.snapshot is snapshot
+    scanner.snapshot = Snapshot(finished_at=datetime.now(UTC))
+    await remote.refresh()
+    assert remote.snapshot.images == []
+
+    # the pages of a ui process
+    ui = create_app(_settings(["ui"]), background=False)
+    ui.state.backend = remote
+    scanner.snapshot = Snapshot(images=[report], started_at=datetime.now(UTC), finished_at=datetime.now(UTC))
+    await remote.refresh()
+    client = TestClient(ui)
+    assert client.get("/readyz").status_code == 200
+    assert "library/nginx" in client.get("/images").text
+    assert client.get("/api/snapshot").json()["images"][0]["image"]["ref"] == "docker.io/library/nginx:1.25"
+
+
+async def test_ui_process_actions(monkeypatch, fakes):  # noqa: F811 - fixture
+    monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
+    monkeypatch.setattr(Administration, "test_connectivity", lambda self: None)  # no network
+    scanner, app = _controller()
+    remote = RemoteBackend(_settings(["ui"]), transport=httpx.ASGITransport(app))
+    await remote.refresh()
+    image, chart = remote.snapshot.images[0], remote.snapshot.charts[0]
+    assert await remote.rescan_chart(chart) is None
+    assert ("chart", "a", "argocd", "app", "app") in remote.rescanning  # the state is read again at once
+    await asyncio.gather(*scanner._rescans)
+    assert await remote.rescan_image(image, vulnerabilities=False) is None
+    await asyncio.gather(*scanner._rescans)
+    assert await remote.retry_failed() == "nothing failed in the last scan"
+    assert await remote.clear_trivy_cache() == 0
+    assert (await remote.refresh_trivy_status()).message == "trivy binary 'trivy' not found"
+    assert "binary 'trivy' is not found" in await remote.update_trivy_db() and await remote.test_connectivity() is None
+    assert await remote.trigger() is True
+    await scanner._task
+    # gone from the controller meanwhile
+    gone = ChartReport("b", "app", "argocd", "gone", "https://charts.example.com", "1.0.0", "helm")
+    assert "not found in the last scan" in await remote.rescan_chart(gone)
+    gone = ImageReport(ImageRef("docker.io", "library/gone", "1"))
+    assert "not found in the last scan" in await remote.rescan_image(gone)
+    unknown = await remote.http.post("/internal/v1/actions/reboot")
+    assert unknown.status_code == 404 and unknown.json() == {"detail": "unknown action 'reboot'"}
+
+
+async def test_ui_process_without_controller(monkeypatch, caplog):
+    monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
+
+    def unreachable(request):
+        raise httpx.ConnectError("connection refused")
+
+    remote = RemoteBackend(_settings(["ui"]), transport=httpx.MockTransport(unreachable))
+    await remote.refresh()
+    await remote.refresh()
+    assert caplog.text.count("the controller cannot be reached") == 1  # once until it answers again
+    assert remote.snapshot.finished_at is None
+    assert await remote.trigger() is False and await remote.clear_trivy_cache() == 0
+    assert await remote.retry_failed() == UNREACHABLE.format("connection refused")
+    assert (await remote.refresh_trivy_status()).message == "the controller cannot be reached"
+    _, app = _controller()
+    transport = httpx.ASGITransport(app)
+    remote.http = httpx.AsyncClient(transport=transport, base_url="http://controller:8081", headers=remote.http.headers)
+    await remote.refresh()
+    assert "the controller answers again" in caplog.text and remote.snapshot.finished_at is not None

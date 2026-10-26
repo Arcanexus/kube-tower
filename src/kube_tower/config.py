@@ -171,7 +171,7 @@ class GitSettings:
 
 # What one kube-tower process runs: any combination of the roles, `all` meaning every role (UI, API,
 # scans, as before). Pods with different roles split the work for horizontal scaling, see
-# docs/adr/0002-horizontal-scaling.md. Until the UI can ask a remote controller, `ui` needs `controller`.
+# docs/adr/0002-horizontal-scaling.md.
 ROLES = ("ui", "controller", "worker", "trivy")
 
 
@@ -260,8 +260,6 @@ def check_roles(roles: list[str]) -> list[str]:
     chosen = set(ROLES) if "all" in roles else set(roles)
     if not chosen:
         raise ValueError(f"no role: expected all or a list of {', '.join(ROLES)}")
-    if "ui" in chosen and "controller" not in chosen:
-        raise ValueError("role ui without controller: a ui asking a remote controller is planned but not available yet")
     return [r for r in ROLES if r in chosen]
 
 

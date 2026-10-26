@@ -90,6 +90,8 @@ class Scanner:
         self.settings = settings
         self.registry = registry or ClusterRegistry(settings.clusters)
         self.store = store or MemorySnapshotStore()
+        # Changes at each new snapshot or result set in it (UI pods of other processes fetch it again then).
+        self.revision = 0
         # The worker of this process: administration actions still use it directly.
         self.worker = Worker(settings)
         self.runner = runner or LocalRunner(self.worker)
@@ -117,6 +119,7 @@ class Scanner:
     @snapshot.setter
     def snapshot(self, snap: Snapshot) -> None:
         self.store.set(snap)
+        self.revision += 1
 
     # State of the worker of this process (Trivy results, registry tokens...), kept between scans.
 
@@ -282,6 +285,7 @@ class Scanner:
                 r.vulnerabilities = vulnerabilities
             snap.errors += result.errors
         snap.vulnerabilities_finished_at = datetime.now(UTC)
+        self.revision += 1
         scanned = sum(1 for r in snap.images if r.vulnerabilities and not r.vulnerabilities.message)
         log.info("vulnerability scan finished: %d/%d images with a report", scanned, len(snap.images))
 
@@ -341,16 +345,10 @@ class Scanner:
         )
 
     def can_rescan_vulnerabilities(self, report: ImageReport) -> bool:
-        """Whether a vulnerability rescan of the image can give a result (see _rescan_vulnerabilities)."""
-        settings = self.settings.vulnerabilities
-        if not settings.enabled or vulnerabilities_ignored(report.image, settings.ignore):
-            return False
-        from_operator = report.vulnerabilities is not None and report.vulnerabilities.source == "trivy-operator"
-        return settings.trivy.enabled or (from_operator and settings.trivy_operator)
+        return can_rescan_vulnerabilities(self.settings, report)
 
     def same_name_images(self, report: ImageReport) -> list[ImageReport]:
-        """The images of the snapshot with the name (registry/repository) of this one: every tag, used or not."""
-        return [r for r in self.snapshot.images if r.image.name == report.image.name] or [report]
+        return same_name_images(self.snapshot, report)
 
     def rescan_image(self, report: ImageReport, versions: bool = True, vulnerabilities: bool = True) -> str | None:
         """Check again, in the background, every image with the name of this one: all its tags, used by
@@ -379,14 +377,7 @@ class Scanner:
         )
 
     def failed_items(self) -> tuple[list[ImageReport], list[ImageReport], list[ChartReport]]:
-        """What failed in the current snapshot: image version checks, vulnerability scans, charts (or subcharts)."""
-        snap = self.snapshot
-        images = [r for r in snap.images if r.status == Status.ERROR]
-        vulnerabilities = [
-            r for r in snap.images if r.vulnerabilities and r.vulnerabilities.message and self.can_rescan_vulnerabilities(r)
-        ]
-        charts = [c for c in snap.charts if c.status == Status.ERROR or any(d.status == Status.ERROR for _, d in c.walk())]
-        return images, vulnerabilities, charts
+        return failed_items(self.settings, self.snapshot)
 
     def retry_failed(self) -> str | None:
         """Check again, in the background, everything that failed. Returns why it cannot start, None when started."""
@@ -463,6 +454,7 @@ class Scanner:
         finally:
             self.rescanning.discard(key)
             self._rescan_started.pop(key, None)
+            self.revision += 1
 
     async def _rescan_image(self, report: ImageReport, versions: bool, vulnerabilities: bool, others: set[tuple]) -> None:
         """Run in a worker thread's event loop. Results are computed apart, then set at once (no half-updated row)."""
@@ -648,6 +640,30 @@ def refresh_check_errors(snap: Snapshot, before: list[str]) -> None:
     """Replace the version check errors listed before a rescan by the current ones."""
     stale = set(before)
     snap.errors = [e for e in snap.errors if e not in stale] + check_errors(snap)
+
+
+def can_rescan_vulnerabilities(settings: Settings, report: ImageReport) -> bool:
+    """Whether a vulnerability rescan of the image can give a result (see Scanner._rescan_vulnerabilities)."""
+    vuln = settings.vulnerabilities
+    if not vuln.enabled or vulnerabilities_ignored(report.image, vuln.ignore):
+        return False
+    from_operator = report.vulnerabilities is not None and report.vulnerabilities.source == "trivy-operator"
+    return vuln.trivy.enabled or (from_operator and vuln.trivy_operator)
+
+
+def same_name_images(snap: Snapshot, report: ImageReport) -> list[ImageReport]:
+    """The images of the snapshot with the name (registry/repository) of this one: every tag, used or not."""
+    return [r for r in snap.images if r.image.name == report.image.name] or [report]
+
+
+def failed_items(settings: Settings, snap: Snapshot) -> tuple[list[ImageReport], list[ImageReport], list[ChartReport]]:
+    """What failed in the snapshot: image version checks, vulnerability scans, charts (or subcharts)."""
+    images = [r for r in snap.images if r.status == Status.ERROR]
+    vulnerabilities = [
+        r for r in snap.images if r.vulnerabilities and r.vulnerabilities.message and can_rescan_vulnerabilities(settings, r)
+    ]
+    charts = [c for c in snap.charts if c.status == Status.ERROR or any(d.status == Status.ERROR for _, d in c.walk())]
+    return images, vulnerabilities, charts
 
 
 def vulnerabilities_ignored(image: ImageRef, patterns: list[str]) -> bool:
