@@ -97,12 +97,25 @@
 {%- endmacro %}
 
 {% macro load_more(listing, colspan, tbody=False) -%}
-{# Infinite scroll: when this last row shows, it is replaced by the next page of rows (and its own last row). #}
+{# Infinite scroll: when this last row shows, it is replaced by the next page of rows (and its own last row).
+   It also refreshes the "shown" count and the "more below" hint (out of band). #}
 {% if listing.more %}
 {% if tbody %}<tbody class="load-more" hx-get="{{ listing.more }}" hx-trigger="intersect once" hx-swap="outerHTML" hx-target="this"><tr>
 {% else %}<tr class="load-more" hx-get="{{ listing.more }}" hx-trigger="intersect once" hx-swap="outerHTML" hx-target="this">{% endif %}
   <td colspan="{{ colspan }}"><span aria-busy="true">Loading…</span></td></tr>{% if tbody %}</tbody>{% endif %}
 {% endif %}
+{% if listing.shown > 30 %}<template>{{ list_shown(listing, True) }}{{ more_hint(listing, True) }}</template>{% endif %}
+{%- endmacro %}
+
+{% macro list_shown(listing, oob=False) -%}
+<span id="list-shown"{% if oob %} hx-swap-oob="true"{% endif %}>{% if listing.remaining > 0 %} · {{ listing.shown }} shown{% endif %}</span>
+{%- endmacro %}
+
+{% macro more_hint(listing, oob=False) -%}
+{# Stays at the bottom of the list while rows are left to load; a click scrolls down to load them. #}
+<div id="more-hint" class="more-hint"{% if oob %} hx-swap-oob="true"{% endif %}{% if listing.remaining <= 0 %} hidden{% endif %}>
+  <button type="button" class="outline secondary" onclick="ktScrollList(this)">{{ icon("arrow-down") }} {{ listing.remaining }} more below</button>
+</div>
 {%- endmacro %}
 
 {% macro filters(path, q, status, cluster, snapshot, running=none, chips=(), listing=none) -%}

@@ -426,3 +426,16 @@ td.cell-name { max-width: 30rem; }
 /* Infinite scroll: the last row of a list loads the next page when it shows */
 .load-more td { text-align: center; color: var(--pico-muted-color); padding: 1rem; }
 .load-more [aria-busy="true"]::before { margin-right: .5rem; }
+/* "N more below": stays at the bottom of the list, over a fade, while rows are left to load. */
+.more-hint {
+  position: sticky; bottom: 0; display: flex; justify-content: center; padding: 2.5rem 0 .75rem; margin-top: -3.25rem;
+  pointer-events: none; background: linear-gradient(to bottom, transparent, var(--pico-background-color) 70%);
+}
+.more-hint[hidden] { display: none; }
+.more-hint button {
+  pointer-events: auto; width: auto; margin: 0; padding: .3rem .9rem; border-radius: 2rem; font-size: .85rem;
+  background: var(--pico-background-color); box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+}
+.more-hint .icon { animation: kt-nudge 1.6s ease-in-out infinite; }
+@keyframes kt-nudge { 50% { transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) { .more-hint .icon { animation: none; } }

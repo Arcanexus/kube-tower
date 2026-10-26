@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, image_name, load_more, page_title, severity_counts, sort_th, tag %}
+{% from "_macros.html" import icon, image_name, list_shown, load_more, more_hint, page_title, severity_counts, sort_th, tag %}
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("shield", "Vulnerabilities", "Known vulnerabilities (CVE) of every image.", "From the Trivy Operator reports when the cluster has them, else scanned by kube-tower with Trivy. The counters are numbers of images. Click an image for its vulnerabilities.") }}{% endblock %}
 {% block content %}
@@ -29,13 +29,14 @@
           title="Show only the images with {{ s.value }} vulnerabilities" onclick="ktFilterStatus('{{ s.value }}')"><span class="sev sev-{{ s.value }}">{{ s.value }}</span><span class="counter-value"><strong>{{ affected[s] }}</strong><small>{{ "image" if affected[s] == 1 else "images" }}</small></span></button>
   {% endfor %}
 </div>
-<p><small>{{ listing.total | plural("image") }} · the counters are images with at least one vulnerability of that severity
+<p><small>{{ listing.total | plural("image") }}{{ list_shown(listing) }} · the counters are images with at least one vulnerability of that severity
   {% if scanning and not snapshot.vulnerabilities_finished_at %}· {{ icon("clock") }}vulnerability scan in progress{% endif %}</small></p>
 <div class="overflow-auto table-wrap">
 <table class="striped stack-sm">
   <thead><tr>{{ sort_th(listing, 0, "Image") }}{{ sort_th(listing, 1, "Tag") }}{{ sort_th(listing, 2, "Vulnerabilities", True) }}{{ sort_th(listing, 3, "Fixable", True) }}{{ sort_th(listing, 4, "Source", False, "hide-sm") }}{{ sort_th(listing, 5, "Used by", True, "hide-sm") }}</tr></thead>
   <tbody>{{ self.rows() }}</tbody>
 </table>
+{{ more_hint(listing) }}
 </div>
 {% endblock %}
 {% block rows %}

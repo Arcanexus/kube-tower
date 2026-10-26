@@ -18,7 +18,8 @@ title, the filters, the counters and the column headers stay in place. Click a c
 sort the list on it, click again to reverse the order (the arrow shows the current sort); the
 sort is kept when the filters change. Images, Helm charts and Vulnerabilities load 30 rows at a time:
 the next 30 load when the bottom of the list comes into view (an animated "Loading…" row shows
-meanwhile), and these lists are sorted by the server so the order covers every row, not only the
+meanwhile). While rows are left to load, the count says how many are shown (`1500 images · 30 shown`) and a
+"N more below" button stays at the bottom of the list, over a fade; clicking it scrolls down. These lists are sorted by the server so the order covers every row, not only the
 loaded ones (`sort` and `dir` in the URL). Headers can also be sorted with the keyboard (Tab, then Enter
 or Space), and a "Skip to content" link (first Tab) jumps over the sidebar. The ⓘ icon after a page
 subtitle explains the page. Status columns sort what needs attention first (`outdated`,

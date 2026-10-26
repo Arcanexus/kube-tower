@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, counters, filters, icon, image_name, load_more, page_title, sort_th, version_cells %}
+{% from "_macros.html" import badge, counters, filters, icon, image_name, list_shown, load_more, more_hint, page_title, sort_th, version_cells %}
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("images", "Container images", "Images of the workloads and images cached on nodes.", "The icon tells whether a pod runs the image (hover it for details). Below each version, the start of its digest: a different digest is highlighted. Click an image for its details.") }}{% endblock %}
 {% block content %}
@@ -8,12 +8,13 @@
 {% endblock %}
 {% block results %}
 {{ counters(matching, "status", status) }}
-<p><small>{{ listing.total | plural("image") }}</small></p>
+<p><small>{{ listing.total | plural("image") }}{{ list_shown(listing) }}</small></p>
 <div class="overflow-auto table-wrap">
 <table class="striped stack-sm">
   <thead><tr>{{ sort_th(listing, 0, "Image") }}{{ sort_th(listing, 1, "Current") }}{{ sort_th(listing, 2, "Latest") }}{{ sort_th(listing, 3, "Status") }}{{ sort_th(listing, 4, "Used by", True, "hide-sm") }}</tr></thead>
   <tbody>{{ self.rows() }}</tbody>
 </table>
+{{ more_hint(listing) }}
 </div>
 {% endblock %}
 {% block rows %}

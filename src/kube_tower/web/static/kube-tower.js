@@ -17,6 +17,13 @@ function ktRemoveFilter(button) {
   form.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+// "N more below" hint of a list: scrolls to its end, which loads the next rows.
+function ktScrollList(button) {
+  const wrap = button.closest(".table-wrap");
+  if (wrap && wrap.scrollHeight > wrap.clientHeight) wrap.scrollTo({ top: wrap.scrollHeight, behavior: "smooth" });
+  else window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+}
+
 // Detail panel (images, charts): loaded by htmx into #detail, closed by emptying it.
 // Each panel opens at the default size: closing it forgets its width and full screen mode.
 function ktCloseDetail() {

@@ -176,6 +176,11 @@ class Listing:
     sort: str  # index of the sort column, "" for the default order
     direction: str  # ascending | descending
     more: str | None  # relative URL of the next page, None on the last one
+    shown: int = 0  # rows shown once this page is added
+
+    @property
+    def remaining(self) -> int:
+        return self.total - self.shown
 
     def aria_sort(self, index: int) -> str:
         return self.direction if self.sort == str(index) else ""
@@ -203,7 +208,8 @@ def list_page(request: Request, path: str, items: Sequence, columns: list[Column
     if offset + PAGE_SIZE < len(items):
         query = {k: v for k, v in params.items() if k != "offset"} | {"offset": offset + PAGE_SIZE}
         more = f"{path}?{urlencode(query)}"
-    return Listing(items[offset : offset + PAGE_SIZE], len(items), sort, direction, more)
+    page = items[offset : offset + PAGE_SIZE]
+    return Listing(page, len(items), sort, direction, more, offset + len(page))
 
 
 def _fixable(r: ImageReport) -> int:
