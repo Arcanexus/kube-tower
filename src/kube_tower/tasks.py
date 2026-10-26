@@ -4,20 +4,30 @@ A full scan is split in tasks: collect one cluster, check the versions of images
 images with Trivy. Each task and each result is a dataclass made of models, so it can be sent to
 another kube-tower process as JSON (encode_task / decode_task, encode_result / decode_result).
 
-Today every role runs in the process: the LocalRunner hands the tasks to the Worker of the process,
+When every role runs in the process, the LocalRunner hands the tasks to the Worker of the process,
 without encoding them (the reports are updated in place, so the UI shows the results as they come).
-The distributed mode adds a runner that queues them for the worker and trivy pods.
+In the distributed mode, the QueueRunner queues the tasks of the roles that run elsewhere: worker and
+trivy processes pull them over the internal API of the controller (internal.py) and send the results back.
 """
 
 from __future__ import annotations
 
+import asyncio
+import itertools
+import logging
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from kube_tower.models import ChartReport, ImageReport, VulnerabilityReport, decode, encode
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from kube_tower.worker import Worker
+
+log = logging.getLogger(__name__)
 
 
 # Tasks
@@ -146,3 +156,110 @@ class LocalRunner:
 
     async def run(self, task: Task) -> Any:
         return await self.worker.execute(task)
+
+
+class TaskFailed(Exception):
+    """A worker or trivy process could not run a task."""
+
+
+@dataclass
+class _Queued:
+    id: str
+    role: str
+    data: dict[str, Any]  # encode_task()
+    future: asyncio.Future
+    deadline: float | None = None  # while pulled: when it is given to another process
+
+
+class QueueRunner:
+    """The distributed mode: the tasks of the roles of this process run here, the others wait in a queue
+    until a process with their role pulls them (next), then for its result (complete / fail).
+
+    A task pulled and not answered within `timeout` (the process died) is queued again, first in line.
+    The queue lives in the event loop of the internal API (`loop`): the scans, which run in their own
+    threads and event loops, hand their tasks over to it.
+    """
+
+    def __init__(
+        self,
+        worker: Worker,
+        local_roles: set[str],
+        timeout: float = 30 * 60,
+        context: Callable[[], dict[str, Any]] | None = None,
+    ):
+        self.worker = worker
+        self.local_roles = local_roles
+        self.timeout = timeout
+        # What a process needs with each task, e.g. the credentials of the image pull secrets.
+        self.context = context or dict
+        self.queue: deque[_Queued] = deque()
+        self.pulled: dict[str, _Queued] = {}
+        self._ids = itertools.count(1)
+        self._added = asyncio.Event()
+        self.loop: asyncio.AbstractEventLoop | None = None  # set when the internal API starts
+
+    async def run(self, task: Task) -> Any:
+        if role_of(task) in self.local_roles:
+            return await self.worker.execute(task)
+        if self.loop is None or self.loop is asyncio.get_running_loop():
+            return await self._queued(task)
+        # Cancelling the scan cancels the queued task too.
+        return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(self._queued(task), self.loop))
+
+    async def _queued(self, task: Task) -> Any:
+        role, kind = role_of(task), kind_of(task)
+        queued = _Queued(f"{kind}-{next(self._ids)}", role, encode_task(task), asyncio.get_running_loop().create_future())
+        self.queue.append(queued)
+        self._added.set()
+        try:
+            return decode_result(kind, await queued.future)
+        finally:  # done, or the scan was cancelled: forget it
+            if queued in self.queue:
+                self.queue.remove(queued)
+            self.pulled.pop(queued.id, None)
+
+    def waiting(self) -> dict[str, int]:
+        """Tasks queued and not pulled yet, by role."""
+        counts = dict.fromkeys(sorted({q.role for q in self.queue}), 0)
+        for q in self.queue:
+            counts[q.role] += 1
+        return counts
+
+    async def next(self, roles: set[str], wait: float) -> dict[str, Any] | None:
+        """The next task for a process with these roles, waiting up to `wait` seconds for one."""
+        deadline = time.monotonic() + wait
+        while True:
+            self._requeue_expired()
+            if queued := next((q for q in self.queue if q.role in roles), None):
+                self.queue.remove(queued)
+                queued.deadline = time.monotonic() + self.timeout
+                self.pulled[queued.id] = queued
+                return {"id": queued.id, **queued.data, "context": self.context()}
+            if (left := deadline - time.monotonic()) <= 0:
+                return None
+            self._added.clear()
+            try:
+                await asyncio.wait_for(self._added.wait(), min(left, 5))  # 5: also look for expired tasks
+            except TimeoutError:
+                pass
+
+    def complete(self, task_id: str, result: dict[str, Any]) -> bool:
+        """Whether the task was still waiting for this result."""
+        if (queued := self.pulled.pop(task_id, None)) is None or queued.future.done():
+            return False
+        queued.future.set_result(result)
+        return True
+
+    def fail(self, task_id: str, message: str) -> bool:
+        if (queued := self.pulled.pop(task_id, None)) is None or queued.future.done():
+            return False
+        queued.future.set_exception(TaskFailed(f"task {task_id} failed: {message}"))
+        return True
+
+    def _requeue_expired(self) -> None:
+        now = time.monotonic()
+        for queued in [q for q in self.pulled.values() if q.deadline is not None and q.deadline < now]:
+            log.warning("task %s not answered within %.0fs: given to another process", queued.id, self.timeout)
+            del self.pulled[queued.id]
+            queued.deadline = None
+            self.queue.appendleft(queued)

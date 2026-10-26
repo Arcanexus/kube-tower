@@ -171,8 +171,22 @@ class GitSettings:
 
 # What one kube-tower process runs: any combination of the roles, `all` meaning every role (UI, API,
 # scans, as before). Pods with different roles split the work for horizontal scaling, see
-# docs/adr/0002-horizontal-scaling.md. Until the roles can run apart, only every role together is accepted.
+# docs/adr/0002-horizontal-scaling.md. Until the UI can ask a remote controller, `ui` needs `controller`.
 ROLES = ("ui", "controller", "worker", "trivy")
+
+
+@dataclass
+class InternalSettings:
+    """The internal API between the processes of the distributed mode (unused when one process runs every role)."""
+
+    # Port of the controller's internal API, apart from the UI port so that NetworkPolicies can keep it internal.
+    port: int = 8081
+    # Where worker and trivy processes reach the controller, e.g. http://kube-tower-controller:8081.
+    controller_url: str = ""
+    # Env var holding the token shared by the processes (sent as a Bearer token).
+    token_env: str = "KUBE_TOWER_INTERNAL_TOKEN"
+    # A task pulled by a worker and not answered within this time is given to another one (seconds or 10m).
+    task_timeout: int = 30 * 60
 
 
 @dataclass
@@ -186,6 +200,12 @@ class Settings:
     vulnerabilities: VulnerabilitiesSettings = field(default_factory=VulnerabilitiesSettings)
     registries: RegistriesSettings = field(default_factory=RegistriesSettings)
     git: GitSettings = field(default_factory=GitSettings)
+    internal: InternalSettings = field(default_factory=InternalSettings)
+
+    @property
+    def distributed(self) -> bool:
+        """Some roles run in other processes: the tasks and results go through the internal API."""
+        return set(self.roles) != set(ROLES) and "all" not in self.roles
 
 
 def _camel_to_snake(name: str) -> str:
@@ -224,7 +244,10 @@ def load_settings(path: str | None = None) -> Settings:
         settings.refresh_interval = parse_duration(interval)
     if roles := os.environ.get("KUBE_TOWER_ROLES"):
         settings.roles = [r.strip() for r in roles.split(",") if r.strip()]
+    if url := os.environ.get("KUBE_TOWER_CONTROLLER_URL"):
+        settings.internal.controller_url = url
     settings.roles = check_roles(settings.roles)
+    check_internal(settings)
     return settings
 
 
@@ -235,9 +258,23 @@ def check_roles(roles: list[str]) -> list[str]:
     chosen = set(ROLES) if "all" in roles else set(roles)
     if not chosen:
         raise ValueError(f"no role: expected all or a list of {', '.join(ROLES)}")
-    if chosen != set(ROLES):
-        raise ValueError(
-            f"roles {', '.join(sorted(chosen))}: running only some roles in a process is planned for the distributed mode"
-            " but not available yet, use roles: [all]"
-        )
+    if "ui" in chosen and "controller" not in chosen:
+        raise ValueError("role ui without controller: a ui asking a remote controller is planned but not available yet")
     return [r for r in ROLES if r in chosen]
+
+
+def check_internal(settings: Settings) -> None:
+    """The distributed mode needs the shared token, and the controller URL in processes without the controller."""
+    if not settings.distributed:
+        return
+    if not internal_token(settings):
+        raise ValueError(f"roles {', '.join(settings.roles)}: set the internal API token in ${settings.internal.token_env}")
+    if "controller" not in settings.roles and not settings.internal.controller_url:
+        raise ValueError(
+            f"roles {', '.join(settings.roles)}: set internal.controllerUrl (or $KUBE_TOWER_CONTROLLER_URL)"
+            " to reach the controller"
+        )
+
+
+def internal_token(settings: Settings) -> str:
+    return os.environ.get(settings.internal.token_env, "")

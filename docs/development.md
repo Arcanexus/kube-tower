@@ -50,6 +50,7 @@ src/kube_tower/
   tasks.py             tasks of a scan (collect a cluster, check versions, Trivy scan) and their results, JSON-ready
   worker.py            runs the tasks (worker and trivy roles), keeps registry tokens, Helm indexes, Trivy cache
   store.py             where the snapshot is kept (memory)
+  internal.py          internal API of the controller, and the task puller of worker and trivy processes
   administration.py    Administration page actions (Trivy database, connectivity tests, unused node images)
   backend.py           Backend interface: all the web layer may use of the scans and the administration
   errors.py            explicit error messages (what failed, status, what to do)

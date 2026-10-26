@@ -9,16 +9,21 @@ import sys
 import time
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI
 
 from kube_tower.administration import Administration
 from kube_tower.backend import LocalBackend
-from kube_tower.config import Settings, load_settings
+from kube_tower.config import Settings, check_roles, internal_token, load_settings
+from kube_tower.internal import TaskPuller, create_internal_app
 from kube_tower.logbuffer import LogBuffer
 from kube_tower.logger import get_logger
+from kube_tower.models import encode
 from kube_tower.scanner import Scanner
+from kube_tower.tasks import QueueRunner
 from kube_tower.web import api, metrics, ui
 from kube_tower.web.csrf import add_csrf_protection
+from kube_tower.worker import Worker
 
 # The scans run in threads, which share the GIL with the web server: hand it over every millisecond
 # (instead of 5) so that the pages keep answering quickly while a scan uses the CPU.
@@ -40,6 +45,14 @@ async def watch_event_loop() -> None:
             )
 
 
+class InternalServer(uvicorn.Server):
+    """The internal API server, run next to the main one: the main server handles the signals."""
+
+    @contextlib.contextmanager
+    def capture_signals(self):
+        yield
+
+
 def create_app(
     settings: Settings | None = None,
     scanner: Scanner | None = None,
@@ -52,12 +65,41 @@ def create_app(
     # Last log lines, shown on the Logs page of the UI.
     log_buffer = LogBuffer()
     logger.addHandler(log_buffer)
-    scanner = scanner or Scanner(settings)
+    roles = check_roles(settings.roles)
+    runs: list = []  # what the process runs in the background: coroutine functions
+    internal: InternalServer | None = None
+    if "controller" in roles:
+        scanner = scanner or Scanner(settings)
+        runs.append(scanner.run_forever)
+        if settings.distributed:
+            # The tasks of the roles that run elsewhere are pulled over the internal API.
+            scanner.runner = runner = QueueRunner(
+                scanner.worker,
+                set(roles) & {"worker", "trivy"},
+                settings.internal.task_timeout,
+                context=lambda: {"pull_secrets": encode(scanner.pull_secrets)},
+            )
+            config = uvicorn.Config(
+                create_internal_app(runner, internal_token(settings)),
+                host="0.0.0.0",  # noqa: S104 - reached by the other pods; NetworkPolicies keep it internal
+                port=settings.internal.port,
+                log_level="warning",
+                access_log=False,
+                lifespan="off",
+            )
+            internal = InternalServer(config)
+            runs.append(internal.serve)
+    elif pulled := [r for r in roles if r in ("worker", "trivy")]:
+        runs.append(TaskPuller(settings, Worker(settings), pulled).run_forever)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        tasks = [asyncio.create_task(scanner.run_forever()), asyncio.create_task(watch_event_loop())] if background else []
+        if isinstance(getattr(scanner, "runner", None), QueueRunner):
+            scanner.runner.loop = asyncio.get_running_loop()
+        tasks = [asyncio.create_task(run()) for run in [*runs, watch_event_loop]] if background else []
         yield
+        if internal is not None:
+            internal.should_exit = True
         for task in tasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -65,14 +107,20 @@ def create_app(
 
     app = FastAPI(title="kube-tower", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.settings = settings
-    app.state.scanner = scanner
-    app.state.administration = administration or Administration(scanner)
-    # The web layer only talks to this backend (see backend.py), never to the scanner directly.
-    app.state.backend = LocalBackend(scanner, app.state.administration)
     app.state.log_buffer = log_buffer
-    app.include_router(api.router)
-    app.include_router(metrics.router)
-    ui.mount(app)
-    add_csrf_protection(app)
-    logging.getLogger(__name__).info("kube-tower started (refresh every %ss)", settings.refresh_interval)
+    if "ui" in roles:
+        app.state.scanner = scanner
+        app.state.administration = administration or Administration(scanner)
+        # The web layer only talks to this backend (see backend.py), never to the scanner directly.
+        app.state.backend = LocalBackend(scanner, app.state.administration)
+        app.include_router(api.router)
+        app.include_router(metrics.router)
+        ui.mount(app)
+        add_csrf_protection(app)
+    else:
+        app.include_router(api.probes)  # no UI, API or metrics: only the health probes
+    log = logging.getLogger(__name__)
+    log.info("kube-tower started with roles %s (refresh every %ss)", ", ".join(roles), settings.refresh_interval)
+    if internal is not None:
+        log.info("internal API listening on port %s", settings.internal.port)
     return app

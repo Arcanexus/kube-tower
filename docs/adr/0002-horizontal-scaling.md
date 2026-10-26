@@ -71,4 +71,9 @@ its replicas, resources and HPA.
    The rescans of an image or chart and the retry of failed items are tasks too (a collect task can
    read only the images of one name, or only the Trivy Operator reports; a Trivy task can skip the cache).
 4. Internal API, `ui` / `controller` / `worker` / `trivy` roles in any combination, `Lease` election, Redis option.
+   Done so far: the internal API of the controller (`internal.py`, its own port, Bearer token) and the
+   `QueueRunner`, which queues the tasks of the roles that run elsewhere; `worker` and `trivy`
+   processes pull them (`TaskPuller`) with the credentials of image pull secrets as context. Next: tasks
+   split in batches so that several workers share a scan, a `ui` asking a remote controller, the
+   administration actions and logs of the remote roles, `Lease` election.
 5. Chart `mode: distributed`, documentation, release candidate.
