@@ -12,7 +12,7 @@ that work together (`mode: distributed`). The image is the same: each pod runs s
 | `worker` | Collects the clusters, checks the versions in registries and Helm repositories | any, autoscaling | read-only ClusterRole, cluster Secrets |
 | `trivy` | Scans the images with Trivy, keeps the Trivy databases and results | always 1 | none needed |
 
-See [ADR 0002](adr/0002-horizontal-scaling.md) for the design.
+See [architecture](architecture.md) for the diagrams and [ADR 0002](adr/0002-horizontal-scaling.md) for the design.
 
 ```
                 ┌──────── ui (×N) ◄─── Ingress / Service
@@ -115,6 +115,66 @@ redis:
 Only the controller connects to it. The chart's Valkey keeps its data in memory: it survives a
 controller restart, not its own. A scan in progress is never kept: a new controller starts a new one
 when one is due.
+
+## With ArgoCD
+
+One pod per role and the chart's Valkey, the token Secret created beforehand (or synced by
+ExternalSecrets like the registry credentials):
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-tower
+  namespace: argocd
+spec:
+  destination:
+    name: in-cluster
+    namespace: kube-tower
+  project: default
+  source:
+    repoURL: ghcr.io/arcanexus/charts
+    chart: kube-tower
+    targetRevision: 1.0.0-rc.1
+    helm:
+      valuesObject:
+        mode: distributed
+        distributed:
+          groups:
+            controller:
+              replicas: 1   # 2: a standby takes over in about 15 s if the active one stops
+            ui:
+              replicas: 1
+            worker:
+              replicas: 1
+          internal:
+            existingSecret: kube-tower-internal   # key: token
+        redis:
+          valkey:
+            enabled: true
+        config:
+          clusters:
+            useArgocdSecrets: true
+        ingress:
+          enabled: true
+          hosts:
+            - host: kube-tower.example.com
+              paths:
+                - path: /
+                  pathType: Prefix
+        serviceMonitor:
+          enabled: true   # scrapes the active controller
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+Every pod becomes ready (standby controllers too), so ArgoCD shows the Application healthy once the
+pods started. See [installation](installation.md#with-argocd) for the other values (registry
+credentials, TLS, authentication middleware).
 
 ## Permissions
 

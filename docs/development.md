@@ -49,7 +49,8 @@ src/kube_tower/
   scanner.py           controller: schedules full scans and rescans, merges the task results into the snapshot
   tasks.py             tasks of a scan (collect a cluster, check versions, Trivy scan) and their results, JSON-ready
   worker.py            runs the tasks (worker and trivy roles), keeps registry tokens, Helm indexes, Trivy cache
-  store.py             where the snapshot is kept (memory)
+  store.py             where the snapshot is kept (memory, or memory + Redis / Valkey)
+  election.py          controller election with a Kubernetes Lease, active controller pod label
   internal.py          internal API of the controller, and the task puller of worker and trivy processes
   administration.py    Administration page actions (Trivy database, connectivity tests, unused node images)
   backend.py           Backend interface: all the web layer may use of the scans and the administration
