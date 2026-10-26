@@ -154,6 +154,8 @@ tree of the images.
 
 ![Chart details](images/chart-detail.png)
 
+![Chart details](images/chart-detail.png)
+
 | Source type | Current version | Latest version |
 | --- | --- | --- |
 | `helm` (HTTP repository) | Application `targetRevision` | from the repository `index.yaml` |
