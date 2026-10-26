@@ -44,7 +44,8 @@ This renders four Deployments, `<release>-controller`, `-ui`, `-worker` and `-tr
   ready one, so the Services route to it; the other waits and takes over about 15 seconds after the
   active one stopped. Its readiness probe is `/leaderz`. Its internal API (`distributed.internal.port`,
   8081) is reached through the `<release>-internal` Service, which also serves `/metrics` to the
-  ServiceMonitor;
+  ServiceMonitor. Its rollouts replace one pod at a time without waiting for the standbys to be ready
+  (`maxUnavailable: 1`, `maxSurge: 0`), so `helm --wait` and ArgoCD only wait for the active one;
 - the **ui** pods serve the pages through the usual Service and Ingress. They get no ServiceAccount
   token, no registry credential nor git token;
 - the **worker** pods pull the collection and version check tasks from the controller;

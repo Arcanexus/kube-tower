@@ -451,6 +451,9 @@ def test_distributed_mode(tmp_path):
         url = env(spec).get("KUBE_TOWER_CONTROLLER_URL")
         assert url == (None if group == "controller" else "http://kt-kube-tower-internal:8081")
 
+    # Only the active controller is ready: rollouts and helm --wait need one ready pod, not all
+    assert deployment(docs, "controller")["strategy"]["rollingUpdate"] == {"maxUnavailable": 1, "maxSurge": 0}
+    assert "strategy" not in deployment(docs, "ui")
     controller = deployment(docs, "controller")["template"]["spec"]
     assert controller["containers"][0]["readinessProbe"]["httpGet"]["path"] == "/leaderz"
     assert {"name": "internal", "containerPort": 8081} in controller["containers"][0]["ports"]

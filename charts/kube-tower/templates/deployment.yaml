@@ -20,6 +20,14 @@ spec:
   {{- if not $g.autoscaling.enabled }}
   replicas: {{ $g.replicas }}
   {{- end }}
+  {{- if and $distributed $controller }}
+  # The standby controllers are never ready: a rollout must not wait for them (one old pod at a time)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  {{- end }}
   selector:
     matchLabels:
       {{- include "kube-tower.selectorLabels" $ | nindent 6 }}
