@@ -8,7 +8,8 @@
 - [ArgoCD](https://argo-cd.readthedocs.io/) only if you want the Helm charts dashboard (charts are
   discovered from ArgoCD `Application` objects).
 
-kube-tower runs as a single stateless pod (requests: 50m CPU, 256Mi memory; 1536Mi memory limit).
+kube-tower runs as a single stateless pod (requests: 50m CPU, 256Mi memory; 1536Mi memory limit),
+or as several Deployments scaled apart (see [scaling](scaling.md)).
 The vulnerability scans with Trivy (on by default) also need:
 
 - an outbound access to the Trivy database registries (`mirror.gcr.io`, `ghcr.io`) and to the
@@ -303,7 +304,16 @@ To follow the development version, point `source` at the git repository instead:
 | --- | --- | --- |
 | `image.repository` | `ghcr.io/arcanexus/kube-tower` | Image (amd64, arm64, arm/v7) |
 | `image.tag` / `image.pullPolicy` | chart `appVersion` / `IfNotPresent` | Image tag (also the version shown by the UI) |
-| `replicaCount` | `1` | Keep 1: the inventory lives in memory |
+| `mode` | `single` | `single`: one pod with every role; `distributed`: one Deployment per group of roles, see [scaling](scaling.md) |
+| `replicaCount` | `1` | Single mode: keep 1, the inventory lives in memory |
+| `distributed.groups.<name>.roles` / `.replicas` / `.resources` / `.autoscaling` | controller ×2, ui ×2, worker ×2, trivy ×1 | Distributed mode: the Deployments and their roles; the trivy group always has 1 replica, see [scaling](scaling.md) |
+| `distributed.groups.<name>.nodeSelector` / `.tolerations` / `.affinity` | top-level values | Scheduling of a group |
+| `distributed.internal.existingSecret` / `.secretKey` / `.token` | `""` / `token` / `""` | Token of the internal API between the pods (required in distributed mode) |
+| `distributed.internal.port` | `8081` | Internal API of the controller (`<release>-internal` Service) |
+| `redis.valkey.enabled` | `false` | A Valkey Deployment keeping a copy of the inventory, see [scaling](scaling.md#keeping-the-inventory-across-restarts-redis--valkey) |
+| `redis.valkey.image` / `.port` / `.resources` | `docker.io/valkey/valkey:8.1.1` / `6379` / 20m CPU, 64Mi | Valkey settings |
+| `redis.url` | `""` | An existing Redis / Valkey instead (`redis://` or `rediss://`) |
+| `redis.existingSecret` / `.passwordKey` / `.password` | `""` / `password` / `""` | Optional Redis password, also set on the chart's Valkey |
 | `config` | see [configuration](configuration.md) | Application settings, rendered into a ConfigMap |
 | `clusters` | `[]` | Remote clusters: Secrets created by the chart or `existingSecret`, see [clusters](clusters.md#registering-clusters-with-the-helm-chart) |
 | `registries.credentials` | `[]` | Per registry credentials, existing Secret, inline password or cloud `provider` (`aws`, `gcp`, `azure`), see [registries](registries.md) |

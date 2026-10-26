@@ -193,6 +193,9 @@ class InternalSettings:
     leader_election: bool = False
     # The Lease, in the namespace of the pod.
     lease_name: str = "kube-tower-controller"
+    # Label the pod of the active controller kube-tower.arcanexus.com/active-controller=true (patch on its own
+    # pod), for a Service selecting it while the standbys stay ready. Off: use /leaderz as readiness probe.
+    label_pod: bool = False
 
 
 @dataclass

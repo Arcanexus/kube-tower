@@ -605,6 +605,8 @@ class Scanner:
             log.exception("scan failed")
 
     async def run_forever(self) -> None:
+        await asyncio.to_thread(self.store.load)  # this process is the active controller from now on
+        self.revision += 1
         if (finished := self.snapshot.finished_at) is not None:  # read from the store (Redis)
             wait = self.settings.refresh_interval - (datetime.now(UTC) - finished).total_seconds()
             if wait > 0:

@@ -79,6 +79,7 @@ internal:                      # between the processes, when the roles run apart
   batchSize: 50                # images or charts per task: a scan is shared by the worker and trivy processes
   leaderElection: false        # several controller replicas: one active, elected through a Lease
   leaseName: kube-tower-controller
+  labelPod: false              # the active controller labels its pod (for a Service selecting it)
 redis:                         # optional Redis / Valkey keeping the snapshot across controller restarts
   url: ""                      # redis://host:6379/0 or rediss:// (TLS); empty: the snapshot stays in memory
   passwordEnv: KUBE_TOWER_REDIS_PASSWORD
@@ -90,12 +91,11 @@ Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLES`
 (comma-separated), `KUBE_TOWER_CONTROLLER_URL`, `KUBE_TOWER_REDIS_URL`.
 
-`roles` prepares the horizontal scaling of the next major release (see
+`roles` is the horizontal scaling (see [scaling](scaling.md) and
 [ADR 0002](adr/0002-horizontal-scaling.md)): one image whose pods run any combination of the `ui`,
 `controller`, `worker` and `trivy` roles, all in one pod or apart and scaled independently. By default
-a process runs every role (`all`), as before.
-
-The roles can already run apart, as a preview (the Helm chart still deploys one pod with every role):
+a process runs every role (`all`). The chart sets all of this with `mode: distributed`; when the roles
+run apart:
 
 - the process with `controller` schedules the scans and serves its internal API on `internal.port`;
   the tasks of the roles it does not run wait there;
@@ -109,14 +109,17 @@ The roles can already run apart, as a preview (the Helm chart still deploys one 
 - with `internal.leaderElection: true`, several replicas can run the `controller` role: they share
   the `internal.leaseName` Lease of their namespace (RBAC: get, create and update `leases` in
   `coordination.k8s.io`). The holder schedules the scans and serves the internal API; the others wait,
-  answer 503 on `/readyz` (no Service routes to them) and take over about 15 seconds after the active
-  one stopped. A controller that cannot renew its Lease in time stops and is restarted as a standby.
+  answer 503 on `/leaderz` (and on `/readyz`), and take over about 15 seconds after the active one
+  stopped. With `internal.labelPod: true`, the active controller labels its own pod
+  `kube-tower.arcanexus.com/active-controller=true` (and a standby `false`; RBAC: patch `pods`), for a
+  Service selecting the active one while every controller pod stays ready; otherwise use `/leaderz`
+  as readiness probe. A controller that cannot renew its Lease in time stops and is restarted as a standby.
   The new controller starts with a full scan, unless `redis.url` is set (below), and the worker and
   trivy processes pull from it;
 - with `redis.url`, the controller also writes the snapshot to Redis or Valkey (compressed, at each
-  change, the last version only) and reads it back when it starts: a restarted controller, or a standby
-  taking over, shows the last inventory at once and waits for the rest of `refreshInterval` before
-  scanning. Only the controller connects to it. A scan in progress is not kept: it starts again;
+  change, the last version only) and reads it back when it becomes the active controller: a restarted
+  controller, or a standby taking over, shows the last inventory at once and waits for the rest of
+  `refreshInterval` before scanning. Only the controller connects to it. A scan in progress is not kept: it starts again;
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
 

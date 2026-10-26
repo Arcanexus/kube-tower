@@ -12,6 +12,10 @@ spec:
   selector:
     matchLabels:
       {{- include "kube-tower.selectorLabels" . | nindent 6 }}
+      {{- if include "kube-tower.distributed" . }}
+      # The metrics are served by the controller only
+      app.kubernetes.io/component: controller
+      {{- end }}
   endpoints:
     - port: http
       path: /metrics

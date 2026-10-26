@@ -86,8 +86,9 @@ Every `refreshInterval` (6h by default), kube-tower lists the workloads, nodes a
 Applications of every reachable cluster with a read-only ServiceAccount, asks each registry for
 its published versions (each repository once per scan), then reads or scans the vulnerabilities
 of every image, and keeps the result in memory.
-Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md); the horizontal scaling
-planned for the next major release in [ADR 0002](docs/adr/0002-horizontal-scaling.md).
+Design choices are explained in [ADR 0001](docs/adr/0001-architecture.md). For large inventories,
+the chart can split kube-tower in UI, controller, worker and Trivy Deployments scaled apart, with an
+optional Redis / Valkey: see [scaling](docs/scaling.md) and [ADR 0002](docs/adr/0002-horizontal-scaling.md).
 
 ## Documentation
 
@@ -95,6 +96,7 @@ planned for the next major release in [ADR 0002](docs/adr/0002-horizontal-scalin
 | --- | --- |
 | [Installation](docs/installation.md) | Helm, ArgoCD, ingress, upgrades, requirements |
 | [Configuration](docs/configuration.md) | every setting, registry authentication, secrets |
+| [Scaling](docs/scaling.md) | distributed mode: UI, controller, worker and Trivy pods, standby controller, Redis / Valkey |
 | [Clusters](docs/clusters.md) | registering remote clusters, reusing ArgoCD clusters |
 | [Registries](docs/registries.md) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: authentication, private CAs |
 | [Usage](docs/usage.md) | the pages, filters and sorting, rescans, administration, statuses, JSON API |

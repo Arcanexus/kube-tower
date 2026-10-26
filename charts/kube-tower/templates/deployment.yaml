@@ -1,46 +1,80 @@
+{{- $distributed := include "kube-tower.distributed" . }}
+{{- $redisUrl := include "kube-tower.redisUrl" . }}
+{{- range $name, $g := include "kube-tower.groups" . | fromJson }}
+{{- $roles := $g.roles }}
+{{- /* Groups with only the ui role reach no Kubernetes API, registry nor git host */ -}}
+{{- $uiOnly := and (has "ui" $roles) (eq (len $roles) 1) }}
+{{- $trivy := and (has "trivy" $roles) (include "kube-tower.trivyBinary" $) }}
+{{- $controller := has "controller" $roles }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "kube-tower.fullname" . }}
+  name: {{ include "kube-tower.fullname" $ }}{{ with $name }}-{{ . }}{{ end }}
   labels:
-    {{- include "kube-tower.labels" . | nindent 4 }}
+    {{- include "kube-tower.labels" $ | nindent 4 }}
+    {{- with $name }}
+    app.kubernetes.io/component: {{ . }}
+    {{- end }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  {{- if not $g.autoscaling.enabled }}
+  replicas: {{ $g.replicas }}
+  {{- end }}
+  {{- if and $distributed $controller }}
+  # One old controller pod at a time: a standby takes over while the other is replaced
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  {{- end }}
   selector:
     matchLabels:
-      {{- include "kube-tower.selectorLabels" . | nindent 6 }}
+      {{- include "kube-tower.selectorLabels" $ | nindent 6 }}
+      {{- with $name }}
+      app.kubernetes.io/component: {{ . }}
+      {{- end }}
   template:
     metadata:
       labels:
-        {{- include "kube-tower.selectorLabels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
+        {{- include "kube-tower.selectorLabels" $ | nindent 8 }}
+        {{- if $distributed }}
+        app.kubernetes.io/component: {{ $name }}
+        {{- range $roles }}
+        kube-tower.arcanexus.com/{{ . }}: "true"
+        {{- end }}
+        {{- end }}
+        {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        checksum/credentials: {{ include (print $.Template.BasePath "/credential-secrets.yaml") . | sha256sum }}
-        {{- with .Values.podAnnotations }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+        checksum/credentials: {{ include (print $.Template.BasePath "/credential-secrets.yaml") $ | sha256sum }}
+        {{- with $.Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ include "kube-tower.serviceAccountName" . }}
-      {{- with .Values.imagePullSecrets }}
+      serviceAccountName: {{ include "kube-tower.serviceAccountName" $ }}
+      {{- if $uiOnly }}
+      automountServiceAccountToken: false
+      {{- end }}
+      {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if or (include "kube-tower.trivyBinary" .) .Values.extraInitContainers }}
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      {{- if or $trivy $.Values.extraInitContainers }}
       initContainers:
       {{- end }}
-      {{- if include "kube-tower.trivyBinary" . }}
+      {{- if $trivy }}
         # Copies the Trivy CLI from the official image, so the kube-tower image stays small
         - name: trivy
-          image: "{{ .Values.trivy.image.repository }}:{{ .Values.trivy.image.tag }}"
-          imagePullPolicy: {{ .Values.trivy.image.pullPolicy }}
+          image: "{{ $.Values.trivy.image.repository }}:{{ $.Values.trivy.image.tag }}"
+          imagePullPolicy: {{ $.Values.trivy.image.pullPolicy }}
           command: ["cp", "/usr/local/bin/trivy", "/opt/trivy/bin/trivy"]
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml $.Values.securityContext | nindent 12 }}
           resources:
             requests:
               cpu: 10m
@@ -51,105 +85,149 @@ spec:
             - name: trivy-bin
               mountPath: /opt/trivy/bin
       {{- end }}
-      {{- with .Values.extraInitContainers }}
+      {{- with $.Values.extraInitContainers }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: kube-tower
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml $.Values.securityContext | nindent 12 }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            {{- with include "kube-tower.gitSecretName" . }}
+            {{- if and $distributed $controller }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- end }}
+            {{- if $distributed }}
+            - name: KUBE_TOWER_ROLES
+              value: {{ join "," $roles | quote }}
+            - name: KUBE_TOWER_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kube-tower.internalSecretName" $ }}
+                  key: {{ ternary $.Values.distributed.internal.secretKey "token" (not (empty $.Values.distributed.internal.existingSecret)) }}
+            {{- if not $controller }}
+            - name: KUBE_TOWER_CONTROLLER_URL
+              value: "http://{{ include "kube-tower.fullname" $ }}-internal:{{ $.Values.distributed.internal.port }}"
+            {{- end }}
+            {{- end }}
+            {{- if and $controller $redisUrl }}
+            - name: KUBE_TOWER_REDIS_URL
+              value: {{ $redisUrl | quote }}
+            {{- with include "kube-tower.redisSecretName" $ }}
+            - name: KUBE_TOWER_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ ternary $.Values.redis.passwordKey "password" (not (empty $.Values.redis.existingSecret)) }}
+            {{- end }}
+            {{- end }}
+            {{- if not $uiOnly }}
+            {{- with include "kube-tower.gitSecretName" $ }}
             - name: GIT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ . }}
                   key: {{ ternary $.Values.git.secretKey "token" (not (empty $.Values.git.existingSecret)) }}
             {{- end }}
-            {{- with .Values.extraEnv }}
+            {{- end }}
+            {{- with $.Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           ports:
             - name: http
               containerPort: 8080
-          {{- with .Values.startupProbe }}
+            {{- if and $distributed $controller }}
+            - name: internal
+              containerPort: {{ $.Values.distributed.internal.port }}
+            {{- end }}
+          {{- with $.Values.startupProbe }}
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.livenessProbe }}
+          {{- with $.Values.livenessProbe }}
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.readinessProbe }}
+          {{- with $.Values.readinessProbe }}
           readinessProbe:
             httpGet:
-              path: /healthz
+              {{- /* A standby controller with the ui role would show no inventory: not ready */}}
+              path: {{ ternary "/leaderz" "/healthz" (and (not (empty $distributed)) $controller (has "ui" $roles)) }}
               port: http
             {{- toYaml . | nindent 12 }}
           {{- end }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml $g.resources | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/kube-tower/config.yaml
               subPath: config.yaml
             - name: tmp
               mountPath: /tmp
+            {{- if or (not $distributed) (has "trivy" $roles) }}
             - name: trivy-cache
               mountPath: /tmp/trivy
-            {{- if include "kube-tower.trivyBinary" . }}
+            {{- end }}
+            {{- if $trivy }}
             - name: trivy-bin
               mountPath: /opt/trivy/bin
               readOnly: true
             {{- end }}
-            {{- if include "kube-tower.dockerConfigSecretName" . }}
+            {{- if not $uiOnly }}
+            {{- if include "kube-tower.dockerConfigSecretName" $ }}
             - name: dockerconfig
               mountPath: /etc/kube-tower/dockerconfig
               readOnly: true
             {{- end }}
-            {{- range $i, $c := .Values.registries.credentials }}
+            {{- range $i, $c := $.Values.registries.credentials }}
             {{- if or (not $c.provider) (eq $c.provider "static") }}
             - name: registry-{{ $i }}
               mountPath: /etc/kube-tower/registries/{{ $i }}
               readOnly: true
             {{- end }}
             {{- end }}
-            {{- if include "kube-tower.caConfigMapName" . }}
+            {{- if include "kube-tower.caConfigMapName" $ }}
             - name: registry-ca
               mountPath: /etc/kube-tower/ca
               readOnly: true
             {{- end }}
-            {{- with .Values.extraVolumeMounts }}
+            {{- end }}
+            {{- with $.Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
       volumes:
         - name: config
           configMap:
-            name: {{ include "kube-tower.fullname" . }}
+            name: {{ include "kube-tower.fullname" $ }}
         - name: tmp
           emptyDir: {}
-        {{- if include "kube-tower.trivyBinary" . }}
+        {{- if $trivy }}
         - name: trivy-bin
           emptyDir: {}
         {{- end }}
+        {{- if or (not $distributed) (has "trivy" $roles) }}
         - name: trivy-cache
           emptyDir:
-            {{- with .Values.trivy.cacheSizeLimit }}
+            {{- with $.Values.trivy.cacheSizeLimit }}
             sizeLimit: {{ . }}
             {{- end }}
-        {{- with include "kube-tower.dockerConfigSecretName" . }}
+        {{- end }}
+        {{- if not $uiOnly }}
+        {{- with include "kube-tower.dockerConfigSecretName" $ }}
         - name: dockerconfig
           secret:
             secretName: {{ . }}
@@ -157,14 +235,14 @@ spec:
               - key: .dockerconfigjson
                 path: config.json
         {{- end }}
-        {{- range $i, $c := .Values.registries.credentials }}
+        {{- range $i, $c := $.Values.registries.credentials }}
         {{- if or (not $c.provider) (eq $c.provider "static") }}
         - name: registry-{{ $i }}
           secret:
             secretName: {{ include "kube-tower.registrySecretName" (dict "root" $ "index" $i) }}
         {{- end }}
         {{- end }}
-        {{- with include "kube-tower.caConfigMapName" . }}
+        {{- with include "kube-tower.caConfigMapName" $ }}
         - name: registry-ca
           configMap:
             name: {{ . }}
@@ -172,18 +250,44 @@ spec:
               - key: {{ if $.Values.registries.ca.existingConfigMap }}{{ $.Values.registries.ca.key | default "ca.crt" }}{{ else }}ca.crt{{ end }}
                 path: ca.crt
         {{- end }}
-        {{- with .Values.extraVolumes }}
+        {{- end }}
+        {{- with $.Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.nodeSelector }}
+      {{- with $g.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with $g.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with $g.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- if $g.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "kube-tower.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "kube-tower.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "kube-tower.fullname" $ }}-{{ $name }}
+  minReplicas: {{ $g.autoscaling.minReplicas | default 1 }}
+  maxReplicas: {{ required (printf "distributed.groups.%s.autoscaling.maxReplicas is required" $name) $g.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $g.autoscaling.targetCPUUtilizationPercentage | default 80 }}
+{{- end }}
+{{- end }}

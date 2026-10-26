@@ -24,8 +24,28 @@ DURATION = 15  # seconds a Lease stays valid without being renewed
 RENEW = 5  # seconds between two renewals (or two tries of a standby)
 
 
+ACTIVE_LABEL = "kube-tower.arcanexus.com/active-controller"
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+class PodLabel:
+    """Marks the pod of this process as the active controller, or not: the chart's internal Service selects
+    the pod with ACTIVE_LABEL "true", while every controller pod stays ready (rollouts, ArgoCD health)."""
+
+    def __init__(self, api: client.CoreV1Api, namespace: str, pod: str, key: str = ACTIVE_LABEL):
+        self.api, self.namespace, self.pod, self.key = api, namespace, pod, key
+
+    def set(self, active: bool) -> None:
+        """Blocking: run in a thread. Errors are logged, the Services then do not route to this pod."""
+        value = "true" if active else "false"
+        try:
+            self.api.patch_namespaced_pod(self.pod, self.namespace, {"metadata": {"labels": {self.key: value}}})
+        except Exception as exc:  # noqa: BLE001 - e.g. no RBAC to patch pods, or not a pod
+            level = logging.ERROR if active else logging.WARNING
+            log.log(level, "cannot label pod %s/%s %s=%s: %s", self.namespace, self.pod, self.key, value, exc)
 
 
 class LeaderElection:
@@ -37,8 +57,10 @@ class LeaderElection:
         identity: str | None = None,
         duration: int = DURATION,
         renew: float = RENEW,
+        label: PodLabel | None = None,
     ):
         self.name, self.namespace, self.api = name, namespace, api
+        self.label = label
         self.identity = identity or socket.gethostname()
         self.duration, self.renew = duration, renew
         self.leader = False
@@ -104,10 +126,14 @@ class LeaderElection:
     async def run(self, on_leader: Callable[[], Awaitable[None]]) -> None:
         """Wait for the Lease, then run `on_leader` while renewing it. Stops the process when it is lost."""
         log.info("waiting for the controller Lease %s/%s (standby until then)", self.namespace, self.name)
+        if self.label:  # e.g. the container restarted in the pod of the previous active controller
+            await asyncio.to_thread(self.label.set, False)
         while not await self._attempt():
             await asyncio.sleep(self.renew)
         self.leader = True
         log.info("this process is now the active controller (Lease %s/%s)", self.namespace, self.name)
+        if self.label:
+            await asyncio.to_thread(self.label.set, True)
         work = asyncio.create_task(on_leader())
         try:
             while True:

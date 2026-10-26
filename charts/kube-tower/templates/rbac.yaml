@@ -128,4 +128,41 @@ subjects:
     name: {{ include "kube-tower.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
+{{- if include "kube-tower.distributed" . }}
+---
+# Election of the active controller (distributed mode): the Lease of the controllers
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-leader-election
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["{{ include "kube-tower.fullname" . }}-controller"]
+    verbs: ["get", "update"]
+  # The active controller labels its own pod (kube-tower.arcanexus.com/active-controller)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-leader-election
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-tower.fullname" . }}-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-tower.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}

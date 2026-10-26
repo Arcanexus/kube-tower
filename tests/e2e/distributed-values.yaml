@@ -1,0 +1,29 @@
+# End-to-end test of the distributed mode on kind (.github/workflows/e2e.yml, tests/e2e/distributed.sh)
+image:
+  repository: kube-tower
+  tag: e2e
+  pullPolicy: Never
+mode: distributed
+distributed:
+  internal:
+    existingSecret: kube-tower-internal
+  groups:
+    # Small requests: everything runs on one kind node of a CI runner
+    controller:
+      resources: {requests: {cpu: 10m, memory: 128Mi}}
+    ui:
+      resources: {requests: {cpu: 10m, memory: 64Mi}}
+    worker:
+      resources: {requests: {cpu: 10m, memory: 128Mi}}
+    trivy:
+      resources: {requests: {cpu: 10m, memory: 256Mi}}
+redis:
+  valkey:
+    enabled: true
+  password: e2e-password
+config:
+  refreshInterval: 1h
+  logs:
+    format: text
+  helm:
+    applicationNamespaces: []
