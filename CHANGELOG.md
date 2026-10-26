@@ -177,6 +177,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Registry rate limits (HTTP 429) are retried after the delay the registry asks for (`Retry-After`, up to
+  60 s, else a growing delay), and every request to that registry waits meanwhile instead of hitting the
+  limit again. A longer limit makes the requests to that registry fail at once until then (instead of
+  stalling the scan), with the time left in the error (`HTTP 429 Too Many Requests (retry in 90 min)`).
+  A warning is logged when Docker Hub reports no pulls left in the current window.
+
 - Clusters page: the API server and the source under the cluster name, outdated images and charts
   under their totals, so the table fits without scrolling sideways.
 

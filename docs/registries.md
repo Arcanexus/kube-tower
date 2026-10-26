@@ -11,7 +11,7 @@ in [configuration](configuration.md#registry-authentication).
 
 | Registry | Image names | Authentication |
 | --- | --- | --- |
-| Docker Hub | `nginx`, `bitnami/redis`, `docker.io/...` | Anonymous works, but is rate limited: add a username and an [access token](https://docs.docker.com/security/for-developers/access-tokens/) |
+| Docker Hub | `nginx`, `bitnami/redis`, `docker.io/...` | Anonymous works, but is rate limited: add a username and an [access token](https://docs.docker.com/security/for-developers/access-tokens/). Rate limits (HTTP 429) are handled, see [troubleshooting](troubleshooting.md) |
 | GitHub (ghcr.io), GitLab, Quay, Codeberg... | `ghcr.io/org/app` | Anonymous for public images, a token (PAT, deploy token, robot account) for private ones |
 | Amazon ECR | `<account>.dkr.ecr.<region>.amazonaws.com/app` | `provider: aws`: the IAM role of the pod (IRSA or EKS Pod Identity), see [below](#amazon-ecr) |
 | Amazon ECR Public | `public.ecr.aws/...` | Anonymous |
