@@ -89,13 +89,19 @@ it, e.g. `images?update=major` or `images?registry=docker.io`; the filter shows 
 results, removed with its ✕), the images by worst vulnerability severity, the most vulnerable and
 the most used outdated images (click one for its details) and the figures per cluster.
 
+By default every figure counts only the **running** images, used by a pod: the images only cached on
+nodes or declared by workloads without pods (scaled to zero, CronJob between two runs) are left out.
+Turn off **Running images only** at the top right to count them too (`?running=0`); the links to the
+Images, Vulnerabilities and Clusters pages keep the choice.
+
 ### Images
 
 ![Images](images/images.png)
 
 One line per image reference (`registry/repository:tag`), whatever the number of workloads using
-it. The counters at the top summarize the statuses; filter by text, status or cluster, and
-turn on **Running only** to keep the images a pod runs (`images?running=1`). Images using `latest` (or no
+it. The counters at the top summarize the statuses; filter by text, status or cluster. **Running only**
+(on by default) keeps the images a pod runs; turn it off to also list the images only cached on nodes
+or declared by workloads without pods (`images?running=0`). Images using `latest` (or no
 tag at all, which means `latest`) are shown in red: the running version changes on every pull, pin
 a version instead.
 
@@ -175,7 +181,8 @@ Filter by image, by severity, by cluster, and by **CVE**: type all or part of on
 vulnerability IDs (e.g. `CVE-2025-68121`, `2025-681` or `GHSA-`, separated by spaces or commas) to
 list only the images affected, with the matching IDs under their counts; their detail panel lists
 the matching vulnerabilities first. The severity counters at the top are numbers of images with at
-least one vulnerability of that severity. When Trivy cannot run (binary not found, status error), a
+least one vulnerability of that severity. Like on the Images page, **Running only** (on by default)
+keeps the images a pod runs (`vulnerabilities?running=0` lists them all). When Trivy cannot run (binary not found, status error), a
 notice at the top of the page says so, with a link to the Administration page. See
 [vulnerabilities](vulnerabilities.md).
 
@@ -188,7 +195,8 @@ notice at the top of the page says so, with a link to the Administration page. S
 Every cluster kube-tower knows, its API server and where it comes from (`in-cluster`, `secret`,
 `argocd-secret`), its Kubernetes version and whether it answered, with its figures from the last
 scan: images and Helm charts (with how many are outdated) and images with critical CVEs. Each
-number opens the filtered list.
+number opens the filtered list. As on the Synthesis, the images counted are the running ones unless
+**Running images only** is turned off.
 Unreachable clusters are skipped during the scan and show the connection error.
 
 ### Logs

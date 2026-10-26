@@ -90,9 +90,11 @@ class Summary:
         return sum(self.charts.values())
 
 
-def summarize(snap: Snapshot, top: int = 5, registries: int = 6) -> Summary:
+def summarize(snap: Snapshot, top: int = 5, registries: int = 6, running: bool = False) -> Summary:
+    """`running`: count only the images a pod runs (not those only declared by workloads without pods or cached on nodes)."""
+    images = [r for r in snap.images if r.running] if running else snap.images
     clusters = {c.name: ClusterSummary(c.name, c.reachable, c.version) for c in snap.clusters}
-    for r in snap.images:
+    for r in images:
         for name in r.clusters:
             cluster = clusters.setdefault(name, ClusterSummary(name, True, None))
             cluster.images[r.status.value] += 1
@@ -101,21 +103,21 @@ def summarize(snap: Snapshot, top: int = 5, registries: int = 6) -> Summary:
     for c in snap.charts:
         clusters.setdefault(c.cluster, ClusterSummary(c.cluster, True, None)).charts[c.worst_status.value] += 1
 
-    by_registry = Counter(r.image.registry for r in snap.images).most_common()
+    by_registry = Counter(r.image.registry for r in images).most_common()
     if len(by_registry) > registries:  # keep the bars readable: the long tail becomes "other"
         by_registry = [*by_registry[: registries - 1], ("other", sum(n for _, n in by_registry[registries - 1 :]))]
 
-    outdated = [r for r in snap.images if r.status == Status.OUTDATED]
+    outdated = [r for r in images if r.status == Status.OUTDATED]
     update_of = {str(r.image): image_update(r) for r in outdated}
     return Summary(
-        images=Counter(r.status.value for r in snap.images),
+        images=Counter(r.status.value for r in images),
         charts=Counter(c.worst_status.value for c in snap.charts),
         subcharts=Counter(d.status.value for c in snap.charts for _, d in c.walk()),
         updates=[(kind, n) for kind in UPDATE_KINDS if (n := sum(1 for k in update_of.values() if k == kind))],
         update_of=update_of,
         registries=by_registry,
-        latest_images=sum(1 for r in snap.images if r.image.is_latest),
+        latest_images=sum(1 for r in images if r.image.is_latest),
         clusters=sorted(clusters.values(), key=lambda c: c.name),
         top_outdated=sorted(outdated, key=lambda r: (-len(r.usages), str(r.image)))[:top],
-        vulnerabilities=summarize_vulnerabilities(snap.images, top),
+        vulnerabilities=summarize_vulnerabilities(images, top),
     )

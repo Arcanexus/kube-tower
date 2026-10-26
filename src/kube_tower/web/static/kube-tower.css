@@ -137,7 +137,8 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 .filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .5rem; }
 @media (max-width: 600px) { .filters { grid-template-columns: 1fr; } }
 .filters-4 { grid-template-columns: 2fr 1.5fr 1fr 1fr; }
-@media (max-width: 900px) { .filters-4 { grid-template-columns: 1fr 1fr; } }
+.filters-5 { grid-template-columns: 2fr 1.5fr 1fr 1fr auto; }
+@media (max-width: 900px) { .filters-4, .filters-5 { grid-template-columns: 1fr 1fr; } }
 .filter-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: var(--pico-spacing); }
 .filter-chip {
   display: inline-flex; align-items: center; gap: .35rem; padding: .15rem .25rem .15rem .75rem; border-radius: 1rem;
@@ -148,6 +149,7 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 .filter-chip .icon { margin: 0; }
 .filter-switch { display: flex; align-items: center; gap: .5rem; margin: 0 0 var(--pico-spacing, 1rem); white-space: nowrap; }
 .filter-switch input { margin: 0; }
+.running-switch { display: flex; justify-content: flex-end; }
 
 /* Status counters */
 .counters { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: 1rem; }
