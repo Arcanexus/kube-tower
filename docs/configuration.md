@@ -79,12 +79,16 @@ internal:                      # between the processes, when the roles run apart
   batchSize: 50                # images or charts per task: a scan is shared by the worker and trivy processes
   leaderElection: false        # several controller replicas: one active, elected through a Lease
   leaseName: kube-tower-controller
+redis:                         # optional Redis / Valkey keeping the snapshot across controller restarts
+  url: ""                      # redis://host:6379/0 or rediss:// (TLS); empty: the snapshot stays in memory
+  passwordEnv: KUBE_TOWER_REDIS_PASSWORD
+  key: kube-tower:snapshot     # change it when several installations share one Redis
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
 
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLES`
-(comma-separated), `KUBE_TOWER_CONTROLLER_URL`.
+(comma-separated), `KUBE_TOWER_CONTROLLER_URL`, `KUBE_TOWER_REDIS_URL`.
 
 `roles` prepares the horizontal scaling of the next major release (see
 [ADR 0002](adr/0002-horizontal-scaling.md)): one image whose pods run any combination of the `ui`,
@@ -107,8 +111,12 @@ The roles can already run apart, as a preview (the Helm chart still deploys one 
   `coordination.k8s.io`). The holder schedules the scans and serves the internal API; the others wait,
   answer 503 on `/readyz` (no Service routes to them) and take over about 15 seconds after the active
   one stopped. A controller that cannot renew its Lease in time stops and is restarted as a standby.
-  The new controller starts with a full scan (the snapshot stays in the memory of the controller until
-  the Redis option), and the worker and trivy processes pull from it;
+  The new controller starts with a full scan, unless `redis.url` is set (below), and the worker and
+  trivy processes pull from it;
+- with `redis.url`, the controller also writes the snapshot to Redis or Valkey (compressed, at each
+  change, the last version only) and reads it back when it starts: a restarted controller, or a standby
+  taking over, shows the last inventory at once and waits for the rest of `refreshInterval` before
+  scanning. Only the controller connects to it. A scan in progress is not kept: it starts again;
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
 

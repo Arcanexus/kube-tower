@@ -87,5 +87,9 @@ its replicas, resources and HPA.
    replicas share a `Lease` (`election.py`): the holder renews it every 5 seconds and runs the scans
    and the internal API; a standby runs neither and answers 503 on `/readyz` until the `Lease` expires
    (15 seconds), then takes it. A controller that cannot renew it in time stops, to be restarted as a
-   standby. Next: the Redis option.
+   standby. With `redis.url`, the snapshot is also written to Redis / Valkey
+   (`RedisSnapshotStore`, a thread writing the last version) and read back when a controller starts,
+   which then waits for the rest of the refresh interval. The task queue stays in memory: its tasks
+   belong to the scan the controller runs, which is lost with it anyway; a new controller starts a new
+   scan when one is due. Next: the chart.
 5. Chart `mode: distributed`, documentation, release candidate.

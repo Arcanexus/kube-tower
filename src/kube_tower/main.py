@@ -25,6 +25,7 @@ from kube_tower.logbuffer import LogBuffer
 from kube_tower.logger import get_logger
 from kube_tower.models import encode
 from kube_tower.scanner import Scanner
+from kube_tower.store import redis_store
 from kube_tower.tasks import QueueRunner
 from kube_tower.web import api, metrics, ui
 from kube_tower.web.csrf import add_csrf_protection
@@ -92,7 +93,7 @@ def create_app(
     internal: InternalServer | None = None
     backend: LocalBackend | RemoteBackend | None = None
     if "controller" in roles:
-        scanner = scanner or Scanner(settings)
+        scanner = scanner or Scanner(settings, store=redis_store(settings) if settings.redis.url else None)
         runs.append(scanner.run_forever)
         administration = administration or Administration(scanner)
         backend = LocalBackend(scanner, administration, log_buffer)
