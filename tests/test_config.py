@@ -40,3 +40,21 @@ def test_unknown_key(tmp_path):
     cfg.write_text("images:\n  typo: true\n")
     with pytest.raises(ValueError, match="typo"):
         load_settings(str(cfg))
+
+
+def test_roles_default_to_all_and_partial_roles_are_refused(tmp_path, monkeypatch):
+    monkeypatch.delenv("KUBE_TOWER_ROLES", raising=False)
+    every = ["ui", "controller", "worker", "trivy"]
+    assert load_settings(str(tmp_path / "missing.yaml")).roles == every
+    monkeypatch.setenv("KUBE_TOWER_ROLES", "trivy, worker,ui,controller")  # every role, listed: same as all
+    assert load_settings(str(tmp_path / "missing.yaml")).roles == every
+    monkeypatch.setenv("KUBE_TOWER_ROLES", "worker,trivy")
+    with pytest.raises(ValueError, match="roles trivy, worker: running only some roles .* not available yet"):
+        load_settings(str(tmp_path / "missing.yaml"))
+    monkeypatch.delenv("KUBE_TOWER_ROLES")
+    (tmp_path / "config.yaml").write_text("roles: [ui, scanner]\n")
+    with pytest.raises(ValueError, match="unknown role\\(s\\) 'scanner'"):
+        load_settings(str(tmp_path / "config.yaml"))
+    (tmp_path / "config.yaml").write_text("roles: []\n")
+    with pytest.raises(ValueError, match="no role"):
+        load_settings(str(tmp_path / "config.yaml"))
