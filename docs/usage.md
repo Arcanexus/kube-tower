@@ -149,6 +149,8 @@ links to the repository and Artifact Hub, and the subchart tree: the chart, then
 its version (→ the latest one when it is behind), status and repository, drawn like the **Used by**
 tree of the images.
 
+![Chart details](images/chart-detail.png)
+
 | Source type | Current version | Latest version |
 | --- | --- | --- |
 | `helm` (HTTP repository) | Application `targetRevision` | from the repository `index.yaml` |
