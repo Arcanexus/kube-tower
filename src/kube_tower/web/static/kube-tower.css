@@ -439,3 +439,31 @@ td.cell-name { max-width: 30rem; }
 .more-hint .icon { animation: kt-nudge 1.6s ease-in-out infinite; }
 @keyframes kt-nudge { 50% { transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) { .more-hint .icon { animation: none; } }
+
+/* Administration: roles and pods */
+.role-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.role-tile { display: flex; align-items: center; gap: .75rem; padding: .6rem .8rem; border: 1px solid var(--pico-muted-border-color); border-left: 4px solid #2e7d32; border-radius: var(--pico-border-radius); }
+.role-tile.role-warn { border-left-color: #ef6c00; }
+.role-tile.role-error { border-left-color: #c62828; }
+.role-tile > span:nth-child(2) { flex: 1; display: flex; flex-direction: column; line-height: 1.3; }
+.role-tile small { color: var(--pico-muted-color); }
+.role-icon .icon { width: 1.4rem; height: 1.4rem; margin: 0; color: var(--pico-muted-color); }
+.dot-error { background: #c62828; box-shadow: 0 0 0 3px rgba(198, 40, 40, .2); }
+.dot-standby { background: var(--pico-muted-color); }
+.role-chip { display: inline-flex; align-items: center; gap: .25rem; margin: 0 .35rem .1rem 0; padding: 0 .45rem; border-radius: 1rem; background: var(--pico-muted-border-color); font-size: .75rem; white-space: nowrap; }
+.role-chip .icon { width: .9em; height: .9em; margin: 0; }
+.process-state { display: inline-flex; align-items: center; gap: .45rem; }
+.administration table.processes th { width: auto; }
+.process-lost code, .process-lost .role-chip { opacity: .6; }
+
+/* Logs: roles filter and pod of each line (distributed mode) */
+.log-filters.log-filters-roles { grid-template-columns: 2fr 1fr auto auto; }
+.log-roles { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 var(--pico-spacing); padding: 0; border: 0; }
+.role-toggle { display: inline-flex; align-items: center; margin: 0; padding: .2rem .6rem; border: 1px solid var(--pico-muted-border-color); border-radius: 1rem; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+.role-toggle input { margin: 0 .35rem 0 0; }
+.role-toggle:has(input:checked) { background: var(--kt-sidebar-active); border-color: var(--kt-sidebar-active); color: #fff; }
+.log-source { color: var(--kt-sidebar-active); }
+@media (max-width: 768px) { .log-filters.log-filters-roles { grid-template-columns: 1fr; } }
+.administration table.processes code { white-space: nowrap; font-size: .8rem; }
+.administration table.processes td { vertical-align: middle; }
+.process-task { white-space: nowrap; }

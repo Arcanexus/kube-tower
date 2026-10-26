@@ -113,10 +113,9 @@ spec:
                 secretKeyRef:
                   name: {{ include "kube-tower.internalSecretName" $ }}
                   key: {{ ternary $.Values.distributed.internal.secretKey "token" (not (empty $.Values.distributed.internal.existingSecret)) }}
-            {{- if not $controller }}
+            # The active controller, also reached by the standbys (to report to it)
             - name: KUBE_TOWER_CONTROLLER_URL
               value: "http://{{ include "kube-tower.fullname" $ }}-internal:{{ $.Values.distributed.internal.port }}"
-            {{- end }}
             {{- end }}
             {{- if and $controller $redisUrl }}
             - name: KUBE_TOWER_REDIS_URL

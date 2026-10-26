@@ -21,10 +21,11 @@ from kube_tower.backend import LocalBackend, RemoteBackend
 from kube_tower.clusters import current_namespace
 from kube_tower.config import Settings, check_roles, internal_token, load_settings
 from kube_tower.election import LeaderElection, PodLabel
-from kube_tower.internal import TaskPuller, create_internal_app
+from kube_tower.internal import Reporter, TaskPuller, create_internal_app
 from kube_tower.logbuffer import LogBuffer
 from kube_tower.logger import get_logger
 from kube_tower.models import encode
+from kube_tower.processes import Processes, process_name
 from kube_tower.scanner import Scanner
 from kube_tower.store import redis_store
 from kube_tower.tasks import QueueRunner
@@ -88,10 +89,11 @@ def create_app(
     settings = settings or load_settings()
     sys.setswitchinterval(SWITCH_INTERVAL)
     logger = get_logger("kube_tower", level=settings.logs.level.upper(), format_type=settings.logs.format)
-    # Last log lines, shown on the Logs page of the UI.
-    log_buffer = LogBuffer()
-    logger.addHandler(log_buffer)
     roles = check_roles(settings.roles)
+    # Last log lines, shown on the Logs page of the UI; a distributed controller also keeps those of the other pods.
+    capacity = 10000 if settings.distributed and "controller" in roles else 2000
+    log_buffer = LogBuffer(capacity, source=process_name(), roles=roles)
+    logger.addHandler(log_buffer)
     runs: list = []  # what the process runs in the background: coroutine functions
     internal: InternalServer | None = None
     backend: LocalBackend | RemoteBackend | None = None
@@ -99,7 +101,13 @@ def create_app(
         scanner = scanner or Scanner(settings, store=redis_store(settings) if settings.redis.url else None)
         runs.append(scanner.run_forever)
         administration = administration or Administration(scanner)
-        backend = LocalBackend(scanner, administration, log_buffer)
+        backend = LocalBackend(
+            scanner,
+            administration,
+            log_buffer,
+            Processes(roles),
+            state=lambda: "active" if election is None or election.leader else "standby",
+        )
         if settings.distributed:
             # The tasks of the roles that run elsewhere are pulled over the internal API.
             scanner.runner = runner = QueueRunner(
@@ -127,7 +135,12 @@ def create_app(
                 await asyncio.gather(*(run() for run in controller_runs))
 
             runs.append(lambda: election.run(lead))
+            if settings.internal.controller_url:  # a standby tells the active controller it is there
+                state = lambda: None if election.leader else "standby"  # noqa: E731
+                runs.append(Reporter(settings, log_buffer, roles, state).run_forever)
     else:
+        if settings.distributed:  # tells the controller it is there, sends it its log lines
+            runs.append(Reporter(settings, log_buffer, roles).run_forever)
         if pulled := [r for r in roles if r in ("worker", "trivy")]:
             runs.append(TaskPuller(settings, Worker(settings), pulled).run_forever)
         if "ui" in roles:  # the pages show the state of the controller, read over its internal API

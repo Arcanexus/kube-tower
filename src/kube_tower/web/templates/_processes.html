@@ -1,0 +1,36 @@
+{% from "_macros.html" import icon %}
+{# State of the roles and of the processes (pods), read again every 5 seconds. #}
+{% set role_icons = {"ui": "monitor", "controller": "network", "worker": "cpu", "trivy": "shield"} %}
+{% set states = {"active": ("ok", "Active controller: holds the Lease, runs the scans"), "standby": ("standby", "Standby controller: takes over if the active one stops"), "ok": ("ok", "Reported in the last 30 seconds"), "lost": ("error", "No report for more than 30 seconds: stopped, restarting, or cannot reach the controller")} %}
+<article id="processes" hx-get="administration/processes" hx-trigger="every 5s" hx-swap="outerHTML">
+  <header>{{ icon("server") }}Roles and pods</header>
+  <div class="role-tiles">
+    {% for r in roles_status %}
+    <div class="role-tile role-{{ r.level }}" title="{{ r.role }}: {{ r.summary }}">
+      <span class="role-icon">{{ icon(role_icons[r.role]) }}</span>
+      <span><strong>{{ r.role }}</strong><small>{{ r.summary }}</small></span>
+      <span class="dot dot-{{ 'ok' if r.level == 'ok' else 'warn' if r.level == 'warn' else 'error' }}" role="img" aria-label="{{ r.level }}"></span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="overflow-auto">
+  <table class="striped compact processes">
+    <thead><tr><th>Pod</th><th>Roles</th><th>State</th><th>Task</th><th class="hide-sm">Version</th><th class="hide-sm">Started</th><th class="hide-sm">Last report</th></tr></thead>
+    <tbody>
+      {% for p in processes %}
+      {% set dot, why = states.get(p.state, ("warn", p.state)) %}
+      <tr class="process-{{ p.state }}">
+        <td><code>{{ p.name }}</code></td>
+        <td>{% for role in p.roles %}<span class="role-chip">{{ icon(role_icons[role]) }}{{ role }}</span>{% endfor %}</td>
+        <td><span class="process-state" title="{{ why }}"><span class="dot dot-{{ dot }}"></span>{{ p.state }}</span></td>
+        <td>{% if p.task %}<small class="process-task"><span aria-busy="true">{{ p.task }}</span>{% if p.task_since %} <time datetime="{{ p.task_since.isoformat() }}" class="ago muted-text">{{ p.task_since.strftime("%H:%M:%S") }}</time>{% endif %}</small>{% else %}<small class="muted-text">—</small>{% endif %}</td>
+        <td class="hide-sm"><small>{{ p.version }}</small></td>
+        <td class="hide-sm">{% if p.started_at %}<small><time datetime="{{ p.started_at.isoformat() }}" class="ago">{{ p.started_at.strftime("%Y-%m-%d %H:%M UTC") }}</time></small>{% endif %}</td>
+        <td class="hide-sm">{% if loop.first %}<small class="muted-text">now</small>{% elif p.seen_at %}<small><time datetime="{{ p.seen_at.isoformat() }}" class="ago">{{ p.seen_at.strftime("%H:%M:%S") }}</time></small>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if processes | length == 1 and processes[0].roles | length == 4 %}<p><small class="muted-text">One pod runs every role. In the distributed mode each pod reports here every 5 seconds (see docs/scaling.md).</small></p>{% endif %}
+</article>

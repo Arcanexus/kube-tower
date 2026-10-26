@@ -448,8 +448,8 @@ def test_distributed_mode(tmp_path):
         assert env(spec)["KUBE_TOWER_INTERNAL_TOKEN"] == {"secretKeyRef": {"name": "kt-kube-tower-internal", "key": "token"}}
         assert spec["selector"]["matchLabels"]["app.kubernetes.io/component"] == group
         assert spec["template"]["metadata"]["labels"][f"kube-tower.arcanexus.com/{group}"] == "true"
-        url = env(spec).get("KUBE_TOWER_CONTROLLER_URL")
-        assert url == (None if group == "controller" else "http://kt-kube-tower-internal:8081")
+        # every pod reaches the active controller, the standby controllers too (to report to it)
+        assert env(spec)["KUBE_TOWER_CONTROLLER_URL"] == "http://kt-kube-tower-internal:8081"
 
     assert deployment(docs, "controller")["strategy"]["rollingUpdate"] == {"maxUnavailable": 1, "maxSurge": 0}
     assert "strategy" not in deployment(docs, "ui")

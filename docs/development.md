@@ -51,11 +51,12 @@ src/kube_tower/
   worker.py            runs the tasks (worker and trivy roles), keeps registry tokens, Helm indexes, Trivy cache
   store.py             where the snapshot is kept (memory, or memory + Redis / Valkey)
   election.py          controller election with a Kubernetes Lease, active controller pod label
+  processes.py         the processes (pods) known to the controller and their state (Administration page)
   internal.py          internal API of the controller, and the task puller of worker and trivy processes
   administration.py    Administration page actions (Trivy database, connectivity tests, unused node images)
   backend.py           Backend interface: all the web layer may use of the scans and the administration
   errors.py            explicit error messages (what failed, status, what to do)
-  logger.py            log formats; logbuffer.py keeps the last lines for the Logs page
+  logger.py            log formats; logbuffer.py keeps the last lines for the Logs page (of every pod on a controller)
   web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Synthesis figures), api.py,
                        metrics.py, static/ (Pico CSS, htmx, kube-tower.css/.js, icons)
 charts/kube-tower/     Helm chart

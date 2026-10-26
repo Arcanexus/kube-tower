@@ -2,6 +2,9 @@
 controller and send their results back; `ui` processes read the state of the controller (its snapshot,
 what runs) and send it the actions of the users (see backend.RemoteBackend).
 
+The other processes also report to the controller every few seconds (Reporter): who they are, and their
+new log lines, for the Administration and Logs pages.
+
 The controller serves it on its own port (internal.port), apart from the UI, behind a token shared by
 the processes: the tasks carry the credentials of image pull secrets, it must never be exposed.
 """
@@ -11,17 +14,21 @@ from __future__ import annotations
 import asyncio
 import hmac
 import logging
-import socket
 import time
+from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
 
+from kube_tower import __version__
 from kube_tower.clusters import ClusterRegistry
 from kube_tower.config import Settings, internal_token
-from kube_tower.models import encode
+from kube_tower.logbuffer import LogBuffer, LogLine
+from kube_tower.models import decode, encode
+from kube_tower.processes import STARTED, process_name
 from kube_tower.tasks import CollectTask, QueueRunner, decode_task, encode_result, role_of
 from kube_tower.worker import Worker
 
@@ -34,11 +41,14 @@ PREFIX = "/internal/v1"
 WAIT = 20.0  # seconds a pull waits for a task before the worker asks again
 RETRY = (1, 2, 5, 10, 30)  # seconds before asking the controller again after an error (the last one repeats)
 CLUSTERS_TTL = 300  # seconds before a worker reads the cluster list again
+HEARTBEAT = 5.0  # seconds between two reports of a process to the controller
+REPORT_LINES = 500  # log lines sent at most per report
 
 
 class Pull(BaseModel):
     roles: list[str]
     wait: float = WAIT
+    source: str = ""  # the process asking (its pod name)
 
 
 class StateRequest(BaseModel):
@@ -49,31 +59,21 @@ class LogsRequest(BaseModel):
     after: int = 0  # the sequence number of the last line the UI process has
 
 
-class RemoteLog(BaseModel):
-    level: str
-    logger: str
-    message: str
-
-
 class Answer(BaseModel):
     result: dict[str, Any] | None = None
     error: str | None = None
-    source: str = ""  # the process that ran the task (its host name: the pod name)
-    logs: list[RemoteLog] = []  # its warnings and errors while it ran the task
+    source: str = ""  # the process that ran the task (its pod name)
 
 
-class _Captured(logging.Handler):
-    """The warnings and errors logged while a task runs, sent back with its result (Logs page of the controller)."""
+class Heartbeat(BaseModel):
+    """A process tells the controller it is alive (Reporter), with its log lines since the last report."""
 
-    def __init__(self) -> None:
-        super().__init__(logging.WARNING)
-        self.records: list[dict[str, str]] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        message = record.getMessage()
-        if record.exc_info:
-            message += "\n" + logging.Formatter().formatException(record.exc_info)
-        self.records.append({"level": record.levelname, "logger": record.name, "message": message})
+    name: str
+    roles: list[str]
+    state: str = "ok"  # standby for a controller waiting for the Lease, stopped when the process stops
+    version: str = ""
+    started_at: datetime | None = None
+    logs: list[dict[str, Any]] = []
 
 
 def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend | None = None) -> FastAPI:
@@ -91,14 +91,14 @@ def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend |
     @app.post(f"{PREFIX}/tasks/next", dependencies=[Depends(authorized)])
     async def next_task(pull: Pull) -> Any:
         task = await runner.next(set(pull.roles), min(max(pull.wait, 0), 60))
+        if task is not None and backend is not None:
+            backend.process_registry.task(pull.source, task["kind"])
         return task if task is not None else Response(status_code=204)
 
     @app.post(f"{PREFIX}/tasks/{{task_id}}/result", status_code=204, dependencies=[Depends(authorized)])
     async def task_result(task_id: str, answer: Answer) -> None:
-        for line in answer.logs:
-            level = logging.getLevelName(line.level)
-            level = level if isinstance(level, int) else logging.WARNING
-            logging.getLogger(line.logger).log(level, "[%s] %s", answer.source, line.message)
+        if backend is not None:
+            backend.process_registry.task(answer.source)
         if answer.error is not None:
             done = runner.fail(task_id, answer.error)
         else:
@@ -116,6 +116,12 @@ def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend |
         @app.post(f"{PREFIX}/logs", dependencies=[Depends(authorized)])
         async def logs(asked: LogsRequest) -> list:
             return encode(await backend.log_lines(asked.after))
+
+        @app.post(f"{PREFIX}/heartbeat", status_code=204, dependencies=[Depends(authorized)])
+        async def heartbeat(beat: Heartbeat) -> None:
+            backend.process_registry.seen(beat.name, beat.roles, beat.state, beat.version, beat.started_at)
+            if beat.logs:
+                backend.log_buffer.add(decode(list[LogLine], beat.logs), beat.name, beat.roles)
 
         @app.post(f"{PREFIX}/actions/{{name}}", dependencies=[Depends(authorized)])
         async def action(name: str, request: Request) -> dict:
@@ -141,7 +147,7 @@ class TaskPuller:
         self._clusters_read = 0.0
         self._errors = 0  # requests to the controller that failed in a row
         self._generations: dict[str, int] | None = None  # of the Trivy actions, see apply_generations
-        self.source = socket.gethostname()
+        self.source = process_name()
 
     async def run_forever(self) -> None:
         log.info("pulling %s tasks from the controller at %s", " and ".join(self.roles), self.url)
@@ -152,7 +158,8 @@ class TaskPuller:
     async def pull(self, http: httpx.AsyncClient, wait: float = WAIT) -> bool:
         """Ask the controller for a task and run it. Whether one was run."""
         try:
-            pulled = await http.post(f"{self.url}{PREFIX}/tasks/next", json={"roles": self.roles, "wait": wait})
+            pull = {"roles": self.roles, "wait": wait, "source": self.source}
+            pulled = await http.post(f"{self.url}{PREFIX}/tasks/next", json=pull)
             pulled.raise_for_status()
         except httpx.HTTPError as exc:
             delay = RETRY[min(self._errors, len(RETRY) - 1)]
@@ -168,16 +175,12 @@ class TaskPuller:
 
     async def answer(self, http: httpx.AsyncClient, data: dict[str, Any]) -> None:
         task_id = data["id"]
-        captured = _Captured()
-        logging.getLogger("kube_tower").addHandler(captured)
         try:
             answer: dict[str, Any] = {"result": encode_result(await self.execute(data))}
         except Exception as exc:  # noqa: BLE001 - reported to the controller, the loop goes on
             log.exception("task %s failed", task_id)
             answer = {"error": f"{type(exc).__name__}: {exc}"}
-        finally:
-            logging.getLogger("kube_tower").removeHandler(captured)
-        answer |= {"source": self.source, "logs": captured.records}
+        answer["source"] = self.source
         for delay in (*RETRY, None):
             try:
                 sent = await http.post(f"{self.url}{PREFIX}/tasks/{task_id}/result", json=answer)
@@ -228,3 +231,61 @@ class TaskPuller:
         reachable = {s.name for s in statuses if s.reachable}
         self.worker.clusters = {c.name: c for c in clusters if c.name in reachable}
         self._clusters_read = time.monotonic()
+
+
+class Reporter:
+    """A process other than the active controller: tells the controller every HEARTBEAT seconds that it is
+    alive, with its roles and its new log lines (Administration and Logs pages of every UI)."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        buffer: LogBuffer,
+        roles: list[str],
+        state: Callable[[], str | None] = lambda: "ok",
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        self.buffer, self.roles = buffer, roles
+        # The state to report, None while there is nothing to report (e.g. this controller became active).
+        self.state = state
+        self.name = process_name()
+        self.sent = 0  # sequence number of the last log line sent
+        self.http = httpx.AsyncClient(
+            base_url=settings.internal.controller_url.rstrip("/"),
+            headers={"Authorization": f"Bearer {internal_token(settings)}", "User-Agent": "kube-tower"},
+            timeout=10,
+            transport=transport,
+        )
+
+    async def run_forever(self) -> None:
+        try:
+            while True:
+                await self.report()
+                await asyncio.sleep(HEARTBEAT)
+        except asyncio.CancelledError:  # the pod stops (e.g. a rollout): not lost, gone
+            await self.report(stopped=True)
+            raise
+
+    async def report(self, stopped: bool = False) -> bool:
+        """Whether the controller got the report. Failures are not logged: the other loops of the process
+        already tell when the controller cannot be reached."""
+        if (state := self.state()) is None:
+            self.sent = self.buffer.seq  # the active controller keeps its own lines
+            return False
+        lines = self.buffer.since(self.sent)[:REPORT_LINES]
+        beat = {
+            "name": self.name,
+            "roles": self.roles,
+            "state": "stopped" if stopped else state,
+            "version": __version__,
+            "started_at": STARTED.isoformat(),
+            "logs": [encode(line) for line in lines],
+        }
+        try:
+            answer = await self.http.post(f"{PREFIX}/heartbeat", json=beat)
+            answer.raise_for_status()
+        except httpx.HTTPError:
+            return False
+        if lines:
+            self.sent = lines[-1].seq
+        return True

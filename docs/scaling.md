@@ -87,6 +87,10 @@ A pod with `ui` and `controller` that is a standby shows no inventory: such pods
 readiness probe, so the UI Service skips the standby (which then stays not ready: `helm --wait` and
 ArgoCD wait for it). To scale the pages, run `ui` in a group of its own.
 
+Every pod reports to the active controller every 5 seconds (standby controllers too): the
+**Administration** page shows the state of each role and pod, and the **Logs** page gathers the lines of
+every pod, filtered by role (see [usage](usage.md#administration)).
+
 The scans are split in batches of `config.internal.batchSize` images or charts (50) shared by the
 worker and trivy pods. A task that is not answered within `config.internal.taskTimeout` (30m) is given
 to another pod, e.g. when a worker was stopped in the middle of it.

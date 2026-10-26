@@ -59,8 +59,9 @@ its replicas, resources and HPA.
 - The `ui` role keeps no session state: the login and SSO planned later (#108, ArgoCD-like local
   admin + OIDC) will use signed tokens, so any `ui` replica serves any request.
 - Snapshot metrics are exported by the controller only (no duplicated series).
-- The Logs page shows the controller's lines; workers send the warnings and errors of each task back
-  with its result.
+- Every process but the active controller reports to it every 5 seconds with its new log lines: the
+  Logs page shows the lines of every pod (filtered by role), the Administration page the state of
+  each role and pod. Nothing is stored apart from the controller's memory.
 
 ## Steps
 
