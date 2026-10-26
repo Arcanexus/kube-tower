@@ -50,6 +50,15 @@ async def test_list_tags_with_token_and_pagination():
 
 
 @respx.mock
+async def test_list_tags_warns_when_pages_are_cut(caplog):
+    next_page = {"link": '</v2/app/tags/list?n=1000&last=1.0>; rel="next"'}
+    respx.get("https://registry.example.com/v2/app/tags/list?n=1000").respond(200, json={"tags": ["1.0"]}, headers=next_page)
+    async with httpx.AsyncClient() as http:
+        assert await OCIClient(http, max_tag_pages=1).list_tags("registry.example.com", "app") == ["1.0"]
+    assert "registry.example.com/app has more than 1 tags: only the first 1 pages were read" in caplog.text
+
+
+@respx.mock
 async def test_docker_hub_uses_api_host_and_digest():
     respx.head("https://registry-1.docker.io/v2/library/nginx/manifests/latest").respond(
         200, headers={"docker-content-digest": "sha256:123"}

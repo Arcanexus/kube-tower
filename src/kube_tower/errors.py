@@ -24,7 +24,10 @@ def http_hint(status: int, host: str, credentials: str = REGISTRY_CREDENTIALS) -
     if status == 404:
         return f"not found on {host}: check the name, or it is private and needs credentials ({credentials})"
     if status == 429:
-        return f"rate limited by {host}: add credentials for it (anonymous pulls are limited) or lower registries.concurrency"
+        return (
+            f"rate limited by {host}, even after waiting as it asked: add credentials for it (anonymous requests "
+            "are limited), use an account with a higher limit, lower registries.concurrency or scan less often"
+        )
     if status >= 500:
         return f"{host} returned a server error, it is retried at the next scan"
     return ""
@@ -34,6 +37,8 @@ def http_error_message(what: str, response: httpx.Response, credentials: str = R
     """`<what>: HTTP 401 Unauthorized - <hint>`."""
     host = response.request.url.host
     message = f"{what}: HTTP {response.status_code} {response.reason_phrase}".rstrip()
+    if response.status_code == 429 and (wait := response.headers.get("retry-after", "")).isdigit():
+        message += f" (retry in {_duration(int(wait))})"
     hint = http_hint(response.status_code, host, credentials)
     return f"{message} - {hint}" if hint else message
 
@@ -103,3 +108,11 @@ def _host(exc: httpx.HTTPError) -> str:
 
 def _first_line(exc: BaseException) -> str:
     return (str(exc) or exc.__class__.__name__).strip().splitlines()[0][:500]
+
+
+def _duration(seconds: int) -> str:
+    if seconds < 120:
+        return f"{seconds}s"
+    if seconds < 7200:
+        return f"{round(seconds / 60)} min"
+    return f"{round(seconds / 3600)} h"

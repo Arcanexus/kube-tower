@@ -37,7 +37,7 @@ from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Stat
 from kube_tower.registry.auth import AuthResults, Credentials, TokenCache, resolve_credentials
 from kube_tower.registry.helm import HelmClient, IndexCache
 from kube_tower.registry.oci import OCIClient
-from kube_tower.registry.transport import RetryingClient
+from kube_tower.registry.transport import RateLimits, RetryingClient
 from kube_tower.trivy import TrivyScanner, scan_target
 
 log = logging.getLogger(__name__)
@@ -145,6 +145,7 @@ class Scanner:
         self.registry_tokens = TokenCache()
         # Whether each registry accepted the credentials at the last request that sent them (Settings page).
         self.registry_auth = AuthResults()
+        self.rate_limits = RateLimits()  # registries that answered 429, kept between scans
         # Credentials of the image pull secrets read at the last scan (registries.useImagePullSecrets).
         self.pull_secrets: dict[str, tuple[str, str]] = {}
         self.helm_indexes = IndexCache()  # index.yaml of the Helm repositories, revalidated at each scan
@@ -304,6 +305,7 @@ class Scanner:
             "headers": {"User-Agent": "kube-tower"},
             "event_hooks": {"response": [_log_response]},
             "retries": reg.retries,
+            "rate_limits": self.rate_limits,
         }
         credentials = self.credentials()
         async with contextlib.AsyncExitStack() as stack:
