@@ -18,7 +18,7 @@ spec:
     {{- end }}
 {{- if include "kube-tower.distributed" . }}
 ---
-# The active controller (only it is ready): its internal API, for the other pods, and /metrics
+# The active controller (its pod is labelled by itself): its internal API, for the other pods, and /metrics
 apiVersion: v1
 kind: Service
 metadata:
@@ -39,5 +39,5 @@ spec:
       name: http
   selector:
     {{- include "kube-tower.selectorLabels" . | nindent 4 }}
-    kube-tower.arcanexus.com/controller: "true"
+    kube-tower.arcanexus.com/active-controller: "true"
 {{- end }}

@@ -43,8 +43,10 @@ Shared state, chosen by the maintainer:
 The snapshot store and the task queue are therefore an interface with two implementations (memory,
 Redis). Roles in the same process talk in memory, without the internal API; roles in other pods go
 through it. A pod running the controller role with several replicas has one active controller (the
-`Lease` holder); the others stand by and are not ready, so no Service routes to them. To scale the
-`ui`, run it in its own pods: a standby with `ui` too would only show an empty inventory.
+`Lease` holder, which labels its pod so that the internal Service selects it); the others stand by,
+ready but not selected (a standby reported not ready would keep rollouts and ArgoCD health waiting
+forever). To scale the `ui`, run it in its own pods: a standby with `ui` too would only show an empty
+inventory.
 
 The chart gets `mode: single | distributed`: `single` renders today's Deployment (every role)
 unchanged; `distributed` renders one Deployment per group of roles listed in the values, each with
@@ -95,7 +97,9 @@ its replicas, resources and HPA.
 5. Chart `mode: distributed`, documentation, release candidate.
    Done so far: `mode: distributed` (see [scaling](../scaling.md)): one Deployment per entry of
    `distributed.groups` (roles, replicas, resources, autoscaling), `<release>-internal` Service to the
-   active controller (readiness `/leaderz`), internal token Secret, `Lease` RBAC, NetworkPolicies on
+   pod the active controller labels (`internal.labelPod`), internal token Secret, `Lease` RBAC, NetworkPolicies on
    the internal port, ServiceMonitor on the controller. The trivy group always has one replica (one
    copy of the Trivy databases and results for every cluster). `redis.valkey.enabled` deploys a
-   Valkey, `redis.url` uses an existing Redis. Next: an end-to-end test on kind in CI.
+   Valkey, `redis.url` uses an existing Redis. An end-to-end test (`tests/e2e/distributed.sh`, workflow
+   `e2e.yml`) installs it on kind: scan through the worker and trivy pods, UI pods, failover to the
+   standby with the inventory read from Valkey, controller rollout.

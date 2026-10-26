@@ -451,11 +451,11 @@ def test_distributed_mode(tmp_path):
         url = env(spec).get("KUBE_TOWER_CONTROLLER_URL")
         assert url == (None if group == "controller" else "http://kt-kube-tower-internal:8081")
 
-    # Only the active controller is ready: rollouts and helm --wait need one ready pod, not all
     assert deployment(docs, "controller")["strategy"]["rollingUpdate"] == {"maxUnavailable": 1, "maxSurge": 0}
     assert "strategy" not in deployment(docs, "ui")
     controller = deployment(docs, "controller")["template"]["spec"]
-    assert controller["containers"][0]["readinessProbe"]["httpGet"]["path"] == "/leaderz"
+    assert controller["containers"][0]["readinessProbe"]["httpGet"]["path"] == "/healthz"
+    assert {"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}}} in controller["containers"][0]["env"]
     assert {"name": "internal", "containerPort": 8081} in controller["containers"][0]["ports"]
     # The ui pods reach no Kubernetes API nor registry: no token, no credentials
     ui = deployment(docs, "ui")["template"]["spec"]
@@ -472,14 +472,16 @@ def test_distributed_mode(tmp_path):
     # The UI Service reaches the ui pods, the internal one the controller (only the active one is ready)
     assert docs[("Service", "kt-kube-tower")]["spec"]["selector"]["kube-tower.arcanexus.com/ui"] == "true"
     internal = docs[("Service", "kt-kube-tower-internal")]["spec"]
-    assert internal["selector"]["kube-tower.arcanexus.com/controller"] == "true"
+    assert internal["selector"]["kube-tower.arcanexus.com/active-controller"] == "true"
     monitored = docs[("ServiceMonitor", "kt-kube-tower")]["spec"]["selector"]["matchLabels"]
     assert monitored["app.kubernetes.io/component"] == "controller"
     lease = docs[("Role", "kt-kube-tower-leader-election")]["rules"]
     assert lease[1]["resourceNames"] == ["kt-kube-tower-controller"] and lease[1]["verbs"] == ["get", "update"]
+    assert lease[2] == {"apiGroups": [""], "resources": ["pods"], "verbs": ["patch"]}
 
     settings = app_settings(tmp_path, docs)
     assert settings.internal.leader_election is True and settings.internal.lease_name == "kt-kube-tower-controller"
+    assert settings.internal.label_pod is True
 
 
 def test_distributed_groups(tmp_path):
@@ -505,6 +507,9 @@ def test_distributed_groups(tmp_path):
     controller = env(deployment(docs, "controller"))
     assert controller["KUBE_TOWER_INTERNAL_TOKEN"]["secretKeyRef"] == {"name": "kt-internal", "key": "key"}
     assert controller["KUBE_TOWER_ROLES"] == "controller,ui"
+    # A standby controller with the UI shows no inventory: the UI Service must skip it
+    probe = deployment(docs, "controller")["template"]["spec"]["containers"][0]["readinessProbe"]
+    assert probe["httpGet"]["path"] == "/leaderz"
     assert deployment(docs, "controller")["replicas"] == 3
     assert deployment(docs, "trivy")["replicas"] == 1
     assert "replicas" not in deployment(docs, "worker")

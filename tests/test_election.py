@@ -10,7 +10,7 @@ from kubernetes.client.rest import ApiException
 
 from kube_tower import election as election_module
 from kube_tower.config import Settings
-from kube_tower.election import LeaderElection
+from kube_tower.election import ACTIVE_LABEL, LeaderElection, PodLabel
 from kube_tower.main import create_app
 from kube_tower.worker import Worker
 from test_web import FakeScanner
@@ -51,6 +51,24 @@ class FakeLeases:
         body.metadata.resource_version = str(self.version)
         self.lease = copy.deepcopy(body)
         return body
+
+
+class FakePods:
+    def __init__(self):
+        self.labels = {}
+        self.fail = False
+
+    def patch_namespaced_pod(self, name, namespace, body):
+        if self.fail:
+            raise ApiException(status=403, reason="forbidden")
+        self.labels[name] = body["metadata"]["labels"][ACTIVE_LABEL]
+
+
+def test_pod_label_errors_are_logged(caplog):
+    pods = FakePods()
+    pods.fail = True
+    PodLabel(pods, "tools", "a").set(True)
+    assert "cannot label pod tools/a kube-tower.arcanexus.com/active-controller=true" in caplog.text
 
 
 def _election(api, identity, **kwargs):
@@ -131,7 +149,8 @@ def test_standby_waits_then_leads(monkeypatch):
     api = FakeLeases()
     holder = _election(api, "a")
     assert holder.try_acquire()
-    standby = _election(api, "b", renew=0.01)
+    pods = FakePods()
+    standby = _election(api, "b", renew=0.01, label=PodLabel(pods, "tools", "b"))
     started = asyncio.Event()
 
     async def lead():
@@ -142,9 +161,11 @@ def test_standby_waits_then_leads(monkeypatch):
         task = asyncio.create_task(standby.run(lead))
         await asyncio.sleep(0.05)
         assert not standby.leader and not started.is_set()
+        assert pods.labels == {"b": "false"}  # e.g. a restarted container of the previous active controller
         api.lease.spec.renew_time = datetime.now(UTC) - timedelta(seconds=60)  # the holder stopped
         await asyncio.wait_for(started.wait(), 1)
         assert standby.leader and api.lease.spec.holder_identity == "b"
+        assert pods.labels == {"b": "true"}  # the internal Service selects this pod now
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -256,4 +277,8 @@ def test_election_needs_the_kubernetes_api(monkeypatch):
     scanner.registry = type("Cluster", (), {"local_client": lambda self: client.ApiClient()})()
     app = create_app(settings, scanner=scanner, background=False)
     assert isinstance(app.state.election, LeaderElection)
-    assert app.state.election.name == "kube-tower-controller"
+    assert app.state.election.name == "kube-tower-controller" and app.state.election.label is None
+    monkeypatch.setenv("POD_NAME", "kube-tower-controller-abc")
+    settings.internal.label_pod = True
+    election = create_app(settings, scanner=scanner, background=False).state.election
+    assert election.identity == "kube-tower-controller-abc" and election.label.pod == "kube-tower-controller-abc"

@@ -7,6 +7,7 @@ import contextlib
 import logging
 import os
 import signal
+import socket
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ from kube_tower.administration import Administration
 from kube_tower.backend import LocalBackend, RemoteBackend
 from kube_tower.clusters import current_namespace
 from kube_tower.config import Settings, check_roles, internal_token, load_settings
-from kube_tower.election import LeaderElection
+from kube_tower.election import LeaderElection, PodLabel
 from kube_tower.internal import TaskPuller, create_internal_app
 from kube_tower.logbuffer import LogBuffer
 from kube_tower.logger import get_logger
@@ -72,7 +73,9 @@ def _election(settings: Settings, scanner: Scanner) -> LeaderElection:
     local = scanner.registry.local_client()
     if local is None:
         raise ValueError("internal.leaderElection needs the Kubernetes API of the cluster kube-tower runs in")
-    return LeaderElection(settings.internal.lease_name, current_namespace(), client.CoordinationV1Api(local))
+    namespace, pod = current_namespace(), os.environ.get("POD_NAME") or socket.gethostname()
+    label = PodLabel(client.CoreV1Api(local), namespace, pod) if settings.internal.label_pod else None
+    return LeaderElection(settings.internal.lease_name, namespace, client.CoordinationV1Api(local), identity=pod, label=label)
 
 
 def create_app(
@@ -116,7 +119,7 @@ def create_app(
             internal = InternalServer(config)
             runs.append(internal.serve)
         if settings.internal.leader_election:
-            # Standby replicas run nothing until they hold the Lease (and are not ready: no Service routes to them).
+            # Standby replicas run nothing until they hold the Lease (the Services route to the active one only).
             election = election or _election(settings, scanner)
             controller_runs, runs = runs, []
 

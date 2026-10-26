@@ -40,12 +40,12 @@ kubectl -n kube-tower create secret generic kube-tower-internal --from-literal=t
 
 This renders four Deployments, `<release>-controller`, `-ui`, `-worker` and `-trivy`:
 
-- the **controller** runs with 2 replicas: the active one holds a Kubernetes `Lease` and is the only
-  ready one, so the Services route to it; the other waits and takes over about 15 seconds after the
-  active one stopped. Its readiness probe is `/leaderz`. Its internal API (`distributed.internal.port`,
-  8081) is reached through the `<release>-internal` Service, which also serves `/metrics` to the
-  ServiceMonitor. Its rollouts replace one pod at a time without waiting for the standbys to be ready
-  (`maxUnavailable: 1`, `maxSurge: 0`), so `helm --wait` and ArgoCD only wait for the active one;
+- the **controller** runs with 2 replicas: the active one holds a Kubernetes `Lease` and labels its
+  pod `kube-tower.arcanexus.com/active-controller=true`; the other waits and takes over about 15
+  seconds after the active one stopped. Both pods are ready (`helm --wait` and the ArgoCD health
+  checks pass), the `<release>-internal` Service selects the labelled one: it serves the internal API
+  (`distributed.internal.port`, 8081) to the other pods and `/metrics` to the ServiceMonitor. Rollouts
+  replace one controller pod at a time (`maxUnavailable: 1`, `maxSurge: 0`);
 - the **ui** pods serve the pages through the usual Service and Ingress. They get no ServiceAccount
   token, no registry credential nor git token;
 - the **worker** pods pull the collection and version check tasks from the controller;
@@ -83,8 +83,9 @@ distributed:
     ui: null
 ```
 
-A pod with `ui` and `controller` that is a standby shows no inventory: it is not ready either. To
-scale the pages, run `ui` in a group of its own.
+A pod with `ui` and `controller` that is a standby shows no inventory: such pods use `/leaderz` as
+readiness probe, so the UI Service skips the standby (which then stays not ready: `helm --wait` and
+ArgoCD wait for it). To scale the pages, run `ui` in a group of its own.
 
 The scans are split in batches of `config.internal.batchSize` images or charts (50) shared by the
 worker and trivy pods. A task that is not answered within `config.internal.taskTimeout` (30m) is given
@@ -119,5 +120,6 @@ when one is due.
 
 The pods running `controller` or `worker` (and `trivy`, for the cloud identities of
 [registries](registries.md)) use the ServiceAccount of the chart, with the usual
-[permissions](installation.md#permissions), plus `create` on `leases` and `get` / `update` on the
-`<release>-controller` Lease of the release namespace in distributed mode.
+[permissions](installation.md#permissions), plus `create` on `leases`, `get` / `update` on the
+`<release>-controller` Lease and `patch` on the pods of the release namespace (the active controller
+labels its own pod) in distributed mode.

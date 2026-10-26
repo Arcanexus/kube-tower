@@ -29,7 +29,9 @@ All notable changes to this project are documented here. The format follows
 - Chart `mode: distributed` ([scaling](docs/scaling.md)): UI, controller (active + standby), worker and
   Trivy Deployments from `distributed.groups`, each with its replicas, resources and autoscaling, and
   `redis.valkey.enabled` / `redis.url` to keep the inventory across controller restarts. `mode: single`
-  (the default) renders the same manifests as before. New `/leaderz` probe: 503 on a standby controller.
+  (the default) renders the same manifests as before. The active controller labels its pod
+  (`internal.labelPod`), selected by the internal Service. New `/leaderz` probe: 503 on a standby
+  controller. End-to-end test of the distributed mode on kind in CI.
 - Images, Helm charts and Vulnerabilities load 30 rows at a time, the next ones when the bottom of the list
   comes into view, with an animated loading row, a count of the rows shown and a "N more below" button while rows are left to load;
   the column sort of these lists is done by the server.

@@ -45,11 +45,13 @@
 {{- $_ := set $vulnerabilities "trivy" $trivy }}
 {{- $_ := set $config "vulnerabilities" $vulnerabilities }}
 {{- end }}
-{{- /* Distributed mode: the internal API port, and the election of the controller (its Lease, see rbac.yaml) */ -}}
+{{- /* Distributed mode: the internal API port, and the election of the controller (its Lease, see rbac.yaml);
+the active controller labels its pod, selected by the internal Service */ -}}
 {{- if include "kube-tower.distributed" . }}
 {{- $internal := deepCopy ($config.internal | default dict) }}
 {{- $_ := set $internal "port" .Values.distributed.internal.port }}
 {{- $_ := set $internal "leaderElection" true }}
+{{- $_ := set $internal "labelPod" true }}
 {{- $_ := set $internal "leaseName" (printf "%s-controller" (include "kube-tower.fullname" .)) }}
 {{- $_ := set $config "internal" $internal }}
 {{- end }}

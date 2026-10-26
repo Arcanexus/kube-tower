@@ -39,8 +39,10 @@ snapshot() { kubectl -n "$NS" exec deploy/"$RELEASE"-ui -- wget -qO- http://loca
 scanned() { snapshot | jq -e '.finished_at != null and (.images | length) > 0'; }
 vulnerabilities_scanned() { snapshot | jq -e '.vulnerabilities_finished_at != null'; }
 holder() { kubectl -n "$NS" get lease "$RELEASE"-controller -o jsonpath='{.spec.holderIdentity}'; }
-ready_controllers() {
-    [ "$(kubectl -n "$NS" get deploy "$RELEASE"-controller -o jsonpath='{.status.readyReplicas}')" = "1" ]
+# The internal Service reaches the pod of the active controller only (labelled by it)
+active_endpoint() {
+    [ "$(kubectl -n "$NS" get pods -l kube-tower.arcanexus.com/active-controller=true -o name)" = "pod/$(holder)" ] &&
+        [ "$(kubectl -n "$NS" get endpoints "$RELEASE"-internal -o json | jq '[.subsets[]?.addresses[]?] | length')" = "1" ]
 }
 
 log "install"
@@ -50,7 +52,7 @@ helm install "$RELEASE" charts/kube-tower -n "$NS" -f tests/e2e/distributed-valu
 kubectl -n "$NS" get pods -o wide
 
 log "one active controller"
-wait_for 120 "one controller is ready" ready_controllers
+wait_for 120 "the internal Service reaches the active controller" active_endpoint
 first=$(holder)
 [ -n "$first" ]
 echo "active controller: $first"
@@ -73,7 +75,7 @@ kubectl -n "$NS" exec deploy/"$RELEASE"-ui -- wget -qO- http://"$RELEASE"-intern
 log "failover"
 images=$(snapshot | jq '.images | length')
 kubectl -n "$NS" delete pod "$first" --wait=false
-standby_took_over() { h=$(holder) && [ -n "$h" ] && [ "$h" != "$first" ] && ready_controllers; }
+standby_took_over() { h=$(holder) && [ -n "$h" ] && [ "$h" != "$first" ] && active_endpoint; }
 wait_for 120 "the standby controller took over" standby_took_over
 echo "active controller: $(holder)"
 # The new controller read the inventory from Valkey: no new scan needed to show it
@@ -81,8 +83,9 @@ same_inventory() { [ "$(snapshot | jq '.images | length')" = "$images" ]; }
 wait_for 60 "the UI shows the inventory kept in Valkey" same_inventory
 kubectl -n "$NS" logs "$(holder)" | grep -E "snapshot read from Redis: [1-9]"
 
-log "rollout of the controller does not wait for the standby"
+log "rollout of the controller"
 kubectl -n "$NS" rollout restart deploy/"$RELEASE"-controller
 kubectl -n "$NS" rollout status deploy/"$RELEASE"-controller --timeout=180s
+wait_for 120 "an active controller after the rollout" active_endpoint
 
 log "ok"

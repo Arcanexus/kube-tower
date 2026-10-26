@@ -21,7 +21,7 @@ spec:
   replicas: {{ $g.replicas }}
   {{- end }}
   {{- if and $distributed $controller }}
-  # The standby controllers are never ready: a rollout must not wait for them (one old pod at a time)
+  # One old controller pod at a time: a standby takes over while the other is replaced
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -99,6 +99,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- if and $distributed $controller }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- end }}
             {{- if $distributed }}
             - name: KUBE_TOWER_ROLES
               value: {{ join "," $roles | quote }}
@@ -159,8 +165,8 @@ spec:
           {{- with $.Values.readinessProbe }}
           readinessProbe:
             httpGet:
-              {{- /* Controller pods (distributed): only the active controller, the Lease holder, is ready */}}
-              path: {{ ternary "/leaderz" "/healthz" (and (not (empty $distributed)) $controller) }}
+              {{- /* A standby controller with the ui role would show no inventory: not ready */}}
+              path: {{ ternary "/leaderz" "/healthz" (and (not (empty $distributed)) $controller (has "ui" $roles)) }}
               port: http
             {{- toYaml . | nindent 12 }}
           {{- end }}

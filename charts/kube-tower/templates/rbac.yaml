@@ -145,6 +145,10 @@ rules:
     resources: ["leases"]
     resourceNames: ["{{ include "kube-tower.fullname" . }}-controller"]
     verbs: ["get", "update"]
+  # The active controller labels its own pod (kube-tower.arcanexus.com/active-controller)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
