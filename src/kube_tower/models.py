@@ -234,20 +234,7 @@ class Snapshot:
         return index
 
     def to_dict(self) -> dict:
-        def enc(obj):
-            if isinstance(obj, Enum):
-                return obj.value
-            if isinstance(obj, datetime):
-                return obj.isoformat()
-            if isinstance(obj, set):
-                return sorted(obj)
-            if isinstance(obj, dict):
-                return {k: enc(v) for k, v in obj.items()}
-            if isinstance(obj, list):
-                return [enc(v) for v in obj]
-            return obj
-
-        data = enc(asdict(self))
+        data = encode(self)
         for img, raw in zip(self.images, data["images"], strict=True):
             raw["image"] = {**raw["image"], "ref": str(img.image)}
         return data
@@ -255,23 +242,45 @@ class Snapshot:
     @classmethod
     def from_dict(cls, data: dict) -> Snapshot:
         """The Snapshot that to_dict() encoded, e.g. sent by another kube-tower process."""
-        return _decode(cls, data)
+        return decode(cls, data)
 
 
-def _decode(hint: Any, value: Any) -> Any:
-    """Rebuild a value of type `hint` from its to_dict() form (keys unknown to a dataclass are ignored)."""
+def encode(obj: Any) -> Any:
+    """A dataclass (or list, dict... of them) as JSON-ready data: enums by value, datetimes in ISO format, sets sorted."""
+    if is_dataclass(obj) and not isinstance(obj, type):
+        obj = asdict(obj)
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, set):
+        return sorted(obj)
+    if isinstance(obj, dict):
+        return {k: encode(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [encode(v) for v in obj]
+    return obj
+
+
+def decode(hint: Any, value: Any) -> Any:
+    """Rebuild a value of type `hint` from its encode() form (keys unknown to a dataclass are ignored)."""
     if value is None:
         return None
     origin = get_origin(hint)
     if origin in (Union, types.UnionType):  # `X | None`: the only unions of the models
-        return _decode(next(a for a in get_args(hint) if a is not type(None)), value)
+        return decode(next(a for a in get_args(hint) if a is not type(None)), value)
     if origin is list:
-        return [_decode(get_args(hint)[0], v) for v in value]
+        return [decode(get_args(hint)[0], v) for v in value]
     if origin is set:
-        return {_decode(get_args(hint)[0], v) for v in value}
+        return {decode(get_args(hint)[0], v) for v in value}
+    if origin is tuple:
+        return tuple(decode(h, v) for h, v in zip(get_args(hint), value, strict=True))
+    if origin is dict:
+        key, item = get_args(hint)
+        return {decode(key, k): decode(item, v) for k, v in value.items()}
     if is_dataclass(hint):
         hints = get_type_hints(hint)
-        return hint(**{f.name: _decode(hints[f.name], value[f.name]) for f in fields(hint) if f.name in value})
+        return hint(**{f.name: decode(hints[f.name], value[f.name]) for f in fields(hint) if f.name in value})
     if isinstance(hint, type) and issubclass(hint, Enum):
         return hint(value)
     if hint is datetime:

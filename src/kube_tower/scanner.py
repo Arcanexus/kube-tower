@@ -5,6 +5,9 @@ periodically and at startup. Scans run in a dedicated worker thread with its own
 loop and each cluster is collected in its own thread, so the web server (UI, API,
 /healthz) stays responsive while a scan is running.
 
+A full scan is split in tasks (tasks.py: collect a cluster, check versions, scan with Trivy) run by
+the worker and trivy roles (worker.py); today every role runs in this process (LocalRunner).
+
 One image or chart can also be rescanned on its own (from the UI or the API): its report is
 checked again in a worker thread and updated in place in the current Snapshot.
 """
@@ -16,65 +19,34 @@ import contextlib
 import dataclasses
 import fnmatch
 import logging
-import ssl
-import tempfile
-import threading
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterable
 from datetime import UTC, datetime
 from functools import partial
-from pathlib import Path
-
-import certifi
-import httpx
 
 from kube_tower.checkers import ChartChecker, ImageChecker
 from kube_tower.clusters import Cluster, ClusterRegistry
-from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
 from kube_tower.collectors.vulnerabilities import collect_operator_reports, pick_report
 from kube_tower.config import Settings
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, VulnerabilityReport
-from kube_tower.registry.auth import AuthResults, Credentials, TokenCache, resolve_credentials
+from kube_tower.registry.auth import AuthResults, Credentials, TokenCache
 from kube_tower.registry.helm import HelmClient, IndexCache
 from kube_tower.registry.oci import OCIClient
-from kube_tower.registry.transport import RateLimits, RetryingClient
+from kube_tower.registry.transport import RateLimits
+from kube_tower.store import MemorySnapshotStore, SnapshotStore
+from kube_tower.tasks import (
+    CheckChartsTask,
+    CheckImagesTask,
+    CollectResult,
+    CollectTask,
+    LocalRunner,
+    ScanVulnerabilitiesTask,
+    TaskRunner,
+)
 from kube_tower.trivy import TrivyScanner, scan_target
+from kube_tower.worker import Worker, run_in_thread
 
 log = logging.getLogger(__name__)
-
-
-async def run_in_thread[T](name: str, fn: Callable[[], T]) -> T:
-    """Run `fn` in a new daemon thread and await its result from the calling event loop.
-
-    Unlike `asyncio.to_thread`, a daemon thread never delays the process shutdown.
-    """
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[T] = loop.create_future()
-
-    def settle(result: T | None, error: BaseException | None) -> None:
-        if future.done():  # cancelled meanwhile (shutdown)
-            return
-        if error is not None:
-            future.set_exception(error)
-        else:
-            future.set_result(result)
-
-    def work() -> None:
-        try:
-            result, error = fn(), None
-        except BaseException as exc:  # noqa: BLE001 - handed over to the awaiting loop
-            result, error = None, exc
-        with contextlib.suppress(RuntimeError):  # awaiting loop already closed
-            loop.call_soon_threadsafe(settle, result, error)
-
-    threading.Thread(target=work, name=name, daemon=True).start()
-    return await future
-
-
-async def _log_response(response: httpx.Response) -> None:
-    """Every registry / Helm repository / git request, at DEBUG level (no headers: they hold credentials)."""
-    request = response.request
-    log.debug("%s %s -> %s", request.method, request.url.copy_with(query=None), response.status_code)
 
 
 @dataclasses.dataclass
@@ -101,54 +73,30 @@ def check_errors(snap: Snapshot) -> list[str]:
     return errors
 
 
-def ssl_context(ca_file: str) -> ssl.SSLContext | bool:
-    """The public CAs, plus those of registries.caFile (e.g. an internal Harbor or Artifactory)."""
-    if not ca_file:
-        return True
-    context = ssl.create_default_context(cafile=certifi.where())
-    try:
-        context.load_verify_locations(cafile=ca_file)
-    except (OSError, ssl.SSLError) as exc:
-        log.error("registries.caFile %s ignored, it cannot be read as PEM certificates: %s", ca_file, exc)
-    return context
-
-
-def ca_bundle(ca_file: str) -> str:
-    """A CA bundle file for Trivy: the public CAs plus registries.caFile ("" without caFile)."""
-    if not ca_file:
-        return ""
-    bundle = Path(tempfile.gettempdir()) / "kube-tower-ca-bundle.pem"
-    try:
-        content = Path(certifi.where()).read_text() + "\n" + Path(ca_file).read_text()
-        if not bundle.is_file() or bundle.read_text() != content:
-            bundle.write_text(content)
-    except OSError as exc:
-        log.error("registries.caFile %s not given to Trivy: %s", ca_file, exc)
-        return ""
-    return str(bundle)
-
-
 class Scanner:
-    def __init__(self, settings: Settings, registry: ClusterRegistry | None = None):
+    """The controller role: schedules the scans and the rescans, runs their tasks with `runner` and keeps the
+    Snapshot in `store`. Without a runner, the tasks run on the Worker of this process (every role together).
+    """
+
+    def __init__(
+        self,
+        settings: Settings,
+        registry: ClusterRegistry | None = None,
+        store: SnapshotStore | None = None,
+        runner: TaskRunner | None = None,
+    ):
         self.settings = settings
         self.registry = registry or ClusterRegistry(settings.clusters)
-        self.snapshot = Snapshot()
+        self.store = store or MemorySnapshotStore()
+        # The worker of this process: rescans and administration actions still use it directly.
+        self.worker = Worker(settings)
+        self.runner = runner or LocalRunner(self.worker)
         # A scan has two phases, each with its lock: the version checks (`_lock`), then the Trivy scans
         # (`_trivy_lock`). The next scan and the rescans can start while the Trivy phase runs.
         self._lock = asyncio.Lock()
         self._trivy_lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self.scans_total = {"success": 0, "failure": 0}  # exported as kube_tower_scans_total
-        # Keeps its results between scans; registry credentials are set at each scan.
-        self.trivy = TrivyScanner(settings.vulnerabilities.trivy, {})
-        # Short-lived tokens of cloud registries (ECR, Artifact Registry, ACR), kept until shortly before they expire.
-        self.registry_tokens = TokenCache()
-        # Whether each registry accepted the credentials at the last request that sent them (Settings page).
-        self.registry_auth = AuthResults()
-        self.rate_limits = RateLimits()  # registries that answered 429, kept between scans
-        # Credentials of the image pull secrets read at the last scan (registries.useImagePullSecrets).
-        self.pull_secrets: dict[str, tuple[str, str]] = {}
-        self.helm_indexes = IndexCache()  # index.yaml of the Helm repositories, revalidated at each scan
         # Keys (see image_key / chart_key) of the images and charts being rescanned on their own.
         self.rescanning: set[tuple] = set()
         self._rescans: set[asyncio.Task] = set()  # keeps the background rescans referenced
@@ -160,6 +108,44 @@ class Scanner:
         self._clusters: dict[str, Cluster] = {}  # reachable clusters of the last scan, by name
         # Set while an administration action holds the scan lock (e.g. Trivy database update): why scans must wait.
         self.busy: str | None = None
+
+    @property
+    def snapshot(self) -> Snapshot:
+        return self.store.get()
+
+    @snapshot.setter
+    def snapshot(self, snap: Snapshot) -> None:
+        self.store.set(snap)
+
+    # State of the worker of this process (Trivy results, registry tokens...), kept between scans.
+
+    @property
+    def trivy(self) -> TrivyScanner:
+        return self.worker.trivy
+
+    @property
+    def registry_tokens(self) -> TokenCache:
+        return self.worker.registry_tokens
+
+    @property
+    def registry_auth(self) -> AuthResults:
+        return self.worker.registry_auth
+
+    @property
+    def rate_limits(self) -> RateLimits:
+        return self.worker.rate_limits
+
+    @property
+    def helm_indexes(self) -> IndexCache:
+        return self.worker.helm_indexes
+
+    @property
+    def pull_secrets(self) -> dict[str, tuple[str, str]]:
+        return self.worker.pull_secrets
+
+    @pull_secrets.setter
+    def pull_secrets(self, value: dict[str, tuple[str, str]]) -> None:
+        self.worker.pull_secrets = value
 
     @property
     def running(self) -> bool:
@@ -234,46 +220,30 @@ class Scanner:
         clusters, snap.clusters = await asyncio.to_thread(self.registry.discover)
         reachable = {s.name for s in snap.clusters if s.reachable}
         clusters = [c for c in clusters if c.name in reachable]
-        self._clusters = {c.name: c for c in clusters}
+        self._clusters = self.worker.clusters = {c.name: c for c in clusters}
         log.info("%d cluster(s) to scan: %s", len(clusters), ", ".join(c.name for c in clusters) or "none")
 
-        inventory = ImageInventory(self.settings.images, self.settings.registries.use_image_pull_secrets)
-        vuln = self.settings.vulnerabilities
-        read_operator = self.settings.images.enabled and vuln.enabled and vuln.trivy_operator
-
-        def collect(cluster: Cluster):
-            charts, errors, operator_reports = [], [], []
-            if self.settings.images.enabled:
-                errors += inventory.collect(cluster)
-            if self.settings.helm.enabled:
-                charts, chart_errors = collect_charts(cluster, self.settings.helm)
-                errors += chart_errors
-            if read_operator:
-                operator_reports, operator_errors = collect_operator_reports(cluster)
-                errors += operator_errors
-            return charts, errors, operator_reports
-
-        # One thread per cluster: a slow or large cluster does not hold back the others.
-        results = await asyncio.gather(*(run_in_thread(f"scan-{c.name}", partial(collect, c)) for c in clusters))
+        results: list[CollectResult] = await asyncio.gather(*(self.runner.run(CollectTask(c.name)) for c in clusters))
         operator_reports: dict[str, list[VulnerabilityReport]] = {}
-        for charts, errors, reports in results:
-            snap.charts += charts
-            snap.errors += errors
-            for key, report in reports:
-                operator_reports.setdefault(str(key), []).append(report)
-        snap.images = sorted(inventory.reports.values(), key=lambda r: str(r.image))
+        pull_secrets: dict[str, tuple[str, str]] = {}
+        for result in results:
+            snap.charts += result.charts
+            snap.errors += result.errors
+            for found in result.operator_reports:
+                operator_reports.setdefault(found.image, []).append(found.report)
+            for host, pair in result.pull_secrets.items():
+                pull_secrets.setdefault(host, pair)  # the first Secret found for a host wins
+        snap.images = merge_images(r.images for r in results)
         if self.settings.registries.use_image_pull_secrets:
-            self.pull_secrets = inventory.pull_secrets
+            self.pull_secrets = pull_secrets
         log.info("collection done: %d distinct image(s), %d Helm chart(s)", len(snap.images), len(snap.charts))
         attach_operator_reports(snap.images, operator_reports)
 
-        async with self._clients() as (oci, helm, credentials):
-            log.info("registry credentials loaded for: %s", ", ".join(credentials.describe()) or "none (anonymous access)")
-            concurrency = self.settings.registries.concurrency
-            await asyncio.gather(
-                ImageChecker(oci, self.settings.images, concurrency).check_all(snap.images),
-                ChartChecker(helm, self.settings.helm, concurrency).check_all(snap.charts),
-            )
+        # The results are applied to the snapshot reports: in this process they are the same objects.
+        checked_images, checked_charts = await asyncio.gather(
+            self.runner.run(CheckImagesTask(snap.images)), self.runner.run(CheckChartsTask(snap.charts))
+        )
+        snap.images, snap.charts = checked_images.images, checked_charts.charts
         snap.charts.sort(key=lambda c: (c.cluster, c.application, c.chart))
         snap.errors += check_errors(snap)
         snap.finished_at = datetime.now(UTC)
@@ -289,46 +259,21 @@ class Scanner:
 
     def credentials(self) -> Credentials:
         """The registry credentials, read again (Secrets may have been rotated), also given to Trivy."""
-        reg = self.settings.registries
-        credentials, _ = resolve_credentials(reg, self.registry_tokens, self.pull_secrets)
-        self.trivy.credentials = credentials
-        self.trivy.insecure = reg.insecure
-        self.trivy.ca_bundle = ca_bundle(reg.ca_file)
-        return credentials
+        return self.worker.credentials()
 
-    @contextlib.asynccontextmanager
-    async def _clients(self) -> AsyncIterator[tuple[OCIClient, HelmClient, Credentials]]:
-        """Registry and Helm repository clients, with the registry credentials read again (Secrets may have been rotated)."""
-        reg = self.settings.registries
-        options = {
-            "timeout": reg.timeout,
-            "headers": {"User-Agent": "kube-tower"},
-            "event_hooks": {"response": [_log_response]},
-            "retries": reg.retries,
-            "rate_limits": self.rate_limits,
-        }
-        credentials = self.credentials()
-        async with contextlib.AsyncExitStack() as stack:
-            http = await stack.enter_async_context(RetryingClient(verify=ssl_context(reg.ca_file), **options))
-            # TLS certificates of registries.insecure hosts are not verified.
-            insecure = await stack.enter_async_context(RetryingClient(verify=False, **options)) if reg.insecure else None
-            oci = OCIClient(
-                http, credentials, reg.mirrors, self.settings.images.max_tag_pages, reg.insecure, insecure, self.registry_auth
-            )
-            yield oci, HelmClient(http, oci, self.settings.git, self.helm_indexes), credentials
+    def _clients(self) -> contextlib.AbstractAsyncContextManager[tuple[OCIClient, HelmClient, Credentials]]:
+        """Registry and Helm repository clients of the worker of this process."""
+        return self.worker.clients()
 
     async def _scan_vulnerabilities(self, snap: Snapshot) -> None:
         """Scan with Trivy the images without a Trivy Operator report, run in a worker thread's event loop."""
         settings = self.settings.vulnerabilities
         todo = [r for r in snap.images if r.vulnerabilities is None and not vulnerabilities_ignored(r.image, settings.ignore)]
         if todo and settings.trivy.enabled:
-            if self.trivy.available:
-                snap.errors += await self.trivy.scan_all(todo)
-            else:
-                message = f"trivy binary {settings.trivy.binary!r} not found (Helm chart: set trivy.enabled=true)"
-                log.warning("vulnerability scan skipped: %s", message)
-                for r in todo:
-                    r.vulnerabilities = VulnerabilityReport("trivy", message=message)
+            result = await self.runner.run(ScanVulnerabilitiesTask(todo, full=True))
+            for r, vulnerabilities in zip(todo, result.vulnerabilities, strict=True):
+                r.vulnerabilities = vulnerabilities
+            snap.errors += result.errors
         snap.vulnerabilities_finished_at = datetime.now(UTC)
         scanned = sum(1 for r in snap.images if r.vulnerabilities and not r.vulnerabilities.message)
         log.info("vulnerability scan finished: %d/%d images with a report", scanned, len(snap.images))
@@ -654,6 +599,19 @@ def refresh_check_errors(snap: Snapshot, before: list[str]) -> None:
 
 def vulnerabilities_ignored(image: ImageRef, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(image.name, p) or fnmatch.fnmatch(str(image), p) for p in patterns)
+
+
+def merge_images(found: Iterable[list[ImageReport]]) -> list[ImageReport]:
+    """The images collected on each cluster as one list sorted by reference: an image found on several
+    clusters is one report with the usages and running digests of all of them.
+    """
+    merged: dict[str, ImageReport] = {}
+    for reports in found:
+        for report in reports:
+            if (current := merged.setdefault(str(report.image), report)) is not report:
+                current.usages += report.usages  # usages name their cluster: no duplicate across clusters
+                current.running_digests |= report.running_digests
+    return sorted(merged.values(), key=lambda r: str(r.image))
 
 
 def attach_operator_reports(images: list[ImageReport], reports: dict[str, list[VulnerabilityReport]]) -> None:

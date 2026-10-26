@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from kube_tower import scanner as scanner_module
+from kube_tower import worker as worker_module
 from kube_tower.clusters import Cluster
 from kube_tower.config import Settings
 from kube_tower.models import (
@@ -56,8 +57,9 @@ def fakes(monkeypatch):
             r.status = Status.UP_TO_DATE
 
     monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
-    monkeypatch.setattr(scanner_module, "collect_charts", collect_charts)
+    monkeypatch.setattr(worker_module, "collect_charts", collect_charts)
     monkeypatch.setattr(scanner_module, "collect_operator_reports", lambda cluster: ([], []))
+    monkeypatch.setattr(worker_module, "collect_operator_reports", lambda cluster: ([], []))
     monkeypatch.setattr(scanner_module.ImageChecker, "check_all", check_images)
     monkeypatch.setattr(scanner_module.ChartChecker, "check_all", check_charts)
     monkeypatch.setattr(scanner_module.TrivyScanner, "available", False)
@@ -167,8 +169,9 @@ async def test_one_thread_per_cluster(monkeypatch):
         pass
 
     monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
-    monkeypatch.setattr(scanner_module, "collect_charts", lambda cluster, settings: ([], []))
+    monkeypatch.setattr(worker_module, "collect_charts", lambda cluster, settings: ([], []))
     monkeypatch.setattr(scanner_module, "collect_operator_reports", lambda cluster: ([], []))
+    monkeypatch.setattr(worker_module, "collect_operator_reports", lambda cluster: ([], []))
     monkeypatch.setattr(scanner_module.TrivyScanner, "available", False)
     monkeypatch.setattr(scanner_module.ImageChecker, "check_all", check_all)
     monkeypatch.setattr(scanner_module.ChartChecker, "check_all", check_all)
@@ -212,7 +215,7 @@ async def test_scan_logs_each_step(fakes, caplog):
 async def test_http_requests_logged_without_query(caplog):
     caplog.set_level(logging.DEBUG, logger="kube_tower")
     request = httpx.Request("GET", "https://ghcr.io/token?scope=repository:org/app:pull&service=ghcr.io")
-    await scanner_module._log_response(httpx.Response(401, request=request))
+    await worker_module._log_response(httpx.Response(401, request=request))
     assert caplog.records[-1].getMessage() == "GET https://ghcr.io/token -> 401"
 
 
@@ -235,7 +238,7 @@ async def test_vulnerabilities_from_operator_then_trivy(fakes, monkeypatch):
 
     monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
     monkeypatch.setattr(
-        scanner_module, "collect_operator_reports", lambda c: ([(ImageRef("docker.io", "library/nginx", "1.25"), operator)], [])
+        worker_module, "collect_operator_reports", lambda c: ([(ImageRef("docker.io", "library/nginx", "1.25"), operator)], [])
     )
     monkeypatch.setattr(scanner_module.TrivyScanner, "available", True)
     monkeypatch.setattr(scanner_module.TrivyScanner, "scan_all", scan_all)
@@ -424,6 +427,8 @@ async def test_rescan_vulnerabilities_from_trivy_operator(monkeypatch, caplog):
         return reports, ["[up] cannot list VulnerabilityReports: 500 boom"]
 
     monkeypatch.setattr(scanner_module, "collect_operator_reports", collect)
+
+    monkeypatch.setattr(worker_module, "collect_operator_reports", collect)
     scanner, image, _ = _snapshot_scanner()
     scanner._clusters = {"up": Cluster("up", "https://up", "in-cluster", None)}
     image.vulnerabilities = VulnerabilityReport("trivy-operator")
@@ -434,6 +439,7 @@ async def test_rescan_vulnerabilities_from_trivy_operator(monkeypatch, caplog):
     assert "not found" in tag.vulnerabilities.message  # no operator report: Trivy (not installed here)
     # report gone from the clusters: scanned with Trivy instead
     monkeypatch.setattr(scanner_module, "collect_operator_reports", lambda cluster: ([], []))
+    monkeypatch.setattr(worker_module, "collect_operator_reports", lambda cluster: ([], []))
     monkeypatch.setattr(scanner_module.TrivyScanner, "available", False)
     await scanner._rescan_vulnerabilities([image])
     assert image.vulnerabilities.source == "trivy" and "no Trivy Operator report left" in caplog.text
@@ -596,6 +602,7 @@ async def test_rescan_finds_the_new_images_with_the_name(monkeypatch, caplog):
     monkeypatch.setattr(scanner_module.TrivyScanner, "available", True)
     monkeypatch.setattr(scanner_module.TrivyScanner, "scan_many", scan_many)
     monkeypatch.setattr(scanner_module, "collect_operator_reports", lambda cluster: ([], []))
+    monkeypatch.setattr(worker_module, "collect_operator_reports", lambda cluster: ([], []))
     scanner, image, _ = _snapshot_scanner()
     scanner._clusters = {"up": Cluster("up", "https://up", "in-cluster", None)}
     old = ImageReport(ImageRef("docker.io", "library/nginx", "1.20"), [Usage("up", "Node", None, "n1")])
@@ -726,18 +733,18 @@ async def test_activities_list_what_runs(fakes, monkeypatch):
 def test_ssl_context_and_ca_bundle(tmp_path, monkeypatch, caplog):
     import certifi
 
-    assert scanner_module.ssl_context("") is True and scanner_module.ca_bundle("") == ""
+    assert worker_module.ssl_context("") is True and worker_module.ca_bundle("") == ""
     ca = tmp_path / "ca.crt"
     ca.write_text(open(certifi.where()).read().split("-----END CERTIFICATE-----")[0] + "-----END CERTIFICATE-----\n")
-    context = scanner_module.ssl_context(str(ca))
+    context = worker_module.ssl_context(str(ca))
     assert context.cert_store_stats()["x509_ca"] > 1
-    monkeypatch.setattr(scanner_module.tempfile, "gettempdir", lambda: str(tmp_path))
-    bundle = scanner_module.ca_bundle(str(ca))
+    monkeypatch.setattr(worker_module.tempfile, "gettempdir", lambda: str(tmp_path))
+    bundle = worker_module.ca_bundle(str(ca))
     assert open(bundle).read().endswith(ca.read_text())
-    assert scanner_module.ca_bundle(str(ca)) == bundle  # unchanged, not written again
+    assert worker_module.ca_bundle(str(ca)) == bundle  # unchanged, not written again
 
-    scanner_module.ssl_context(str(tmp_path / "missing.crt"))
-    assert scanner_module.ca_bundle(str(tmp_path / "missing.crt")) == ""
+    worker_module.ssl_context(str(tmp_path / "missing.crt"))
+    assert worker_module.ca_bundle(str(tmp_path / "missing.crt")) == ""
     assert "registries.caFile" in caplog.text and "not given to Trivy" in caplog.text
 
 
@@ -752,3 +759,90 @@ async def test_clients_use_the_registries_settings(monkeypatch):
         assert await credentials.get("harbor.example.com") == ("robot", "pw")
     assert scanner.trivy.credentials is credentials and scanner.trivy.insecure == ["registry.local*"]
     assert credentials.tokens is scanner.registry_tokens  # cloud tokens are kept between scans
+
+
+class SerializingRunner:
+    """Sends each task and its result through JSON, as the distributed mode will: proves they are serializable."""
+
+    def __init__(self, worker):
+        self.worker = worker
+        self.kinds = []
+
+    async def run(self, task):
+        import json
+
+        from kube_tower import tasks
+
+        sent = json.loads(json.dumps(tasks.encode_task(task)))
+        self.kinds.append(sent["kind"])
+        result = await self.worker.execute(tasks.decode_task(sent))
+        return tasks.decode_result(sent["kind"], json.loads(json.dumps(tasks.encode_result(result))))
+
+
+class TwoClusters:
+    def discover(self):
+        return [Cluster("a", "https://a", "in-cluster", None), Cluster("b", "https://b", "secret", None)], [
+            ClusterStatus("a", "https://a", "in-cluster", True),
+            ClusterStatus("b", "https://b", "secret", True),
+        ]
+
+
+async def test_scan_tasks_survive_json(fakes, monkeypatch):
+    operator = VulnerabilityReport("trivy-operator", vulnerabilities=[Vulnerability("CVE-1", Severity.HIGH, "zlib", "1")])
+
+    def collect(self, cluster):
+        self.add("nginx:1.25", Usage(cluster.name, "Pod", "default", "web"), "sha256:" + cluster.name)
+        self.add("redis:7", Usage(cluster.name, "Node", None, "n1"))
+        self.pull_secrets.setdefault("ghcr.io", ("user-" + cluster.name, "token"))
+        return [f"[{cluster.name}] warning"]
+
+    async def scan_all(self, reports):
+        for r in reports:
+            r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC))
+        return []
+
+    monkeypatch.setattr(scanner_module.ImageInventory, "collect", collect)
+    monkeypatch.setattr(
+        worker_module, "collect_operator_reports", lambda c: ([(ImageRef("docker.io", "library/nginx", "1.25"), operator)], [])
+    )
+    monkeypatch.setattr(scanner_module.TrivyScanner, "available", True)
+    monkeypatch.setattr(scanner_module.TrivyScanner, "scan_all", scan_all)
+    settings = Settings()
+    settings.registries.use_image_pull_secrets = True
+    scanner = Scanner(settings, TwoClusters())
+    scanner.runner = runner = SerializingRunner(scanner.worker)
+    snap = await scanner.scan()
+    assert sorted(runner.kinds) == ["check-charts", "check-images", "collect", "collect", "scan-vulnerabilities"]
+    nginx, redis = snap.images
+    # One report per image, with the usages and running digests of both clusters
+    assert [u.cluster for u in nginx.usages] == ["a", "b"] and nginx.running_digests == {"sha256:a", "sha256:b"}
+    assert nginx.status == Status.OUTDATED and nginx.vulnerabilities == operator
+    assert redis.vulnerabilities.source == "trivy"
+    assert [c.cluster for c in snap.charts] == ["a", "b"] and snap.charts[0].status == Status.UP_TO_DATE
+    assert snap.errors == ["[a] warning", "[b] warning"]
+    assert scanner.pull_secrets == {"ghcr.io": ("user-a", "token")}  # the first cluster's Secret wins
+
+
+async def test_task_kinds_roles_and_unknown_cluster():
+    from kube_tower import tasks
+    from kube_tower.worker import Worker
+
+    assert tasks.role_of(tasks.CollectTask("a")) == "worker"
+    assert tasks.role_of(tasks.CheckChartsTask([])) == "worker"
+    assert tasks.role_of(tasks.ScanVulnerabilitiesTask([])) == "trivy"
+    worker = Worker(Settings())
+    result = await worker.execute(tasks.CollectTask("gone"))
+    assert result.errors == ["[gone] unknown cluster: it was not found by the last discovery"] and result.images == []
+    assert (await worker.execute(tasks.ScanVulnerabilitiesTask([]))).vulnerabilities == []
+    with pytest.raises(TypeError):
+        await worker.execute("not a task")
+
+
+def test_snapshot_store():
+    from kube_tower.store import MemorySnapshotStore
+
+    snap = Snapshot(errors=["x"])
+    scanner = Scanner(Settings(), FakeRegistry(), store=MemorySnapshotStore(snap))
+    assert scanner.snapshot is snap
+    scanner.snapshot = other = Snapshot()
+    assert scanner.store.get() is other
