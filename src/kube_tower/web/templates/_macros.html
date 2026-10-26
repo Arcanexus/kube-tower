@@ -118,6 +118,18 @@
 </div>
 {%- endmacro %}
 
+{% macro running_input(running, label="Running only") -%}
+{# The "Running only" switch, on by default: unchecked, the hidden 0 is sent alone. #}
+<label class="filter-switch" title="Only the images that a pod runs (not the ones only declared by workloads without pods or cached on nodes)">
+  <input type="hidden" name="running" value="0"><input type="checkbox" role="switch" name="running" value="1" {% if running %}checked{% endif %}>{{ label }}
+</label>
+{%- endmacro %}
+
+{% macro running_switch(running) -%}
+{# The switch of the pages without filters (Synthesis, Clusters): reloads the page. #}
+<form class="running-switch" method="get" onchange="this.submit()">{{ running_input(running, "Running images only") }}</form>
+{%- endmacro %}
+
 {% macro filters(path, q, status, cluster, snapshot, running=none, chips=(), listing=none) -%}
 {# `running`: a "Running only" switch (images), checked when true; none: no switch.
    `chips`: (name, label, value) of filters set by a link (e.g. from the Synthesis), shown as removable chips. #}
@@ -132,11 +144,7 @@
     <option value="">All clusters</option>
     {% for c in snapshot.clusters %}<option {% if c.name == cluster %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
   </select>
-  {% if running is not none %}
-  <label class="filter-switch" title="Only the images that a pod runs (not the ones only declared by workloads without pods or cached on nodes)">
-    <input type="checkbox" role="switch" name="running" value="1" {% if running %}checked{% endif %}>Running only
-  </label>
-  {% endif %}
+  {% if running is not none %}{{ running_input(running) }}{% endif %}
   {% if listing %}{# Sort column of the list, set by its headers #}
   <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
   {% endif %}

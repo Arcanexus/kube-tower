@@ -202,7 +202,7 @@ def test_usage_tree():
 
 def test_images_running_icons():
     client, _ = _client()
-    page = client.get("/images").text
+    page = client.get("/images?running=0").text
     # nginx is used by pods; ghcr.io/org/app and redis are only cached on nodes
     assert page.count('aria-label="Running"') == 1 and page.count('aria-label="Not running"') == 2
     assert re.search(r'aria-label="Running".*?</span><code class="image-name" title="docker.io/library/nginx">', page)
@@ -211,20 +211,25 @@ def test_images_running_icons():
 
 def test_images_running_only_switch():
     client, _ = _client()
+    # On by default: the hidden 0 is sent when the switch is off, the 1 of the checkbox (last) when on
     page = client.get("/images").text
-    assert 'role="switch" name="running"' in page and "checked" not in page
-    page = client.get("/images?running=1").text
-    assert 'name="running" value="1" checked' in page
+    assert (
+        '<input type="hidden" name="running" value="0"><input type="checkbox" role="switch" name="running" value="1" checked'
+        in page
+    )
     assert "library/nginx" in page and "org/app" not in page and "library/redis" not in page
     assert '<p><small>1 image<span id="list-shown"></span></small></p>' in page  # counters and count follow the switch
-    assert "library/nginx" not in client.get("/images?running=1&cluster=c2").text
+    assert page == client.get("/images?running=0&running=1").text
+    page = client.get("/images?running=0").text
+    assert 'name="running" value="1" >' in page and "org/app" in page and "library/redis" in page
+    assert "library/nginx" not in client.get("/images?cluster=c2").text
     assert 'name="running"' not in client.get("/charts").text
 
 
 def test_images_registry_and_update_filters():
     """Set by the links of the Synthesis, shown as removable chips that the filter form keeps."""
     client, _ = _client()
-    page = client.get("/images?registry=docker.io").text
+    page = client.get("/images?registry=docker.io&running=0").text
     assert "library/nginx" in page and "library/redis" in page and "org/app" not in page
     assert (
         'class="filter-chip">Registry <strong>docker.io</strong><input type="hidden" name="registry" value="docker.io">' in page
@@ -250,7 +255,7 @@ def test_filters_and_partial():
     resp = client.get("/images?status=outdated", headers={"HX-Request": "true", "HX-Target": "results"})
     assert "library/nginx" in resp.text and "org/app" not in resp.text
     assert "<html" not in resp.text
-    assert "org/app" in client.get("/images?cluster=c2").text
+    assert "org/app" in client.get("/images?cluster=c2&running=0").text
     assert "library/nginx" not in client.get("/images?q=org").text
     assert "redis" in client.get("/charts?status=outdated").text  # worst status includes subcharts
 
@@ -384,7 +389,7 @@ def test_links_are_relative():
 
 def test_counters_toggle_the_status_filter():
     client, _ = _client()
-    page = client.get("/images?status=outdated").text
+    page = client.get("/images?status=outdated&running=0").text
     # counters ignore the status filter (they set it) and show which one is active
     assert re.search(r'counter-up-to-date" aria-pressed="false".*?<strong>1</strong>', page, re.S)
     assert re.search(r'counter-outdated" aria-pressed="true".*?<strong>2</strong>', page, re.S)
@@ -394,7 +399,7 @@ def test_counters_toggle_the_status_filter():
 
 def test_latest_tag_is_highlighted():
     client, _ = _client()
-    page = client.get("/images").text
+    page = client.get("/images?running=0").text
     assert page.count('class="tag-latest"') == 1  # redis:latest only
 
 
@@ -472,17 +477,19 @@ def test_ui_helpers():
 
 def test_synthesis_is_the_home_page():
     client, _ = _client()
-    page = client.get("/").text
+    page = client.get("/?running=0").text
     assert 'href="synthesis" aria-current="page"' in page
-    assert page == client.get("/synthesis").text
+    assert page == client.get("/synthesis?running=0").text
     # 3 images: 2 outdated (nginx minor, redis digest), 1 up to date; 1 chart outdated through its subchart
     assert re.search(r"Images</span><strong>3</strong>\s*<small>33% up to date · 2 outdated", page)
-    assert 'href="images?status=outdated"' in page and 'href="charts?status=outdated"' in page
+    assert 'href="images?status=outdated&amp;running=0"' in page and 'href="charts?status=outdated"' in page
     assert re.search(
-        r"<th scope=\"row\"><a href=\"images\?update=minor\"[^>]*>minor</a></th>.*?<td class=\"bar-value\">1</td>", page, re.S
+        r"<th scope=\"row\"><a href=\"images\?update=minor&amp;running=0\"[^>]*>minor</a></th>.*?<td class=\"bar-value\">1</td>",
+        page,
+        re.S,
     )
     assert re.search(
-        r"<th scope=\"row\"><a href=\"images\?registry=docker.io\"[^>]*>docker.io</a></th>.*?<td class=\"bar-value\">2</td>",
+        r"<a href=\"images\?registry=docker.io&amp;running=0\"[^>]*>docker.io</a></th>.*?<td class=\"bar-value\">2</td>",
         page,
         re.S,
     )
@@ -492,7 +499,7 @@ def test_synthesis_is_the_home_page():
 
 def test_synthesis_shows_vulnerabilities():
     client, _ = _client()
-    page = client.get("/").text
+    page = client.get("/?running=0").text
     # nginx: 1 critical with a fix (end of life OS); app: scan failed; redis: not scanned
     assert re.search(
         r"Images with critical CVEs</span><strong class=\"danger\">1</strong>\s*<small>1 critical or high CVE with a fix", page
@@ -503,7 +510,7 @@ def test_synthesis_shows_vulnerabilities():
     assert "1 image on an end of life OS release" in page
     # Most vulnerable images open the vulnerability details
     assert 'hx-get="vulnerabilities/detail?ref=docker.io/library/nginx%3A1.25"' in page
-    assert 'href="vulnerabilities?status=critical&amp;cluster=c1">1 image</a>' in page
+    assert 'href="vulnerabilities?status=critical&amp;cluster=c1&amp;running=0">1 image</a>' in page
 
 
 def test_synthesis_without_vulnerabilities():
@@ -534,7 +541,7 @@ def test_version_comes_from_the_image(monkeypatch):
 
 def test_vulnerabilities_page():
     client, _ = _client()
-    page = client.get("/vulnerabilities").text
+    page = client.get("/vulnerabilities?running=0").text
     # most vulnerable first, then failed and not scanned images
     assert page.index("library/nginx") < page.index("org/app") < page.index("library/redis")
     assert "debian 11 is end of life" in page and "registry denied" in page and "not scanned" in page
@@ -545,7 +552,8 @@ def test_vulnerabilities_page():
     assert "library/nginx" in partial and "org/app" not in partial and "<html" not in partial
     assert 'aria-pressed="true"' in partial
     assert "library/nginx" not in client.get("/vulnerabilities?status=high").text.split("<tbody>")[1]
-    assert "org/app" in client.get("/vulnerabilities?cluster=c2&q=app").text
+    assert "org/app" in client.get("/vulnerabilities?cluster=c2&q=app&running=0").text
+    assert "org/app" not in client.get("/vulnerabilities?cluster=c2&q=app").text.split("<tbody>")[1]  # not running
 
 
 def test_vulnerability_detail():
@@ -732,8 +740,9 @@ def test_lists_load_by_pages_and_sort_on_the_server():
 
     client, scanner = _client()
     base = scanner.snapshot.images[0]
+    pod = [Usage("c1", "Pod", "ns", "p", "c")]  # running
     scanner.snapshot.images = [
-        dataclasses.replace(base, image=ImageRef("docker.io", f"org/app{i}", f"1.{i}"), usages=[]) for i in range(65)
+        dataclasses.replace(base, image=ImageRef("docker.io", f"org/app{i}", f"1.{i}"), usages=pod) for i in range(65)
     ]
     page = client.get("/images").text
     assert page.count('hx-get="images/detail') == ui.PAGE_SIZE and "65 images" in page
@@ -881,7 +890,7 @@ def test_images_show_current_and_latest_with_digests():
     nginx.running_digests = {"sha256:aaaaaaaaaaaa1111"}
     nginx.latest_digest = "sha256:bbbbbbbbbbbb2222"
     app.tag_digest = "sha256:cccccccccccc3333"
-    page = client.get("/images").text
+    page = client.get("/images?running=0").text
     # current and latest side by side, with the start of their digest; a different digest is highlighted
     assert '<small class="digest-short " title="sha256:aaaaaaaaaaaa1111">sha256:aaaaaaaaaaaa</small>' in page
     assert '<small class="digest-short digest-differs" title="sha256:bbbbbbbbbbbb2222">sha256:bbbbbbbbbbbb</small>' in page
@@ -930,10 +939,15 @@ def test_settings_sections():
 
 
 def test_clusters_page_has_the_figures_of_the_synthesis():
-    page = _client()[0].get("/clusters").text
-    assert 'href="images?cluster=c1">2</a>' in page and 'href="images?cluster=c1&amp;status=outdated">2 outdated</a>' in page
+    client = _client()[0]
+    page = client.get("/clusters?running=0").text
+    assert 'href="images?cluster=c1&amp;running=0">2</a>' in page
+    assert 'href="images?cluster=c1&amp;status=outdated&amp;running=0">2 outdated</a>' in page
     assert 'href="charts?cluster=c1&amp;status=outdated">1 outdated</a>' in page
-    assert 'href="vulnerabilities?status=critical&amp;cluster=c1">1 image</a>' in page
+    assert 'href="vulnerabilities?status=critical&amp;cluster=c1&amp;running=0">1 image</a>' in page
+    # By default only the images a pod runs: nginx in c1
+    page = client.get("/clusters").text
+    assert 'href="images?cluster=c1&amp;running=1">1</a>' in page and 'class="running-switch"' in page
 
 
 def test_accessibility_helpers():
@@ -1051,3 +1065,19 @@ def test_logs_of_every_pod_filtered_by_role():
     buffer.add([LogLine(0, now, "INFO", "kube_tower.trivy", "", "scan done")], "kube-tower-trivy-0", ["trivy"])
     assert "scan done" not in client.get(f"/logs/tail?after={after}&role=ui&role=worker").text
     assert "scan done" in client.get(f"/logs/tail?after={after}&role=trivy").text
+
+
+def test_synthesis_counts_the_running_images_by_default():
+    """Images only cached on nodes or declared by workloads without pods are left out, unless the switch is off."""
+    client, _ = _client()
+    page = client.get("/").text
+    assert re.search(r"Images</span><strong>1</strong>\s*<small>0% up to date · 1 outdated", page)
+    assert "(1 of 1 scanned)" in page and "with a fix, running images" in page
+    assert 'class="segment segment-sev-failed"' not in page and 'class="segment segment-sev-not-scanned"' not in page
+    assert '<form class="running-switch" method="get"' in page and 'name="running" value="1" checked' in page
+    # The links keep the choice
+    assert 'href="images?running=1"' in page and 'href="images?status=outdated&amp;running=1"' in page
+    assert 'href="vulnerabilities?status=critical&amp;running=1"' in page and 'href="images?q=:latest&amp;running=1"' in page
+    page = client.get("/?running=0").text
+    assert re.search(r"Images</span><strong>3</strong>", page) and "with a fix, all images" in page
+    assert 'href="images?running=0"' in page

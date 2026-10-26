@@ -138,6 +138,14 @@ All notable changes to this project are documented here. The format follows
 - UI: Synthesis home page (status distributions, pending updates, registries, most used outdated images,
   per cluster figures); the version shown by the UI and `kube_tower_build_info` comes from the image tag.
 
+### Changed
+
+- UI: the Synthesis, Clusters, Images and Vulnerabilities pages count only the **running** images (used by
+  a pod) by default: images only cached on nodes or declared by workloads without pods (scaled to zero,
+  CronJob between two runs) no longer inflate the totals. A **Running images only** switch on each page
+  shows them again (`running=0` in the URL), and the links of the Synthesis and Clusters pages keep the
+  choice. The API and the metrics are unchanged.
+
 ### Fixed
 
 - Distributed mode: the controller (and the pages of a controller with the ui role) blocked for several

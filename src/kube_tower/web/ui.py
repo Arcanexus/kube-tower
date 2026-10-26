@@ -425,16 +425,30 @@ def mount(app: FastAPI) -> None:
         p = request.query_params
         return p.get("q", ""), p.get("status", ""), p.get("cluster", "")
 
+    def running_only(request: Request) -> bool:
+        """The "Running only" switch, on by default: the forms send running=0 before the checkbox (running=1), the
+        last value wins."""
+        return request.query_params.get("running", "1") != "0"
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     @app.get("/synthesis", response_class=HTMLResponse, include_in_schema=False)
     async def synthesis(request: Request):
-        summary = summarize(request.app.state.backend.snapshot)
-        return render(request, "synthesis", tab="synthesis", summary=summary, update_kinds=UPDATE_KINDS, worst_order=WORST_ORDER)
+        running = running_only(request)
+        summary = summarize(request.app.state.backend.snapshot, running=running)
+        return render(
+            request,
+            "synthesis",
+            tab="synthesis",
+            summary=summary,
+            update_kinds=UPDATE_KINDS,
+            worst_order=WORST_ORDER,
+            running=running,
+        )
 
     @app.get("/images", response_class=HTMLResponse, include_in_schema=False)
     async def images(request: Request):
         q, status, cluster = filters(request)
-        running = bool(request.query_params.get("running"))
+        running = running_only(request)
         # Set by the links of the Synthesis: a registry, a kind of pending update (major, minor...).
         registry, update = request.query_params.get("registry", ""), request.query_params.get("update", "")
         chips = [
@@ -482,6 +496,7 @@ def mount(app: FastAPI) -> None:
     async def vulnerabilities(request: Request):
         # The severity filter is named status, like on the other pages (counters set it).
         q, severity, cluster = filters(request)
+        running = running_only(request)
         cve = request.query_params.get("cve", "")
         terms = cve_terms(cve)
         found = {}  # image reference -> its vulnerabilities whose ID matches the CVE filter
@@ -497,7 +512,10 @@ def mount(app: FastAPI) -> None:
             (
                 r
                 for r in request.app.state.backend.snapshot.images
-                if _matches(str(r.image), q) and (not cluster or cluster in r.clusters) and (not terms or str(r.image) in found)
+                if _matches(str(r.image), q)
+                and (not cluster or cluster in r.clusters)
+                and (not running or r.running)
+                and (not terms or str(r.image) in found)
             ),
             key=vulnerability_sort_key,
         )
@@ -518,6 +536,7 @@ def mount(app: FastAPI) -> None:
             affected=affected,
             cve=cve,
             found=found,
+            running=running,
         )
 
     @app.get("/vulnerabilities/detail", response_class=HTMLResponse, include_in_schema=False)
@@ -605,8 +624,9 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/clusters", response_class=HTMLResponse, include_in_schema=False)
     async def clusters(request: Request):
-        summaries = {c.name: c for c in summarize(request.app.state.backend.snapshot).clusters}
-        return render(request, "clusters", tab="clusters", summaries=summaries)
+        running = running_only(request)
+        summaries = {c.name: c for c in summarize(request.app.state.backend.snapshot, running=running).clusters}
+        return render(request, "clusters", tab="clusters", summaries=summaries, running=running)
 
     @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
     async def settings(request: Request):

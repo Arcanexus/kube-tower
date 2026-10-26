@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, image_name, list_shown, load_more, more_hint, page_title, severity_counts, sort_th, tag %}
+{% from "_macros.html" import icon, image_name, list_shown, load_more, more_hint, page_title, running_input, severity_counts, sort_th, tag %}
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("shield", "Vulnerabilities", "Known vulnerabilities (CVE) of every image.", "From the Trivy Operator reports when the cluster has them, else scanned by kube-tower with Trivy. The counters are numbers of images. Click an image for its vulnerabilities.") }}{% endblock %}
 {% block content %}
-<form class="filters filters-4" hx-get="vulnerabilities" hx-target="#results" hx-push-url="true"
+<form class="filters filters-5" hx-get="vulnerabilities" hx-target="#results" hx-push-url="true"
       hx-trigger="input changed delay:300ms from:input[type=search], change">
   <input type="search" name="q" value="{{ q }}" placeholder="Filter images…" aria-label="Filter images">
   <input type="search" name="cve" value="{{ cve }}" placeholder="CVE, e.g. CVE-2025-68121" aria-label="Filter by CVE"
@@ -16,6 +16,7 @@
     <option value="">All clusters</option>
     {% for c in snapshot.clusters %}<option {% if c.name == cluster %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
   </select>
+  {{ running_input(running) }}
   <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
 </form>
 <div id="results">{{ self.results() }}</div>
