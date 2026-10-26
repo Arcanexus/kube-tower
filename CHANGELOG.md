@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Images page: a **Running only** switch next to the filters keeps the images that a pod runs
+  (`images?running=1`); the counters follow it.
 - UI/UX review: the Images page always shows the current and the latest version with the start of
   their digests below (a different latest digest is highlighted), also in the image panel and the
   Synthesis; the Clusters page gets the figures of each cluster (images, charts, outdated, critical

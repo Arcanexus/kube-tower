@@ -273,14 +273,17 @@ def mount(app: FastAPI) -> None:
     @app.get("/images", response_class=HTMLResponse, include_in_schema=False)
     async def images(request: Request):
         q, status, cluster = filters(request)
+        running = bool(request.query_params.get("running"))
         # Counters ignore the status filter: they are the buttons that set it.
         matching = [
             r
             for r in request.app.state.scanner.snapshot.images
-            if _matches(str(r.image), q) and (not cluster or cluster in r.clusters)
+            if _matches(str(r.image), q) and (not cluster or cluster in r.clusters) and (not running or r.running)
         ]
         rows = [r for r in matching if not status or r.status.value == status]
-        return render(request, "images", tab="images", rows=rows, matching=matching, q=q, status=status, cluster=cluster)
+        return render(
+            request, "images", tab="images", rows=rows, matching=matching, q=q, status=status, cluster=cluster, running=running
+        )
 
     @app.get("/images/detail", response_class=HTMLResponse, include_in_schema=False)
     async def image_detail(request: Request, ref: str = ""):

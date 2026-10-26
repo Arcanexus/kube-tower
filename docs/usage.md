@@ -85,7 +85,8 @@ and the most used outdated images (click one for its details) and the figures pe
 ![Images](images/images.png)
 
 One line per image reference (`registry/repository:tag`), whatever the number of workloads using
-it. The counters at the top summarize the statuses; filter by text, status or cluster. Images using `latest` (or no
+it. The counters at the top summarize the statuses; filter by text, status or cluster, and
+turn on **Running only** to keep the images a pod runs (`images?running=1`). Images using `latest` (or no
 tag at all, which means `latest`) are shown in red: the running version changes on every pull, pin
 a version instead.
 

@@ -3,7 +3,7 @@
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("images", "Container images", "Images of the workloads and images cached on nodes.", "The icon tells whether a pod runs the image (hover it for details). Below each version, the start of its digest: a different digest is highlighted. Click an image for its details.") }}{% endblock %}
 {% block content %}
-{{ filters("images", q, status, cluster, snapshot) }}
+{{ filters("images", q, status, cluster, snapshot, running) }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
