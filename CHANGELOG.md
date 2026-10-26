@@ -10,6 +10,11 @@ All notable changes to this project are documented here. The format follows
 
 - Images page: a **Running only** switch next to the filters keeps the images that a pod runs
   (`images?running=1`); the counters follow it.
+- Image details: **Used by** is a tree (cluster > namespace > workload > pods, then the nodes caching
+  the image), with the node of each pod; workloads without pods are flagged. Pods now record their
+  workload (`owner`) and node (`node`) in the API.
+- Helm charts: the subchart trees (charts list and chart details) are drawn with the same lines as the
+  image **Used by** tree; the chart details show each subchart's version, latest version and status in the tree.
 - UI/UX review: the Images page always shows the current and the latest version with the start of
   their digests below (a different latest digest is highlighted), also in the image panel and the
   Synthesis; the Clusters page gets the figures of each cluster (images, charts, outdated, critical

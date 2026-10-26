@@ -42,6 +42,18 @@ def _digest_from_image_id(image_id: str | None) -> str | None:
 PULL_SECRET_KEYS = {"kubernetes.io/dockerconfigjson": ".dockerconfigjson", "kubernetes.io/dockercfg": ".dockercfg"}
 
 
+def _pod_owner(pod: client.V1Pod) -> str | None:
+    """The workload of a pod, `Kind/name`: its controller, or the Deployment of its ReplicaSet (named after
+    the Deployment and the pod-template-hash label). None for a bare pod."""
+    ref = next((o for o in pod.metadata.owner_references or [] if o.controller), None)
+    if ref is None:
+        return None
+    pod_hash = (pod.metadata.labels or {}).get("pod-template-hash")
+    if ref.kind == "ReplicaSet" and pod_hash and ref.name.endswith(f"-{pod_hash}"):
+        return f"Deployment/{ref.name.removesuffix(f'-{pod_hash}')}"
+    return f"{ref.kind}/{ref.name}"
+
+
 def _pull_secret_names(spec: client.V1PodSpec | None) -> Iterable[str]:
     for ref in (spec.image_pull_secrets or []) if spec else []:
         if ref.name:
@@ -120,8 +132,9 @@ class ImageInventory:
                 cs.name: _digest_from_image_id(cs.image_id)
                 for cs in [*(pod.status.init_container_statuses or []), *(pod.status.container_statuses or [])]
             }
+            owner, node = _pod_owner(pod), pod.spec.node_name
             for name, image in _pod_spec_images(pod.spec):
-                usage = Usage(cluster.name, "Pod", pod.metadata.namespace, pod.metadata.name, name)
+                usage = Usage(cluster.name, "Pod", pod.metadata.namespace, pod.metadata.name, name, owner, node)
                 self.add(image, usage, digests.get(name))
 
         workloads = [

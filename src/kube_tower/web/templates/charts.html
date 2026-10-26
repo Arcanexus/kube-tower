@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, counters, filters, icon, page_title %}
+{% from "_macros.html" import badge, counters, filters, icon, page_title, tree_cell %}
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.", "The status of a chart is the worst of the chart and its subcharts: the counters and the status filter use it too. Click a chart for its details.") }}{% endblock %}
 {% block content %}
@@ -29,7 +29,7 @@
     {% for connector, d in dependency_tree(c.dependencies) %}
     <tr class="subchart">
       <td></td>
-      <td><span class="tree">{{ connector }}</span><code>{{ d.name }}</code></td>
+      <td><div class="tree-cell">{{ tree_cell(connector) }}<span class="tree-label"><code>{{ d.name }}</code></span></div></td>
       <td>{{ d.version }}</td>
       <td>{{ d.latest_version or unknown }}</td>
       <td>{{ badge(d.status) }}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</td>

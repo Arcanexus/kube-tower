@@ -165,6 +165,39 @@ def test_pages():
     assert "timeout" in client.get("/clusters").text
 
 
+def test_usage_tree():
+    from kube_tower.web.ui import usage_tree
+
+    tree = usage_tree(
+        [
+            Usage("c1", "Pod", "shop", "web-1", "nginx", "Deployment/web", "n1"),
+            Usage("c1", "Pod", "shop", "web-1", "sidecar", "Deployment/web", "n1"),
+            Usage("c1", "Deployment", "shop", "web", "nginx"),
+            Usage("c1", "Deployment", "shop", "admin", "proxy"),
+            Usage("c1", "Pod", "ops", "backup-28839120-x", "c", "Job/backup-28839120", "n2"),
+            Usage("c1", "CronJob", "ops", "backup", "c"),
+            Usage("c1", "Pod", "ops", "migrate-x", "c", "Job/migrate", "n2"),
+            Usage("c1", "Pod", "tools", "debug", "c"),
+            Usage("c1", "Node", None, "n2"),
+            Usage("c1", "Node", None, "n1"),
+            Usage("c2", "Node", None, "m1"),
+        ]
+    )
+    assert [c.name for c in tree] == ["c1", "c2"] and tree[0].pods == 4 and tree[1].pods == 0
+    namespaces = {n.name: n for n in tree[0].children if n.kind == "Namespace"}
+    assert [(c.kind, c.name) for c in namespaces["shop"].children] == [("Deployment", "admin"), ("Deployment", "web")]
+    web = namespaces["shop"].children[1]
+    assert web.containers == ["nginx"] and len(web.children) == 1
+    pod = web.children[0]
+    assert (pod.kind, pod.name, pod.node, pod.containers) == ("Pod", "web-1", "n1", ["nginx", "sidecar"])
+    assert namespaces["shop"].children[0].pods == 0  # admin: no pod running
+    # Jobs of a CronJob hang under it; another Job stays on its own
+    assert [(c.kind, c.name, c.pods) for c in namespaces["ops"].children] == [("CronJob", "backup", 1), ("Job", "migrate", 1)]
+    assert [(c.kind, c.name) for c in namespaces["tools"].children] == [("Pod", "debug")]  # a bare pod
+    nodes = tree[0].children[-1]
+    assert nodes.kind == "Nodes" and [n.name for n in nodes.children] == ["n1", "n2"]
+
+
 def test_images_running_icons():
     client, _ = _client()
     page = client.get("/images").text
@@ -358,17 +391,26 @@ def test_image_detail():
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
     assert "docker.io/library/nginx:1.27" in detail and "web-7d9f-abcde" in detail
     assert re.search(r"Versioning</th><td>semver ", detail)
+    assert 'class="tree-list"' in detail and "<strong>c1</strong>" in detail and "<code>tools</code>" in detail
+    detail = client.get("/images/detail", params={"ref": "ghcr.io/org/app:2.0"}).text
+    assert "cached on 2 nodes" in detail and '<code class="usage-node">n2</code>' in detail
     assert client.get("/images/detail", params={"ref": "nope"}).status_code == 404
 
 
 def test_chart_tree_and_detail():
     client, _ = _client()
     page = client.get("/charts").text
-    assert "├─ " in page and "└─ " in page and "   └─ " in page  # helpers under metrics, the last subchart
+    # helpers under metrics, the last subchart: drawn with CSS segments
+    assert re.search(r'tree-tee" aria-hidden="true"></span><span class="tree-label"><code>common</code>', page)
+    assert re.search(r'tree-elbow" aria-hidden="true"></span><span class="tree-label"><code>metrics</code>', page)
+    assert re.search(r'tree-blank" aria-hidden="true"></span><span class="tree-seg tree-elbow".*?<code>helpers</code>', page)
     assert "<details" not in page.split('id="results"')[1]  # never collapsed
     assert "redis" in client.get("/charts?status=outdated").text
     detail = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
     assert "helpers" in detail and "file://../helpers" in detail and "artifacthub.io" in detail
+    assert 'class="tree-list" aria-label="Subchart tree"' in detail
+    positions = [detail.index(f"<strong>{name}</strong>") for name in ("redis", "metrics", "helpers")]
+    assert positions == sorted(positions)
     assert client.get("/charts/detail?cluster=c1&namespace=argocd&app=x&chart=redis").status_code == 404
 
 

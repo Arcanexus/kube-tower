@@ -1,5 +1,30 @@
 {% from "_macros.html" import badge, digest, drawer, icon, links, rescan, severity_counts, tag, version_cell %}
 {% set ref = r.image | string | urlencode %}
+{% macro usage_item(n) -%}
+{# A line of the "Used by" tree (see ui.usage_tree); clusters and namespaces fold. #}
+<li class="usage-{{ n.kind | lower }}">
+  {% if n.kind == "Cluster" %}
+  <details open><summary>{{ icon("clusters") }}<strong>{{ n.name }}</strong> <small class="muted-text">{{ n.pods | plural("pod") }}</small></summary>
+    <ul>{% for c in n.children %}{{ usage_item(c) }}{% endfor %}</ul></details>
+  {% elif n.kind == "Namespace" %}
+  <details open><summary><small class="usage-kind">namespace</small> <code>{{ n.name }}</code></summary>
+    <ul>{% for c in n.children %}{{ usage_item(c) }}{% endfor %}</ul></details>
+  {% elif n.kind == "Nodes" %}
+  {{ icon("database") }}<small class="usage-kind">cached on {{ n.children | length | plural("node") }}</small>
+  {% for c in n.children %}<code class="usage-node">{{ c.name }}</code>{% endfor %}
+  {% elif n.kind == "Pod" %}
+  {{ icon("running", "ok") }}<small class="usage-kind">Pod</small> {{ n.name }}
+  {%- if n.node %} <small class="muted-text">on {{ n.node }}</small>{% endif %}
+  {%- if n.containers %} <small class="muted-text">· {{ n.containers | join(", ") }}</small>{% endif %}
+  {% else %}
+  {{ icon("box") }}<small class="usage-kind">{{ n.kind }}</small> <strong>{{ n.name }}</strong>
+  {%- if n.containers %} <small class="muted-text">· {{ n.containers | join(", ") }}</small>{% endif %}
+  {%- if not n.pods %} <small class="usage-idle">{{ icon("not-running", "muted") }}no pod running</small>{% endif %}
+  {% if n.children %}<ul>{% for c in n.children %}{{ usage_item(c) }}{% endfor %}</ul>{% endif %}
+  {% endif %}
+</li>
+{%- endmacro %}
+
 {% call drawer(r.image.name, r.image.registry) %}
 <p>{{ badge(r.status) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
 {% set current, latest = image_versions(r) %}
@@ -53,15 +78,11 @@
 {{ rescan(buttons, "images/detail?ref=" ~ ref, rescanning, checking_versions) }}
 {% if not rescanning %}<p><small>Rescans cover every tag of <code>{{ r.image.name }}</code>, used or not, and the new ones found on the clusters.</small></p>{% endif %}
 
-<h4>Used by ({{ r.usages | length }})</h4>
-<div class="overflow-auto">
-<table class="striped">
-  <thead><tr><th>Cluster</th><th>Kind</th><th>Namespace</th><th>Name</th><th>Container</th></tr></thead>
-  <tbody>
-  {% for u in r.usages | sort(attribute="cluster,kind,namespace,name") %}
-    <tr><td>{{ u.cluster }}</td><td>{{ u.kind }}</td><td>{{ u.namespace or "" }}</td><td>{{ u.name }}</td><td>{{ u.container or "" }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
+<h4>Used by</h4>
+{% set tree = usage_tree(r.usages) %}
+{% if tree %}
+<ul class="tree-list" aria-label="Where the image is used">
+  {% for c in tree %}{{ usage_item(c) }}{% endfor %}
+</ul>
+{% else %}<p><small>Not found on the clusters any more.</small></p>{% endif %}
 {% endcall %}

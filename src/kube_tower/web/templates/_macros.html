@@ -72,6 +72,12 @@
 </article>
 {%- endmacro %}
 
+{% macro tree_cell(connector) -%}
+{# The connector of ui.dependency_tree ("│  ├─ ") drawn with CSS lines, like the trees of the detail panels. #}
+{%- set kinds = {"│  ": "pipe", "   ": "blank", "├─ ": "tee", "└─ ": "elbow"} -%}
+{%- for i in range(0, connector | length, 3) %}<span class="tree-seg tree-{{ kinds[connector[i:i + 3]] }}" aria-hidden="true"></span>{% endfor -%}
+{%- endmacro %}
+
 {% macro links(items) -%}
 {% if items %}<p class="links">{% for label, url in items %}<a href="{{ url }}" target="_blank" rel="noopener">{{ icon("external-link") }}{{ label }}</a>{% endfor %}</p>{% endif %}
 {%- endmacro %}

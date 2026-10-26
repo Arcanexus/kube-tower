@@ -112,6 +112,12 @@ and the digest of the latest tag. Published digests are read with `images.fetchT
 
 ![Image details](images/image-detail.png)
 
+**Used by** shows where the image is used as a tree: cluster > namespace > workload > pods, with
+the node each pod runs on and the containers using the image. Pods hang under their workload (the
+Deployment of their ReplicaSet, the CronJob of their Job); a workload without pod says **no pod
+running** (scaled to zero, CronJob between two runs). The nodes that have the image in their cache
+close each cluster. Clusters and namespaces fold.
+
 #### Versioning schemes
 
 kube-tower tells from the current tag how the image is versioned, shows it in the detail panel
@@ -139,7 +145,9 @@ subcharts of subcharts (down to 3 levels). The status used by the counters and f
 worst one of the chart and its whole subchart tree, so a chart whose subchart is outdated shows up
 when filtering on `outdated`; the badge of the chart line shows that same status, with
 "chart up-to-date, subchart outdated" when only a subchart is behind. The detail panel of a chart shows its source, the ArgoCD Application,
-links to the repository and Artifact Hub, and the subchart tree with each subchart repository.
+links to the repository and Artifact Hub, and the subchart tree: the chart, then each subchart with
+its version (→ the latest one when it is behind), status and repository, drawn like the **Used by**
+tree of the images.
 
 | Source type | Current version | Latest version |
 | --- | --- | --- |
