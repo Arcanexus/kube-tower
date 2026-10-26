@@ -215,8 +215,20 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--pico-table
 }
 .drawer-full .drawer-panel { width: 100vw; }
 /* The left edge of the panel resizes it (not on phones, where it takes the whole width) */
-.drawer-resize { position: fixed; top: 0; bottom: 0; width: .5rem; margin-left: -1.5rem; cursor: ew-resize; z-index: 12; touch-action: none; }
-.drawer-resize:hover, .drawer-resize:focus-visible, .drawer-resizing .drawer-resize { background: var(--pico-primary-background); opacity: .5; outline: none; }
+.drawer-resize { position: fixed; top: 0; bottom: 0; width: .9rem; margin-left: -1.95rem; cursor: ew-resize; z-index: 12; touch-action: none; outline: none; }
+/* Visible cues: a line along the edge and a grip in its middle, both highlighted on hover, focus and drag */
+.drawer-resize::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(50% - 1px); width: 2px; background: var(--pico-muted-border-color); transition: background .15s; }
+.drawer-resize::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: .9rem; height: 3rem; transform: translate(-50%, -50%);
+  border: 1px solid var(--pico-muted-color); border-radius: .45rem; background-color: var(--pico-card-background-color);
+  background-image: radial-gradient(circle, var(--pico-muted-color) 1.5px, transparent 2px);
+  background-size: 100% .6rem; background-position: center; background-repeat: repeat-y;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .15); transition: border-color .15s, background-color .15s;
+}
+.drawer-resize:hover::before, .drawer-resize:focus-visible::before, .drawer-resizing .drawer-resize::before { background: var(--pico-primary-background); }
+.drawer-resize:hover::after, .drawer-resize:focus-visible::after, .drawer-resizing .drawer-resize::after {
+  border-color: var(--pico-primary-background); background-image: radial-gradient(circle, var(--pico-primary-background) 1.5px, transparent 2px);
+}
 .drawer-resizing { user-select: none; cursor: ew-resize; }
 .drawer-full .drawer-resize { display: none; }
 @media (max-width: 700px) { .drawer-resize, .drawer-full-toggle { display: none; } }
