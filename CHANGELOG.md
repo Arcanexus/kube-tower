@@ -32,6 +32,9 @@ All notable changes to this project are documented here. The format follows
   (the default) renders the same manifests as before. The active controller labels its pod
   (`internal.labelPod`), selected by the internal Service. New `/leaderz` probe: 503 on a standby
   controller. End-to-end test of the distributed mode on kind in CI.
+- Docs: [architecture](docs/architecture.md) page with diagrams of the roles, the single and distributed
+  modes, the internal API and a scan step by step; ArgoCD `Application` example of the distributed mode
+  with the chart's Valkey in [scaling](docs/scaling.md).
 - Images, Helm charts and Vulnerabilities load 30 rows at a time, the next ones when the bottom of the list
   comes into view, with an animated loading row, a count of the rows shown and a "N more below" button while rows are left to load;
   the column sort of these lists is done by the server.
