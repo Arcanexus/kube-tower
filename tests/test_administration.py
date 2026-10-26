@@ -101,7 +101,7 @@ async def test_update_trivy_db(monkeypatch, error, downloaded, message):
     m, scanner = _administration()
     seen = []
 
-    async def prepare(self):
+    async def prepare(self, max_age=0):
         seen.append((scanner.busy, scanner.locked, scanner.running))
         return error
 

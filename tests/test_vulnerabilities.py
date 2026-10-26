@@ -219,6 +219,21 @@ async def test_trivy_scan_all(fake_trivy):
     await scanner.scan_all([good])
     assert calls()[-1]["args"][-1] == "docker.io/library/alpine:3.18"
 
+    # Batches (distributed mode): the databases downloaded less than 10 minutes ago are not refreshed
+    count = len(calls())
+    await scanner.scan_many([broken])
+    assert [c["args"][1] for c in calls()[count:]] == ["--format"]
+    await scanner.scan_many([broken], prepared_for=0)
+    assert [c["args"][1] for c in calls()[count + 1 :]] == ["--download-db-only", "--format"]
+
+
+def test_merge_scan_errors():
+    from kube_tower.trivy import merge_scan_errors, scans_failed
+
+    db = "cannot download the Trivy database: 403"
+    assert merge_scan_errors([scans_failed(2), db, scans_failed(1), db]) == [db, scans_failed(3)]
+    assert merge_scan_errors([]) == []
+
 
 async def test_trivy_all_cached_runs_nothing(fake_trivy):
     binary, calls = fake_trivy

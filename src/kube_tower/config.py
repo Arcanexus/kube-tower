@@ -187,6 +187,8 @@ class InternalSettings:
     token_env: str = "KUBE_TOWER_INTERNAL_TOKEN"
     # A task pulled by a worker and not answered within this time is given to another one (seconds or 10m).
     task_timeout: int = 30 * 60
+    # Images (or charts) per version check or Trivy task: a scan is shared by the worker and trivy processes.
+    batch_size: int = 50
 
 
 @dataclass
