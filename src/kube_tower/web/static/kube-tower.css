@@ -422,3 +422,7 @@ td.cell-name { max-width: 30rem; }
 .usage-kind { color: var(--pico-muted-color); text-transform: lowercase; margin-right: .2rem; }
 .usage-idle { color: var(--pico-muted-color); font-style: italic; }
 .usage-node { margin: .1rem .25rem 0 0; font-size: .8em; }
+
+/* Infinite scroll: the last row of a list loads the next page when it shows */
+.load-more td { text-align: center; color: var(--pico-muted-color); padding: 1rem; }
+.load-more [aria-busy="true"]::before { margin-right: .5rem; }

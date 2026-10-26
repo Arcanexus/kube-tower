@@ -16,7 +16,10 @@ cannot be queried). A Trivy problem is also shown at the top of the Vulnerabilit
 On the list pages (Images, Helm charts, Vulnerabilities, Clusters), only the list scrolls: the
 title, the filters, the counters and the column headers stay in place. Click a column header to
 sort the list on it, click again to reverse the order (the arrow shows the current sort); the
-sort is kept when the filters change. Headers can also be sorted with the keyboard (Tab, then Enter
+sort is kept when the filters change. Images, Helm charts and Vulnerabilities load 30 rows at a time:
+the next 30 load when the bottom of the list comes into view (an animated "Loading…" row shows
+meanwhile), and these lists are sorted by the server so the order covers every row, not only the
+loaded ones (`sort` and `dir` in the URL). Headers can also be sorted with the keyboard (Tab, then Enter
 or Space), and a "Skip to content" link (first Tab) jumps over the sidebar. The ⓘ icon after a page
 subtitle explains the page. Status columns sort what needs attention first (`outdated`,
 `error`, `unknown`, then `up-to-date`), counts sort the largest first.

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from urllib.parse import urlencode
 
 import yaml
 from fastapi import FastAPI, Request
@@ -144,6 +146,93 @@ def usage_tree(usages: list[Usage]) -> list[UsageNode]:
     for cluster in clusters.values():  # the nodes after the namespaces
         cluster.children.sort(key=lambda c: c.kind == "Nodes")
     return list(clusters.values())
+
+
+# Lists load by pages of this many items while the user scrolls down (infinite scroll).
+PAGE_SIZE = 30
+
+
+@dataclasses.dataclass
+class Column:
+    """A sortable column of a list: the sort value of an item, and the first direction of a click."""
+
+    key: Callable
+    descending: bool = False
+
+
+def natural(value) -> tuple:
+    """Sort value that orders numbers by value inside text: "1.9" < "1.10", "v2" < "v10"."""
+    return tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part) for part in re.split(r"(\d+)", str(value).lower()) if part
+    )
+
+
+@dataclasses.dataclass
+class Listing:
+    """One page of a list, sorted on the server: the items to show and the URL of the next page."""
+
+    items: list
+    total: int
+    sort: str  # index of the sort column, "" for the default order
+    direction: str  # ascending | descending
+    more: str | None  # relative URL of the next page, None on the last one
+
+    def aria_sort(self, index: int) -> str:
+        return self.direction if self.sort == str(index) else ""
+
+
+def list_page(request: Request, path: str, items: Sequence, columns: list[Column]) -> Listing:
+    """Sort `items` as asked (`sort` = column index, `dir`), and keep the page at `offset`."""
+    params = request.query_params
+    sort, direction = params.get("sort", ""), params.get("dir", "")
+    items = list(items)
+    if sort.isdigit() and int(sort) < len(columns):
+        column = columns[int(sort)]
+        if direction not in ("ascending", "descending"):
+            direction = "descending" if column.descending else "ascending"
+        values = [(column.key(item), item) for item in items]
+        # Empty values last, whatever the direction (like the previous client-side sort).
+        filled = [v for v in values if v[0] not in ("", None, ())]
+        empty = [item for key, item in values if key in ("", None, ())]
+        filled.sort(key=lambda v: v[0], reverse=direction == "descending")
+        items = [item for _, item in filled] + empty
+    else:
+        sort, direction = "", ""
+    offset = int(params["offset"]) if params.get("offset", "").isdigit() else 0
+    more = None
+    if offset + PAGE_SIZE < len(items):
+        query = {k: v for k, v in params.items() if k != "offset"} | {"offset": offset + PAGE_SIZE}
+        more = f"{path}?{urlencode(query)}"
+    return Listing(items[offset : offset + PAGE_SIZE], len(items), sort, direction, more)
+
+
+def _fixable(r: ImageReport) -> int:
+    return r.vulnerabilities.fixable if r.vulnerabilities and not r.vulnerabilities.message else -1
+
+
+# Sortable columns of the lists, in the order of their headers.
+IMAGE_COLUMNS = [
+    Column(lambda r: str(r.image)),
+    Column(lambda r: natural(r.image.tag or "")),
+    Column(lambda r: natural(r.latest_tag or "")),
+    Column(lambda r: STATUS_RANK[r.status]),
+    Column(lambda r: len(r.usages), descending=True),
+]
+CHART_COLUMNS = [
+    Column(lambda c: natural(c.application)),
+    Column(lambda c: natural(c.chart)),
+    Column(lambda c: natural(c.version or "")),
+    Column(lambda c: natural(c.latest_version or "")),
+    Column(lambda c: STATUS_RANK[c.worst_status]),
+]
+VULNERABILITY_COLUMNS = [
+    Column(lambda r: r.image.name),
+    Column(lambda r: natural(r.image.tag or "")),
+    Column(lambda r: vulnerability_score(r), descending=True),
+    Column(_fixable, descending=True),
+    Column(lambda r: r.vulnerabilities.source if r.vulnerabilities else ""),
+    Column(lambda r: len(r.usages), descending=True),
+]
 
 
 def vulnerability_sort_key(report: ImageReport) -> tuple:
@@ -298,6 +387,9 @@ def mount(app: FastAPI) -> None:
         scanner = request.app.state.scanner
         # htmx requests only get the table fragment, full page loads get the layout.
         partial = request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "results"
+        # The next page of a list (infinite scroll): only its rows.
+        offset = request.query_params.get("offset", "")
+        rows_only = offset.isdigit() and int(offset) > 0
         return templates.TemplateResponse(
             request,
             f"{name}.html",
@@ -307,6 +399,7 @@ def mount(app: FastAPI) -> None:
                 "checking_versions": scanner.checking_versions,
                 "warnings": warnings(request),
                 "partial": partial,
+                "rows_only": rows_only,
                 **context,
             },
         )
@@ -353,12 +446,13 @@ def mount(app: FastAPI) -> None:
             and (not registry or r.image.registry == registry)
             and (not update or image_update(r) == update)
         ]
-        rows = [r for r in matching if not status or r.status.value == status]
+        listing = list_page(request, "images", [r for r in matching if not status or r.status.value == status], IMAGE_COLUMNS)
         return render(
             request,
             "images",
             tab="images",
-            rows=rows,
+            listing=listing,
+            rows=listing.items,
             matching=matching,
             q=q,
             status=status,
@@ -404,11 +498,13 @@ def mount(app: FastAPI) -> None:
         counts = {id(r): r.vulnerabilities.counts() if r.vulnerabilities else {} for r in matching}
         affected = {s: sum(1 for r in matching if counts[id(r)].get(s)) for s in Severity}
         rows = [r for r in matching if not severity or counts[id(r)].get(Severity.parse(severity))]
+        listing = list_page(request, "vulnerabilities", rows, VULNERABILITY_COLUMNS)
         return render(
             request,
             "vulnerabilities",
             tab="vulnerabilities",
-            rows=rows,
+            listing=listing,
+            rows=listing.items,
             matching=matching,
             q=q,
             severity=severity,
@@ -444,8 +540,20 @@ def mount(app: FastAPI) -> None:
             for c in request.app.state.scanner.snapshot.charts
             if _matches(f"{c.application} {c.chart} {c.repository}", q) and (not cluster or c.cluster == cluster)
         ]
-        rows = [c for c in matching if not status or c.worst_status.value == status]
-        return render(request, "charts", tab="charts", rows=rows, matching=matching, q=q, status=status, cluster=cluster)
+        listing = list_page(
+            request, "charts", [c for c in matching if not status or c.worst_status.value == status], CHART_COLUMNS
+        )
+        return render(
+            request,
+            "charts",
+            tab="charts",
+            listing=listing,
+            rows=listing.items,
+            matching=matching,
+            q=q,
+            status=status,
+            cluster=cluster,
+        )
 
     @app.get("/charts/detail", response_class=HTMLResponse, include_in_schema=False)
     async def chart_detail(request: Request, cluster: str = "", namespace: str = "", app: str = "", chart: str = ""):

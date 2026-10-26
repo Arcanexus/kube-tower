@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, image_name, page_title, severity_counts, tag %}
+{% from "_macros.html" import icon, image_name, load_more, page_title, severity_counts, sort_th, tag %}
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("shield", "Vulnerabilities", "Known vulnerabilities (CVE) of every image.", "From the Trivy Operator reports when the cluster has them, else scanned by kube-tower with Trivy. The counters are numbers of images. Click an image for its vulnerabilities.") }}{% endblock %}
 {% block content %}
@@ -16,6 +16,7 @@
     <option value="">All clusters</option>
     {% for c in snapshot.clusters %}<option {% if c.name == cluster %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
   </select>
+  <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
 </form>
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
@@ -28,12 +29,16 @@
           title="Show only the images with {{ s.value }} vulnerabilities" onclick="ktFilterStatus('{{ s.value }}')"><span class="sev sev-{{ s.value }}">{{ s.value }}</span><span class="counter-value"><strong>{{ affected[s] }}</strong><small>{{ "image" if affected[s] == 1 else "images" }}</small></span></button>
   {% endfor %}
 </div>
-<p><small>{{ rows | length | plural("image") }} · the counters are images with at least one vulnerability of that severity
+<p><small>{{ listing.total | plural("image") }} · the counters are images with at least one vulnerability of that severity
   {% if scanning and not snapshot.vulnerabilities_finished_at %}· {{ icon("clock") }}vulnerability scan in progress{% endif %}</small></p>
 <div class="overflow-auto table-wrap">
 <table class="striped stack-sm">
-  <thead><tr><th data-sort>Image</th><th data-sort>Tag</th><th data-sort="desc">Vulnerabilities</th><th data-sort="desc">Fixable</th><th data-sort class="hide-sm">Source</th><th data-sort="desc" class="hide-sm">Used by</th></tr></thead>
-  <tbody>
+  <thead><tr>{{ sort_th(listing, 0, "Image") }}{{ sort_th(listing, 1, "Tag") }}{{ sort_th(listing, 2, "Vulnerabilities", True) }}{{ sort_th(listing, 3, "Fixable", True) }}{{ sort_th(listing, 4, "Source", False, "hide-sm") }}{{ sort_th(listing, 5, "Used by", True, "hide-sm") }}</tr></thead>
+  <tbody>{{ self.rows() }}</tbody>
+</table>
+</div>
+{% endblock %}
+{% block rows %}
   {% for r in rows %}
     {% set v = r.vulnerabilities %}
     <tr class="clickable" tabindex="0" hx-get="vulnerabilities/detail?ref={{ r.image | string | urlencode }}{% if cve %}&cve={{ cve | urlencode }}{% endif %}" hx-target="#detail"
@@ -53,7 +58,5 @@
   {% else %}
     <tr><td colspan="6">No image.</td></tr>
   {% endfor %}
-  </tbody>
-</table>
-</div>
+  {{ load_more(listing, 6) }}
 {% endblock %}

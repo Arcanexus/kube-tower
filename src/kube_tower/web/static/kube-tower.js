@@ -129,6 +129,7 @@ document.addEventListener("kt-rescanned", () => {
 // Sortable columns: click a header with data-sort (data-sort="desc" sorts descending first). A cell
 // sorts on its data-sort value when it has one, else on its text. Tables with one tbody per item
 // (Helm charts and their subcharts) sort their tbodies. The sort survives the htmx reloads of #results.
+// Headers with data-server-sort belong to lists loaded page by page: the server sorts them.
 const ktSort = {};
 function ktCellValue(row, index) {
   const cell = row.cells[index];
@@ -157,6 +158,14 @@ function ktSortBy(th) {
   const current = th.getAttribute("aria-sort");
   const first = th.dataset.sort === "desc" ? "descending" : "ascending";
   const dir = current ? (current === "ascending" ? "descending" : "ascending") : first;
+  const form = document.querySelector("form.filters");
+  if (th.dataset.serverSort !== undefined && form && form.elements.sort) {
+    // Lists loaded page by page (infinite scroll) are sorted by the server: reload them sorted.
+    form.elements.sort.value = th.dataset.serverSort;
+    form.elements.dir.value = dir;
+    form.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
   ktApplySort(th.closest("table"), th.cellIndex, dir);
   ktSort[location.pathname] = { index: th.cellIndex, dir };
 }
