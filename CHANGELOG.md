@@ -15,6 +15,8 @@ All notable changes to this project are documented here. The format follows
   workload (`owner`) and node (`node`) in the API.
 - Helm charts: the subchart trees (charts list and chart details) are drawn with the same lines as the
   image **Used by** tree; the chart details show each subchart's version, latest version and status in the tree.
+- Detail panels can be resized by dragging their left edge, shown by a grip (or with the arrow keys), and opened full
+  screen with a button; both are remembered by the browser.
 - UI/UX review: the Images page always shows the current and the latest version with the start of
   their digests below (a different latest digest is highlighted), also in the image panel and the
   Synthesis; the Clusters page gets the figures of each cluster (images, charts, outdated, critical

@@ -24,6 +24,80 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") ktCloseDetail();
 });
 
+// Detail panel size: dragged from its left edge, or full screen. Kept on #detail (it outlives the panels
+// htmx loads into it) and in this browser's storage, for the next panels and pages.
+const KT_DRAWER_MIN = 320;
+function ktStore(key, value) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch (e) { /* storage unavailable: the size only lasts for this page */ }
+}
+function ktSetDrawerWidth(px) {
+  const detail = document.getElementById("detail");
+  if (!detail) return;
+  if (px === null) {
+    detail.style.removeProperty("--kt-drawer-width");
+  } else {
+    px = Math.round(Math.min(Math.max(px, KT_DRAWER_MIN), window.innerWidth));
+    detail.style.setProperty("--kt-drawer-width", px + "px");
+  }
+}
+function ktDrawerWidth() {
+  const panel = document.querySelector("#detail .drawer-panel");
+  return panel ? panel.getBoundingClientRect().width : 0;
+}
+function ktResizeStart(e) {
+  e.preventDefault();
+  const detail = document.getElementById("detail");
+  detail.classList.add("drawer-resizing");
+  const move = (ev) => ktSetDrawerWidth(window.innerWidth - ev.clientX);
+  const stop = () => {
+    detail.classList.remove("drawer-resizing");
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    ktStore("kt-drawer-width", String(Math.round(ktDrawerWidth())));
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
+}
+function ktResizeKey(e) {
+  const step = e.shiftKey ? 160 : 40;
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  ktSetDrawerWidth(ktDrawerWidth() + (e.key === "ArrowLeft" ? step : -step));
+  ktStore("kt-drawer-width", String(Math.round(ktDrawerWidth())));
+}
+function ktResizeReset() {
+  ktSetDrawerWidth(null);
+  ktStore("kt-drawer-width", null);
+}
+function ktToggleFull() {
+  const full = document.getElementById("detail").classList.toggle("drawer-full");
+  ktStore("kt-drawer-full", full ? "1" : null);
+  ktSyncFullButton();
+}
+function ktSyncFullButton() {
+  const full = document.getElementById("detail").classList.contains("drawer-full");
+  document.querySelectorAll(".drawer-full-toggle").forEach((b) => {
+    b.setAttribute("aria-pressed", full ? "true" : "false");
+    b.setAttribute("aria-label", full ? "Exit full screen" : "Full screen");
+    b.title = full ? "Exit full screen" : "Full screen";
+  });
+}
+document.addEventListener("DOMContentLoaded", () => {
+  let width = null, full = false;
+  try {
+    width = localStorage.getItem("kt-drawer-width");
+    full = localStorage.getItem("kt-drawer-full") === "1";
+  } catch (e) { /* no storage: default size */ }
+  if (width) ktSetDrawerWidth(Number(width));
+  if (full) document.getElementById("detail").classList.add("drawer-full");
+});
+document.addEventListener("htmx:afterSettle", (e) => {
+  if (e.target.id === "detail") ktSyncFullButton();
+});
+
 // A rescan from a detail panel is over: reload the results of the page (same filters) to update its row.
 document.addEventListener("kt-rescanned", () => {
   const form = document.querySelector("form.filters");
