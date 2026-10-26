@@ -46,7 +46,10 @@ src/kube_tower/
                        (HTTP client, timeouts, retries)
   checkers.py          version comparison, one lookup per repository per scan
   versions.py          tag parsing and ordering
-  scanner.py           full scan, rescans and in-memory snapshot
+  scanner.py           controller: schedules full scans and rescans, merges the task results into the snapshot
+  tasks.py             tasks of a scan (collect a cluster, check versions, Trivy scan) and their results, JSON-ready
+  worker.py            runs the tasks (worker and trivy roles), keeps registry tokens, Helm indexes, Trivy cache
+  store.py             where the snapshot is kept (memory)
   administration.py    Administration page actions (Trivy database, connectivity tests, unused node images)
   backend.py           Backend interface: all the web layer may use of the scans and the administration
   errors.py            explicit error messages (what failed, status, what to do)
@@ -61,7 +64,9 @@ docs/                  documentation and ADRs
 ### Adding a source
 
 - New kind of workload or inventory (e.g. Flux `HelmRelease`): add a collector in `collectors/`
-  returning `ImageReport` / `ChartReport` objects, and call it from `scanner.py`.
+  returning `ImageReport` / `ChartReport` objects, and call it from the collect task of `worker.py`.
+  Tasks and results stay dataclasses of models, so they can be sent to another process as JSON
+  (see `test_scan_tasks_survive_json`).
 - New kind of registry: add a client in `registry/` and use it from `checkers.py`.
 - New page: add a route in `web/ui.py`, a template in `web/templates/` extending `base.html`
   (title in `{% block heading %}`, content in `{% block content %}`), a link in the sidebar of

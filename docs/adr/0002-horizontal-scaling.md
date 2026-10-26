@@ -64,6 +64,9 @@ its replicas, resources and HPA.
 1. `roles` setting (only every role together accepted until the roles can run apart) and `Snapshot.from_dict`
    (JSON round trip of the snapshot, needed to send it between processes).
 2. The web layer talks to a backend interface instead of the `Scanner` internals.
-3. The scan split in serializable tasks, run locally by `all`.
+3. The scan split in serializable tasks (`tasks.py`: collect a cluster, check images, check charts,
+   scan with Trivy), run by the `Worker` of the process (`worker.py`); `SnapshotStore` (`store.py`).
+   The collect results carry the credentials of image pull secrets: the internal API sends them to
+   the controller and from it to the workers, never outside (token, NetworkPolicies).
 4. Internal API, `ui` / `controller` / `worker` / `trivy` roles in any combination, `Lease` election, Redis option.
 5. Chart `mode: distributed`, documentation, release candidate.
