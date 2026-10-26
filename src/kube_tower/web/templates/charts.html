@@ -1,18 +1,25 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, counters, filters, icon, page_title, tree_cell %}
+{% from "_macros.html" import badge, counters, filters, icon, list_shown, load_more, more_hint, page_title, sort_th, tree_cell %}
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.", "The status of a chart is the worst of the chart and its subcharts: the counters and the status filter use it too. Click a chart for its details.") }}{% endblock %}
 {% block content %}
-{{ filters("charts", q, status, cluster, snapshot) }}
+{{ filters("charts", q, status, cluster, snapshot, listing=listing) }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
 {% set unknown %}<small class="muted-text">unknown</small>{% endset %}
 {{ counters(matching, "worst_status", status) }}
-<p><small>{{ rows | length | plural("chart") }}</small></p>
+<p><small>{{ listing.total | plural("chart") }}{{ list_shown(listing) }}</small></p>
 <div class="overflow-auto table-wrap">
 <table class="chart-table stack-sm">
-  <thead><tr><th data-sort>Application</th><th data-sort>Chart</th><th data-sort>Current</th><th data-sort>Latest</th><th data-sort>Status</th></tr></thead>
+  <thead><tr>{{ sort_th(listing, 0, "Application") }}{{ sort_th(listing, 1, "Chart") }}{{ sort_th(listing, 2, "Current") }}{{ sort_th(listing, 3, "Latest") }}{{ sort_th(listing, 4, "Status") }}</tr></thead>
+  {{ self.rows() }}
+</table>
+{{ more_hint(listing) }}
+</div>
+{% endblock %}
+{% block rows %}
+  {% set unknown %}<small class="muted-text">unknown</small>{% endset %}
   {% for c in rows %}
   {# One tbody per chart: the chart row and its subchart tree, all opening the same detail panel. #}
   <tbody class="clickable" tabindex="0" hx-trigger="click, keyup[key=='Enter']" hx-target="#detail"
@@ -39,6 +46,5 @@
   {% else %}
   <tbody><tr><td colspan="5">No chart.</td></tr></tbody>
   {% endfor %}
-</table>
-</div>
+  {{ load_more(listing, 5, tbody=True) }}
 {% endblock %}

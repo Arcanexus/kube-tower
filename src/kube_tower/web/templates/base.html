@@ -1,5 +1,5 @@
 {% from "_macros.html" import icon %}
-{% if partial %}{% block results %}{% endblock %}{% else %}<!doctype html>
+{% if rows_only %}{% block rows %}{% endblock %}{% elif partial %}{% block results %}{% endblock %}{% else %}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">

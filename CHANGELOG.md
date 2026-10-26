@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Images, Helm charts and Vulnerabilities load 30 rows at a time, the next ones when the bottom of the list
+  comes into view, with an animated loading row, a count of the rows shown and a "N more below" button while rows are left to load;
+  the column sort of these lists is done by the server.
+
 - Synthesis: the types of **Pending image updates** and the registries of **Images by registry** open
   the Images page filtered on them (`images?update=major`, `images?registry=docker.io`), shown as a
   removable chip next to the other filters.

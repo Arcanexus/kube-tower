@@ -17,6 +17,13 @@ function ktRemoveFilter(button) {
   form.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+// "N more below" hint of a list: scrolls to its end, which loads the next rows.
+function ktScrollList(button) {
+  const wrap = button.closest(".table-wrap");
+  if (wrap && wrap.scrollHeight > wrap.clientHeight) wrap.scrollTo({ top: wrap.scrollHeight, behavior: "smooth" });
+  else window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+}
+
 // Detail panel (images, charts): loaded by htmx into #detail, closed by emptying it.
 // Each panel opens at the default size: closing it forgets its width and full screen mode.
 function ktCloseDetail() {
@@ -129,6 +136,7 @@ document.addEventListener("kt-rescanned", () => {
 // Sortable columns: click a header with data-sort (data-sort="desc" sorts descending first). A cell
 // sorts on its data-sort value when it has one, else on its text. Tables with one tbody per item
 // (Helm charts and their subcharts) sort their tbodies. The sort survives the htmx reloads of #results.
+// Headers with data-server-sort belong to lists loaded page by page: the server sorts them.
 const ktSort = {};
 function ktCellValue(row, index) {
   const cell = row.cells[index];
@@ -157,6 +165,14 @@ function ktSortBy(th) {
   const current = th.getAttribute("aria-sort");
   const first = th.dataset.sort === "desc" ? "descending" : "ascending";
   const dir = current ? (current === "ascending" ? "descending" : "ascending") : first;
+  const form = document.querySelector("form.filters");
+  if (th.dataset.serverSort !== undefined && form && form.elements.sort) {
+    // Lists loaded page by page (infinite scroll) are sorted by the server: reload them sorted.
+    form.elements.sort.value = th.dataset.serverSort;
+    form.elements.dir.value = dir;
+    form.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
   ktApplySort(th.closest("table"), th.cellIndex, dir);
   ktSort[location.pathname] = { index: th.cellIndex, dir };
 }

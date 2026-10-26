@@ -1,3 +1,4 @@
+import dataclasses
 import re
 import sys
 from datetime import UTC, datetime
@@ -215,7 +216,7 @@ def test_images_running_only_switch():
     page = client.get("/images?running=1").text
     assert 'name="running" value="1" checked' in page
     assert "library/nginx" in page and "org/app" not in page and "library/redis" not in page
-    assert "<p><small>1 image</small></p>" in page  # counters and count follow the switch
+    assert '<p><small>1 image<span id="list-shown"></span></small></p>' in page  # counters and count follow the switch
     assert "library/nginx" not in client.get("/images?running=1&cluster=c2").text
     assert 'name="running"' not in client.get("/charts").text
 
@@ -721,8 +722,59 @@ def test_list_pages_layout_and_sortable_columns():
         assert "<th data-sort" in page, path
     images = client.get("/images").text
     assert re.search(r'<td data-sort="0">\s*<span class="badge badge-outdated">', images)  # outdated sorts first
-    assert '<th data-sort="desc" class="hide-sm">Used by</th>' in images
+    assert '<th data-sort="desc" data-server-sort="4" class="hide-sm">Used by</th>' in images
     assert 'class="content "' in client.get("/settings").text  # documents scroll as a whole
+
+
+def test_lists_load_by_pages_and_sort_on_the_server():
+    """Infinite scroll: 30 items per page, the last row loads the next page; headers sort on the server."""
+    from kube_tower.web import ui
+
+    client, scanner = _client()
+    base = scanner.snapshot.images[0]
+    scanner.snapshot.images = [
+        dataclasses.replace(base, image=ImageRef("docker.io", f"org/app{i}", f"1.{i}"), usages=[]) for i in range(65)
+    ]
+    page = client.get("/images").text
+    assert page.count('hx-get="images/detail') == ui.PAGE_SIZE and "65 images" in page
+    assert 'hx-get="images?offset=30" hx-trigger="intersect once" hx-swap="outerHTML"' in page
+    assert '<span aria-busy="true">Loading…</span>' in page
+    # Rows left to load are visible: the count of shown rows and a "more below" hint at the bottom of the list
+    assert '65 images<span id="list-shown"> · 30 shown</span>' in page
+    assert 'id="more-hint" class="more-hint">' in page and "35 more below" in page
+    # The next page: only its rows (and the row loading the one after)
+    more = client.get("/images?offset=30").text
+    assert "<html" not in more and "<thead" not in more and more.count('hx-get="images/detail') == 30
+    assert "offset=60" in more
+    # ... and refreshes the count and the hint out of band (in a <template>, as they are not table rows)
+    assert '<template><span id="list-shown" hx-swap-oob="true"> · 60 shown</span>' in more and "5 more below" in more
+    last = client.get("/images?offset=60").text
+    assert last.count('hx-get="images/detail') == 5 and "load-more" not in last
+    assert '<span id="list-shown" hx-swap-oob="true"></span>' in last and 'hx-swap-oob="true" hidden>' in last
+    assert '<div id="more-hint" class="more-hint" hidden>' in client.get("/images?q=app1").text  # 11 images: all shown
+    # Sorted on the server, natural order of versions; the sort is kept by the next pages and the form
+    page = client.get("/images?sort=1&dir=descending").text
+    assert page.index("org/app64") < page.index("org/app63") < page.index("org/app40") and "org/app9<" not in page
+    assert 'data-server-sort="1" aria-sort="descending"' in page
+    assert '<input type="hidden" name="sort" value="1"><input type="hidden" name="dir" value="descending">' in page
+    assert "sort=1&amp;dir=descending&amp;offset=30" in page
+    ascending = client.get("/images?sort=1").text
+    assert ascending.index("org/app2<") < ascending.index("org/app10<")
+    assert "aria-sort" not in client.get("/images?sort=99&offset=x").text.split("<tbody>")[0].split("<thead>")[1]
+    assert (
+        "data-serverSort" in client.get("/static/kube-tower.js").text or "serverSort" in client.get("/static/kube-tower.js").text
+    )
+
+
+def test_natural_sort_and_empty_values_last():
+    from kube_tower.web.ui import Column, natural
+
+    assert sorted(["1.10", "1.9", "v10", "v2"], key=natural) == ["1.9", "1.10", "v2", "v10"]
+    client, _ = _client()
+    # charts and vulnerabilities pages accept a sort too (vulnerabilities: most vulnerable first)
+    assert 'aria-sort="ascending"' in client.get("/charts?sort=0").text
+    assert 'aria-sort="descending"' in client.get("/vulnerabilities?sort=2").text
+    assert Column(len).descending is False
 
 
 def test_scan_status_top_right():
