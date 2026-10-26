@@ -192,7 +192,18 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--pico-table
 .chart-table tbody { border-top: 1px solid var(--pico-muted-border-color); }
 .chart-table tbody td { border-bottom: 0; }
 .chart-table tr.subchart td { padding-top: .2rem; padding-bottom: .2rem; font-size: .9em; }
-.tree { font-family: var(--pico-font-family-monospace); white-space: pre; color: var(--kt-tree); }
+/* Subchart tree of the Helm charts list: one segment per depth, its lines drawn in CSS and stretched
+   over the whole row (the cell padding is moved to the label) */
+.tree-cell { display: flex; align-items: stretch; margin: calc(var(--pico-spacing) * -.5) 0; }
+.chart-table tr.subchart .tree-cell { margin: -.2rem 0; }
+.tree-label { padding: .2rem 0; align-self: center; }
+.tree-seg { position: relative; flex: 0 0 1.1rem; }
+.tree-pipe::before, .tree-tee::before, .tree-elbow::before { content: ""; position: absolute; left: .45rem; top: 0; bottom: 0; border-left: 1px solid var(--kt-tree); }
+.tree-elbow::before { bottom: 50%; }
+.tree-tee::after, .tree-elbow::after { content: ""; position: absolute; left: .45rem; right: .15rem; top: 50%; border-top: 1px solid var(--kt-tree); }
+.tree-versions { margin: 0 .3rem; }
+.tree-sub { margin-left: 1.3rem; line-height: 1.3; }
+.tree-versions .arrow { color: var(--pico-muted-color); }
 .tree-repo { color: var(--pico-muted-color); overflow-wrap: anywhere; }
 
 /* Detail panel: slides over the content from the right */
@@ -353,3 +364,19 @@ td.cell-name { max-width: 30rem; }
   .page-title p { font-size: .9rem; }
 }
 @media (min-width: 769px) { td.cell-status { min-width: 13rem; } .cluster-origin { white-space: nowrap; } }
+
+/* Trees of the detail panels ("Used by" of an image, subcharts of a chart): lines drawn in CSS */
+.tree-list, .tree-list ul { list-style: none; margin: 0; padding: 0; }
+.tree-list ul { padding-left: 1.1rem; }
+.tree-list li { position: relative; margin: 0; padding: .2rem 0 .2rem .9rem; list-style: none; overflow-wrap: anywhere; }
+.tree-list > li { padding-left: 0; }
+.tree-list ul > li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--kt-tree); }
+.tree-list ul > li::after { content: ""; position: absolute; left: 0; top: 1rem; width: .65rem; border-top: 1px solid var(--kt-tree); }
+.tree-list ul > li:last-child::before { bottom: auto; height: 1rem; }
+.tree-list details { margin: 0; }
+.tree-list summary, .tree-list details[open] > summary { padding: 0; margin: 0; }
+.tree-list summary code { padding: .05rem .35rem; }
+.tree-list .icon { margin-right: .3rem; }
+.usage-kind { color: var(--pico-muted-color); text-transform: lowercase; margin-right: .2rem; }
+.usage-idle { color: var(--pico-muted-color); font-style: italic; }
+.usage-node { margin: .1rem .25rem 0 0; font-size: .8em; }

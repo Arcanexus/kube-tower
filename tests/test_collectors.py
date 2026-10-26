@@ -240,3 +240,19 @@ def test_image_pull_secrets(monkeypatch, caplog):
     assert core.read_namespaced_secret.call_count == 6  # team/harbor read once for the pod and the Deployment
     assert len(errors) == 1 and "cannot read 1 image pull secret(s) (e.g. team/forbidden): 403" in errors[0]
     assert "ops/garbage ignored" in caplog.text
+
+
+def test_pod_owner():
+    from kube_tower.collectors.images import _pod_owner
+
+    def pod(kind=None, name=None, pod_hash=None, controller=True):
+        refs = [client.V1OwnerReference(api_version="v1", kind=kind, name=name, uid="u", controller=controller)] if kind else []
+        labels = {"pod-template-hash": pod_hash} if pod_hash else None
+        return client.V1Pod(metadata=client.V1ObjectMeta(name="p", owner_references=refs, labels=labels))
+
+    assert _pod_owner(pod("ReplicaSet", "web-7d9f", "7d9f")) == "Deployment/web"
+    assert _pod_owner(pod("ReplicaSet", "web-7d9f")) == "ReplicaSet/web-7d9f"  # no hash label: a bare ReplicaSet
+    assert _pod_owner(pod("StatefulSet", "db")) == "StatefulSet/db"
+    assert _pod_owner(pod("Job", "backup-28839120")) == "Job/backup-28839120"
+    assert _pod_owner(pod("ReplicaSet", "web-7d9f", "7d9f", controller=False)) is None
+    assert _pod_owner(pod()) is None

@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from kube_tower import __version__
 from kube_tower.administration import unused_node_images
 from kube_tower.config import Settings
-from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status
+from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status, Usage
 from kube_tower.registry.auth import resolve_credentials
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
@@ -82,6 +82,67 @@ def dependency_tree(dependencies: list[ChartDependency], prefix: str = "") -> li
         rows.append((prefix + ("└─ " if last else "├─ "), dep))
         rows += dependency_tree(dep.dependencies, prefix + ("   " if last else "│  "))
     return rows
+
+
+@dataclasses.dataclass
+class UsageNode:
+    """A line of the "Used by" tree: a cluster, a namespace, a workload, a pod or the nodes caching the image."""
+
+    kind: str  # Cluster | Namespace | Deployment | ... | Pod | Nodes
+    name: str
+    containers: list[str] = dataclasses.field(default_factory=list)
+    node: str | None = None  # pods: where they run
+    children: list[UsageNode] = dataclasses.field(default_factory=list)
+
+    def add(self, kind: str, name: str) -> UsageNode:
+        child = next((c for c in self.children if (c.kind, c.name) == (kind, name)), None)
+        if child is None:
+            child = UsageNode(kind, name)
+            self.children.append(child)
+        return child
+
+    @property
+    def pods(self) -> int:
+        return sum(c.pods for c in self.children) + (self.kind == "Pod")
+
+
+_JOB_RE = re.compile(r"^(?P<cron>.+)-\d+$")  # Jobs of a CronJob are named <cronjob>-<scheduled time>
+
+
+def usage_tree(usages: list[Usage]) -> list[UsageNode]:
+    """Where an image is used, as a tree: cluster > namespace > workload > pods, then the nodes caching it.
+
+    Pods hang under their workload (the Deployment of their ReplicaSet, the CronJob of their Job);
+    a pod without a known workload is shown on its own. Several containers of a pod or workload using
+    the image are listed on the same line.
+    """
+    clusters: dict[str, UsageNode] = {}
+    for u in sorted(usages, key=lambda u: (u.cluster, u.namespace or "", u.kind == "Pod", u.kind, u.name)):
+        cluster = clusters.setdefault(u.cluster, UsageNode("Cluster", u.cluster))
+        if u.kind == "Node":
+            cluster.add("Nodes", "image cached on").add("Node", u.name)
+            continue
+        namespace = cluster.add("Namespace", u.namespace or "")
+        if u.kind != "Pod":
+            item = namespace.add(u.kind, u.name)
+        else:
+            parent = namespace
+            if u.owner:
+                kind, _, name = u.owner.partition("/")
+                if (
+                    kind == "Job"
+                    and (m := _JOB_RE.match(name))
+                    and any((c.kind, c.name) == ("CronJob", m["cron"]) for c in namespace.children)
+                ):
+                    kind, name = "CronJob", m["cron"]
+                parent = namespace.add(kind, name)
+            item = parent.add("Pod", u.name)
+            item.node = u.node
+        if u.container and u.container not in item.containers:
+            item.containers.append(u.container)
+    for cluster in clusters.values():  # the nodes after the namespaces
+        cluster.children.sort(key=lambda c: c.kind == "Nodes")
+    return list(clusters.values())
 
 
 def vulnerability_sort_key(report: ImageReport) -> tuple:
@@ -225,7 +286,7 @@ def vulnerability_score(report: ImageReport) -> int:
 
 templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
-templates.env.globals.update(versioning=versioning, image_versions=image_versions)
+templates.env.globals.update(versioning=versioning, image_versions=image_versions, usage_tree=usage_tree)
 templates.env.filters.update(plural=plural, duration=duration, short_digest=short_digest)
 
 
