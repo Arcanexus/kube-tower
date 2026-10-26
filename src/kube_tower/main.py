@@ -13,10 +13,13 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from kubernetes import client
 
 from kube_tower.administration import Administration
 from kube_tower.backend import LocalBackend, RemoteBackend
+from kube_tower.clusters import current_namespace
 from kube_tower.config import Settings, check_roles, internal_token, load_settings
+from kube_tower.election import LeaderElection
 from kube_tower.internal import TaskPuller, create_internal_app
 from kube_tower.logbuffer import LogBuffer
 from kube_tower.logger import get_logger
@@ -64,11 +67,19 @@ class InternalServer(uvicorn.Server):
                 os.kill(os.getpid(), signal.SIGTERM)
 
 
+def _election(settings: Settings, scanner: Scanner) -> LeaderElection:
+    local = scanner.registry.local_client()
+    if local is None:
+        raise ValueError("internal.leaderElection needs the Kubernetes API of the cluster kube-tower runs in")
+    return LeaderElection(settings.internal.lease_name, current_namespace(), client.CoordinationV1Api(local))
+
+
 def create_app(
     settings: Settings | None = None,
     scanner: Scanner | None = None,
     background: bool = True,
     administration: Administration | None = None,
+    election: LeaderElection | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     sys.setswitchinterval(SWITCH_INTERVAL)
@@ -103,6 +114,15 @@ def create_app(
             )
             internal = InternalServer(config)
             runs.append(internal.serve)
+        if settings.internal.leader_election:
+            # Standby replicas run nothing until they hold the Lease (and are not ready: no Service routes to them).
+            election = election or _election(settings, scanner)
+            controller_runs, runs = runs, []
+
+            async def lead() -> None:
+                await asyncio.gather(*(run() for run in controller_runs))
+
+            runs.append(lambda: election.run(lead))
     else:
         if pulled := [r for r in roles if r in ("worker", "trivy")]:
             runs.append(TaskPuller(settings, Worker(settings), pulled).run_forever)
@@ -128,6 +148,7 @@ def create_app(
     app.state.log_buffer = log_buffer
     # The web layer only talks to this backend (see backend.py), never to the scanner directly.
     app.state.backend = backend
+    app.state.election = election if "controller" in roles and settings.internal.leader_election else None
     if "controller" in roles:
         app.state.scanner, app.state.administration = scanner, administration
         app.include_router(metrics.router)  # the metrics of the snapshot: once, from the controller

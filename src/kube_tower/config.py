@@ -189,6 +189,10 @@ class InternalSettings:
     task_timeout: int = 30 * 60
     # Images (or charts) per version check or Trivy task: a scan is shared by the worker and trivy processes.
     batch_size: int = 50
+    # Several controller replicas: one active, the others standbys, elected through a Kubernetes Lease.
+    leader_election: bool = False
+    # The Lease, in the namespace of the pod.
+    lease_name: str = "kube-tower-controller"
 
 
 @dataclass
