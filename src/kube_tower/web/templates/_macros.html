@@ -76,8 +76,9 @@
 {% if items %}<p class="links">{% for label, url in items %}<a href="{{ url }}" target="_blank" rel="noopener">{{ icon("external-link") }}{{ label }}</a>{% endfor %}</p>{% endif %}
 {%- endmacro %}
 
-{% macro filters(path, q, status, cluster, snapshot) -%}
-<form class="filters" hx-get="{{ path }}" hx-target="#results" hx-push-url="true"
+{% macro filters(path, q, status, cluster, snapshot, running=none) -%}
+{# `running`: a "Running only" switch (images), checked when true; none: no switch. #}
+<form class="filters{% if running is not none %} filters-4{% endif %}" hx-get="{{ path }}" hx-target="#results" hx-push-url="true"
       hx-trigger="input changed delay:300ms from:input[name=q], change">
   <input type="search" name="q" value="{{ q }}" placeholder="Filter…" aria-label="Filter">
   <select name="status" aria-label="Status">
@@ -88,6 +89,11 @@
     <option value="">All clusters</option>
     {% for c in snapshot.clusters %}<option {% if c.name == cluster %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
   </select>
+  {% if running is not none %}
+  <label class="filter-switch" title="Only the images that a pod runs (not the ones only declared by workloads without pods or cached on nodes)">
+    <input type="checkbox" role="switch" name="running" value="1" {% if running %}checked{% endif %}>Running only
+  </label>
+  {% endif %}
 </form>
 {%- endmacro %}
 

@@ -174,6 +174,18 @@ def test_images_running_icons():
     assert "#i-running" in page and "#i-not-running" in page
 
 
+def test_images_running_only_switch():
+    client, _ = _client()
+    page = client.get("/images").text
+    assert 'role="switch" name="running"' in page and "checked" not in page
+    page = client.get("/images?running=1").text
+    assert 'name="running" value="1" checked' in page
+    assert "library/nginx" in page and "org/app" not in page and "library/redis" not in page
+    assert "<p><small>1 image</small></p>" in page  # counters and count follow the switch
+    assert "library/nginx" not in client.get("/images?running=1&cluster=c2").text
+    assert 'name="running"' not in client.get("/charts").text
+
+
 def test_maintenance_redirects_to_administration():
     client, _ = _client()
     resp = client.get("/maintenance", follow_redirects=False)
