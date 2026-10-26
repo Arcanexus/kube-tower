@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+import json
 import types
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from datetime import datetime
@@ -262,6 +264,18 @@ def encode(obj: Any) -> Any:
     return obj
 
 
+@functools.cache
+def _fields(cls: type) -> tuple[tuple[str, Any], ...]:
+    """The fields of a dataclass and their types, resolved once (get_type_hints is slow, decode is called a lot)."""
+    hints = get_type_hints(cls)
+    return tuple((f.name, hints[f.name]) for f in fields(cls))
+
+
+def to_json(obj: Any) -> bytes:
+    """encode() as JSON bytes. CPU bound for a large snapshot: call it in a thread from an event loop."""
+    return json.dumps(encode(obj), separators=(",", ":")).encode()
+
+
 def decode(hint: Any, value: Any) -> Any:
     """Rebuild a value of type `hint` from its encode() form (keys unknown to a dataclass are ignored)."""
     if value is None:
@@ -279,8 +293,7 @@ def decode(hint: Any, value: Any) -> Any:
         key, item = get_args(hint)
         return {decode(key, k): decode(item, v) for k, v in value.items()}
     if is_dataclass(hint):
-        hints = get_type_hints(hint)
-        return hint(**{f.name: decode(hints[f.name], value[f.name]) for f in fields(hint) if f.name in value})
+        return hint(**{name: decode(field_hint, value[name]) for name, field_hint in _fields(hint) if name in value})
     if isinstance(hint, type) and issubclass(hint, Enum):
         return hint(value)
     if hint is datetime:

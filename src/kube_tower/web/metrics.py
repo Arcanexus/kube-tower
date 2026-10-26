@@ -10,6 +10,7 @@ as soon as the image, chart or cluster is no longer found. To keep cardinality b
 
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 
 from fastapi import APIRouter, Request, Response
@@ -214,4 +215,5 @@ class SnapshotCollector(Collector):
 async def metrics(request: Request) -> Response:
     registry = CollectorRegistry(auto_describe=False)
     registry.register(SnapshotCollector(request.app.state.backend))
-    return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
+    # In a thread: one series per image, chart and vulnerability count, the pages wait for nothing.
+    return Response(await asyncio.to_thread(generate_latest, registry), media_type=CONTENT_TYPE_LATEST)

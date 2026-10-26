@@ -499,3 +499,35 @@ async def test_logs_and_state_of_the_remote_processes(monkeypatch, fakes):  # no
     with pytest.raises(asyncio.CancelledError):
         await running
     assert [p.name for p in backend.processes()] == ["kube-tower-controller-0"]
+
+
+async def test_large_results_and_states_stay_off_the_event_loop(fakes, monkeypatch):  # noqa: F811 - fixture
+    import threading
+
+    from kube_tower import tasks as tasks_module
+
+    on_loop = []
+    decode_result = tasks_module.decode_result
+
+    def spy(kind, data):
+        on_loop.append(threading.current_thread() is threading.main_thread())
+        return decode_result(kind, data)
+
+    monkeypatch.setattr(tasks_module, "decode_result", spy)
+    settings = _settings(["ui", "controller"])
+    scanner = Scanner(settings, TwoClusters())
+    scanner.runner = runner = QueueRunner(scanner.worker, set())
+    runner.loop = asyncio.get_running_loop()
+    backend = LocalBackend(scanner, Administration(scanner))
+    puller = _puller(monkeypatch)
+    transport = httpx.ASGITransport(create_internal_app(runner, TOKEN, backend))
+    async with httpx.AsyncClient(transport=transport, base_url=puller.url, headers={"Authorization": f"Bearer {TOKEN}"}) as http:
+        await _until_done(asyncio.create_task(scanner.scan()), puller, http)
+        # the results of the worker were decoded in threads, never on the event loop of the internal API
+        assert on_loop and not any(on_loop)
+        # the snapshot is sent only to the UIs that do not have its revision, even while something runs
+        monkeypatch.setattr(LocalBackend, "activities", lambda self: ["a rescan"])
+        fresh = await http.post("/internal/v1/state", json={"revision": -1})
+        assert fresh.headers["content-type"] == "application/json" and fresh.json()["snapshot"]["images"]
+        same = await http.post("/internal/v1/state", json={"revision": scanner.revision})
+        assert same.json()["snapshot"] is None

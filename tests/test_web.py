@@ -956,6 +956,7 @@ async def test_watch_event_loop_warns_when_blocked(monkeypatch, caplog):
 
     from kube_tower import main
 
+    caplog.set_level("INFO", logger="kube_tower.main")
     monkeypatch.setattr(main, "LAG_CHECK", 0.01)
     monkeypatch.setattr(main, "LAG_WARNING", 0.05)
     task = asyncio.create_task(main.watch_event_loop())
@@ -964,6 +965,12 @@ async def test_watch_event_loop_warns_when_blocked(monkeypatch, caplog):
     await asyncio.sleep(0.05)
     task.cancel()
     assert "the web server was blocked for 0.1s" in caplog.text
+    task = asyncio.create_task(main.watch_event_loop(ui=False))  # a worker: no page waited
+    await asyncio.sleep(0)
+    time.sleep(0.1)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    assert "the event loop was busy for 0.1s" in caplog.text
 
 
 def test_web_layer_only_talks_to_the_backend():

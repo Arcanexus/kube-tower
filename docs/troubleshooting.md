@@ -36,4 +36,4 @@ every request).
 | No Helm charts at all | ArgoCD Applications live in another namespace, or ArgoCD is not installed | Set `config.helm.applicationNamespaces` (`[]` = all namespaces) |
 | `unknown setting 'xxx'` at startup | Typo in `config` | Keys are camelCase, see [configuration](configuration.md) |
 | Scan takes long | Many images or slow registries | Increase `registries.concurrency`, ignore irrelevant images with `images.ignore` |
-| Log `the web server was blocked for …s` and pages slow during scans | The scan threads share the CPU (the Python GIL) with the web server | Give the pod more CPU (`resources`); if it persists, open an issue with the logs around the warning |
+| Log `the web server was blocked for …s` and pages slow during scans | The scan threads share the CPU (the Python GIL) with the web server | Give the pod more CPU (`resources`), or use the [distributed mode](scaling.md) so the scans run in other pods; if it persists, open an issue with the logs around the warning |

@@ -140,6 +140,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Distributed mode: the controller (and the pages of a controller with the ui role) blocked for several
+  seconds at each batch of Trivy results (`the web server was blocked for 3.1s`). The results of the
+  worker and trivy pods are now parsed and decoded in a thread, about 10 times faster; the ui pods get
+  the snapshot only when it changed (it was sent to each ui pod every 2 seconds while a scan ran) and
+  decode it in a thread; `/api/snapshot` and `/metrics` are serialized in a thread. Worker and trivy pods
+  no longer warn that "the web server was blocked": they serve no page (logged at INFO).
+
 - Pages and detail panels slow (several seconds) while a scan runs: the clusters' pods, workloads and nodes
   are read as plain JSON instead of Kubernetes client objects (about 40 times less CPU, which the scan
   threads share with the web server), Trivy Operator reports are read in smaller pages, and the web server
