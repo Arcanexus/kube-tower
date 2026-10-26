@@ -1,7 +1,7 @@
 # ADR 0002: horizontal scaling with roles
 
 - Status: accepted (design), implementation planned for the next major release
-- Date: 2026-10-24
+- Date: 2026-10-24 (updated 2026-10-26: separate `trivy` role, roles combined per pod)
 
 ## Context
 
@@ -12,11 +12,13 @@ that work together, so each part scales on its own.
 
 ## Decision
 
-One image, one role per process, chosen with `KUBE_TOWER_ROLE` or `role:` in the configuration:
+One image. Each process runs a set of roles, chosen with `roles:` in the configuration or
+`KUBE_TOWER_ROLES` (comma-separated). The roles combine freely: `all` (the default) runs every role in
+one pod, as today; a deployment can also put each role in its own pods and scale them independently,
+or group some of them (e.g. `ui,controller` in one pod, `worker,trivy` in another).
 
-| Role | Replicas | Does | Kubernetes rights | Registry credentials |
+| Role | Replicas when apart | Does | Kubernetes rights | Registry credentials |
 | --- | --- | --- | --- | --- |
-| `all` (default) | 1 | everything, as today | yes | yes |
 | `ui` | 1..N | pages, JSON API, `/metrics`; reads the snapshot from the controller, forwards actions | none | no |
 | `controller` | 1 active + standby (`Lease`) | schedules scans and rescans, holds the snapshot and the task queue, merges results | cluster Secrets, `Lease` | no |
 | `worker` | 1..N (HPA) | pulls tasks: collect one cluster, check a batch of images / charts | read the clusters | yes |
@@ -39,11 +41,17 @@ Shared state, chosen by the maintainer:
   a snapshot with vulnerabilities outgrows it; frequent writes load the API server.
 
 The snapshot store and the task queue are therefore an interface with two implementations (memory,
-Redis). The chart gets `mode: single | distributed`; `single` renders today's Deployment unchanged.
+Redis). Roles in the same process talk in memory, without the internal API; roles in other pods go
+through it. A pod running the controller role with several replicas has one active controller (the
+`Lease` holder); the others stand by, while their other roles (e.g. `ui`) keep serving.
+
+The chart gets `mode: single | distributed`: `single` renders today's Deployment (every role)
+unchanged; `distributed` renders one Deployment per group of roles listed in the values, each with
+its replicas, resources and HPA.
 
 ## Consequences
 
-- `role: all` stays the default: small installs see no change.
+- `roles: [all]` stays the default: small installs see no change.
 - The UI pods, the ones exposed to users, lose every Kubernetes right and registry credential.
 - Snapshot metrics are exported by the controller only (no duplicated series).
 - The Logs page shows the controller's lines; workers send the warnings and errors of each task back
@@ -51,9 +59,9 @@ Redis). The chart gets `mode: single | distributed`; `single` renders today's De
 
 ## Steps
 
-1. `role` setting (only `all` accepted until the other roles exist) and `Snapshot.from_dict`
+1. `roles` setting (only every role together accepted until the roles can run apart) and `Snapshot.from_dict`
    (JSON round trip of the snapshot, needed to send it between processes).
 2. The web layer talks to a backend interface instead of the `Scanner` internals.
 3. The scan split in serializable tasks, run locally by `all`.
-4. Internal API, `ui` / `controller` / `worker` / `trivy` roles, `Lease` election, Redis option.
+4. Internal API, `ui` / `controller` / `worker` / `trivy` roles in any combination, `Lease` election, Redis option.
 5. Chart `mode: distributed`, documentation, release candidate.

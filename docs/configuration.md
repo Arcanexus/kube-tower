@@ -5,7 +5,7 @@ chart, this file is rendered from `.Values.config`. Keys are camelCase; unknown 
 at startup so typos are caught early.
 
 ```yaml
-role: all                      # what this process runs (only `all` for now)
+roles: [all]                   # what this process runs (only every role together for now)
 refreshInterval: 6h            # 30s, 15m, 6h, 1d or seconds
 logs:
   level: INFO                  # DEBUG, INFO, WARNING, ERROR
@@ -75,11 +75,13 @@ git:
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
 
-Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLE`.
+Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLES`
+(comma-separated).
 
-`role` prepares the horizontal scaling of the next major release (separate `ui`, `controller`,
-`worker` and `trivy` processes, see [ADR 0002](adr/0002-horizontal-scaling.md)). Only `all`, everything in one
-process, is available today; other values are refused at startup.
+`roles` prepares the horizontal scaling of the next major release (see
+[ADR 0002](adr/0002-horizontal-scaling.md)): one image whose pods run any combination of the `ui`,
+`controller`, `worker` and `trivy` roles, all in one pod or apart and scaled independently. Today a
+process runs every role (`all`, or the four listed); other combinations are refused at startup.
 
 ## Vulnerabilities (Trivy)
 

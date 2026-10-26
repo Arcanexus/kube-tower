@@ -169,15 +169,15 @@ class GitSettings:
     token_env: str = "GIT_TOKEN"
 
 
-# What one kube-tower process runs. `all`: everything in one process (UI, API, scans). The other roles
-# split it for horizontal scaling (see docs/adr/0002-horizontal-scaling.md); they are not available yet.
-ROLES = ("all",)
-PLANNED_ROLES = ("ui", "controller", "worker", "trivy")
+# What one kube-tower process runs: any combination of the roles, `all` meaning every role (UI, API,
+# scans, as before). Pods with different roles split the work for horizontal scaling, see
+# docs/adr/0002-horizontal-scaling.md. Until the roles can run apart, only every role together is accepted.
+ROLES = ("ui", "controller", "worker", "trivy")
 
 
 @dataclass
 class Settings:
-    role: str = "all"
+    roles: list[str] = field(default_factory=lambda: ["all"])
     refresh_interval: int = 6 * 3600
     logs: LogsSettings = field(default_factory=LogsSettings)
     clusters: ClustersSettings = field(default_factory=ClustersSettings)
@@ -222,15 +222,22 @@ def load_settings(path: str | None = None) -> Settings:
         settings.logs.level = level
     if interval := os.environ.get("KUBE_TOWER_REFRESH_INTERVAL"):
         settings.refresh_interval = parse_duration(interval)
-    if role := os.environ.get("KUBE_TOWER_ROLE"):
-        settings.role = role
-    check_role(settings.role)
+    if roles := os.environ.get("KUBE_TOWER_ROLES"):
+        settings.roles = [r.strip() for r in roles.split(",") if r.strip()]
+    settings.roles = check_roles(settings.roles)
     return settings
 
 
-def check_role(role: str) -> None:
-    if role in ROLES:
-        return
-    if role in PLANNED_ROLES:
-        raise ValueError(f"role {role!r} is planned for the distributed mode but not available yet: use role 'all'")
-    raise ValueError(f"unknown role {role!r}: expected one of {', '.join(ROLES)}")
+def check_roles(roles: list[str]) -> list[str]:
+    """The roles of this process, `all` expanded, in a fixed order."""
+    if unknown := [r for r in roles if r != "all" and r not in ROLES]:
+        raise ValueError(f"unknown role(s) {', '.join(map(repr, unknown))}: expected all or a list of {', '.join(ROLES)}")
+    chosen = set(ROLES) if "all" in roles else set(roles)
+    if not chosen:
+        raise ValueError(f"no role: expected all or a list of {', '.join(ROLES)}")
+    if chosen != set(ROLES):
+        raise ValueError(
+            f"roles {', '.join(sorted(chosen))}: running only some roles in a process is planned for the distributed mode"
+            " but not available yet, use roles: [all]"
+        )
+    return [r for r in ROLES if r in chosen]
