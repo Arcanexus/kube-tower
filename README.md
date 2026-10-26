@@ -38,7 +38,7 @@ never updates anything, you stay in control of your GitOps workflow.
 | ⎈ **Helm charts and subcharts** | Charts deployed by ArgoCD Applications, from Helm repositories, OCI registries or git paths, with every dependency checked. |
 | 🌐 **Multi-cluster** | Register clusters ArgoCD-style with a Secret, or reuse the cluster Secrets ArgoCD already has. |
 | 🛡️ **Vulnerabilities (CVE)** | Read from Trivy Operator reports when the cluster has them, else scanned with Trivy (copied into the pod by the chart, standalone or client/server). Find the images affected by a CVE in one search. |
-| 🖥️ **A UI made for triage** | Synthesis home page, filters kept in the URL (including a *Running only* switch for images), sortable columns with fixed headers, detail panels (digests, registry links, subchart tree, CVE list), per item rescan, live logs, light and dark themes. |
+| 🖥️ **A UI made for triage** | Synthesis home page, filters kept in the URL (including a *Running only* switch for images), sortable columns with fixed headers, detail panels (digests, registry links, a cluster › namespace › workload › pod tree of where each image is used, subchart tree, CVE list), per item rescan, live logs, light and dark themes. |
 | 🔐 **Registry authentication** | Per registry credentials, cloud identities (IRSA / EKS Pod Identity, GKE and AKS Workload Identity), reuse of the clusters' image pull secrets, private CAs. |
 | 🧰 **Administration** | Rescan one item or what failed, update the Trivy database, test the connectivity to clusters and registries, list unused node images. Read-only: nothing is ever changed in the clusters. |
 | 🪶 **Stateless** | No database. One small pod, rebuilt inventory every few hours or on demand. |
