@@ -9,9 +9,41 @@ function ktFilterStatus(status) {
 }
 
 // Detail panel (images, charts): loaded by htmx into #detail, closed by emptying it.
+// Each panel opens at the default size: closing it forgets its width and full screen mode.
 function ktCloseDetail() {
-  document.getElementById("detail").innerHTML = "";
+  const detail = document.getElementById("detail");
+  detail.innerHTML = "";
+  detail.classList.remove("drawer-full", "drawer-resizing");
+  detail.style.removeProperty("--kt-drawer-width");
 }
+// Open the panel at once, empty and busy, while its content loads: rendering a large panel (thousands of
+// CVEs or pods) can take a moment. A panel closed before its content arrives stays closed.
+document.addEventListener("htmx:beforeRequest", (e) => {
+  const detail = document.getElementById("detail");
+  if (!detail || e.detail.target !== detail || e.detail.pathInfo.requestPath.includes("polling=1")) return;
+  const panel = detail.querySelector(".drawer-panel");
+  if (panel) {
+    panel.setAttribute("aria-busy", "true");
+  } else {
+    detail.innerHTML = '<div class="drawer-backdrop" onclick="ktCloseDetail()"></div>'
+      + '<article class="drawer-panel drawer-loading" aria-busy="true">Loading…</article>';
+  }
+});
+document.addEventListener("htmx:beforeSwap", (e) => {
+  const detail = document.getElementById("detail");
+  if (detail && e.detail.target === detail && !detail.firstElementChild) e.detail.shouldSwap = false;
+});
+document.addEventListener("htmx:afterRequest", (e) => {
+  const detail = document.getElementById("detail");
+  if (!detail || e.detail.target !== detail || e.detail.successful) return;
+  const panel = detail.querySelector(".drawer-panel");
+  if (panel && panel.classList.contains("drawer-loading")) {
+    panel.removeAttribute("aria-busy");
+    panel.textContent = "The details could not be loaded. Close this panel and try again.";
+  } else if (panel) {
+    panel.removeAttribute("aria-busy");
+  }
+});
 // A click beside the panel lands on its backdrop, which closes the panel: pass the click on to what is
 // below, so another row opens its details at once instead of needing a second click.
 document.addEventListener("click", (e) => {
@@ -25,14 +57,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 // Detail panel size: dragged from its left edge, or full screen. Kept on #detail (it outlives the panels
-// htmx loads into it) and in this browser's storage, for the next panels and pages.
+// htmx loads into it, e.g. the refreshes during a rescan) until the panel is closed.
 const KT_DRAWER_MIN = 320;
-function ktStore(key, value) {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch (e) { /* storage unavailable: the size only lasts for this page */ }
-}
 function ktSetDrawerWidth(px) {
   const detail = document.getElementById("detail");
   if (!detail) return;
@@ -56,7 +82,6 @@ function ktResizeStart(e) {
     detail.classList.remove("drawer-resizing");
     document.removeEventListener("pointermove", move);
     document.removeEventListener("pointerup", stop);
-    ktStore("kt-drawer-width", String(Math.round(ktDrawerWidth())));
   };
   document.addEventListener("pointermove", move);
   document.addEventListener("pointerup", stop);
@@ -66,15 +91,12 @@ function ktResizeKey(e) {
   if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
   e.preventDefault();
   ktSetDrawerWidth(ktDrawerWidth() + (e.key === "ArrowLeft" ? step : -step));
-  ktStore("kt-drawer-width", String(Math.round(ktDrawerWidth())));
 }
 function ktResizeReset() {
   ktSetDrawerWidth(null);
-  ktStore("kt-drawer-width", null);
 }
 function ktToggleFull() {
-  const full = document.getElementById("detail").classList.toggle("drawer-full");
-  ktStore("kt-drawer-full", full ? "1" : null);
+  document.getElementById("detail").classList.toggle("drawer-full");
   ktSyncFullButton();
 }
 function ktSyncFullButton() {
@@ -85,15 +107,6 @@ function ktSyncFullButton() {
     b.title = full ? "Exit full screen" : "Full screen";
   });
 }
-document.addEventListener("DOMContentLoaded", () => {
-  let width = null, full = false;
-  try {
-    width = localStorage.getItem("kt-drawer-width");
-    full = localStorage.getItem("kt-drawer-full") === "1";
-  } catch (e) { /* no storage: default size */ }
-  if (width) ktSetDrawerWidth(Number(width));
-  if (full) document.getElementById("detail").classList.add("drawer-full");
-});
 document.addEventListener("htmx:afterSettle", (e) => {
   if (e.target.id === "detail") ktSyncFullButton();
 });

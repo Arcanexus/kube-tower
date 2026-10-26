@@ -213,7 +213,17 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--pico-table
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 11; margin: 0; border-radius: 0;
   width: min(var(--kt-drawer-width, 44rem), 100vw); overflow-y: auto; padding: 1.25rem 1.5rem;
 }
-.drawer-full .drawer-panel { width: 100vw; }
+/* Full screen: a large window centred over the page, like a modal dialog */
+.drawer-full .drawer-backdrop { background: rgba(0, 0, 0, .55); }
+.drawer-full .drawer-panel {
+  top: 2rem; bottom: 2rem; left: 0; right: 0; margin: 0 auto; width: min(80rem, calc(100vw - 4rem));
+  border-radius: 1rem; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .35);
+}
+.drawer-full .drawer-panel > header { border-radius: 1rem 1rem 0 0; }
+@media (max-width: 700px) { .drawer-full .drawer-panel { inset: 0; width: 100vw; border-radius: 0; } }
+/* Shown at once while the content of a panel loads (kube-tower.js) */
+.drawer-loading { display: flex; align-items: center; justify-content: center; gap: .75rem; color: var(--pico-muted-color); }
+.drawer-loading[aria-busy="true"]::before { width: 1.5rem; height: 1.5rem; margin: 0; }
 /* The left edge of the panel resizes it (not on phones, where it takes the whole width) */
 .drawer-resize { position: fixed; top: 0; bottom: 0; width: .9rem; margin-left: -1.95rem; cursor: ew-resize; z-index: 12; touch-action: none; outline: none; }
 /* Visible cues: a line along the edge and a grip in its middle, both highlighted on hover, focus and drag */

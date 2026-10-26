@@ -16,7 +16,8 @@ All notable changes to this project are documented here. The format follows
 - Helm charts: the subchart trees (charts list and chart details) are drawn with the same lines as the
   image **Used by** tree; the chart details show each subchart's version, latest version and status in the tree.
 - Detail panels can be resized by dragging their left edge, shown by a grip (or with the arrow keys), and opened full
-  screen with a button; both are remembered by the browser.
+  screen, as a large window centred over the page, with a button; each panel opens at the default size. A panel
+  opens at once with a loading indicator while its content arrives.
 - UI/UX review: the Images page always shows the current and the latest version with the start of
   their digests below (a different latest digest is highlighted), also in the image panel and the
   Synthesis; the Clusters page gets the figures of each cluster (images, charts, outdated, critical
@@ -95,6 +96,11 @@ All notable changes to this project are documented here. The format follows
   per cluster figures); the version shown by the UI and `kube_tower_build_info` comes from the image tag.
 
 ### Fixed
+
+- Pages and detail panels slow (several seconds) while a scan runs: the clusters' pods, workloads and nodes
+  are read as plain JSON instead of Kubernetes client objects (about 40 times less CPU, which the scan
+  threads share with the web server), Trivy Operator reports are read in smaller pages, and the web server
+  gets the CPU back more often. A warning is logged when it could not answer for more than a second.
 
 - A click on another row while a detail panel was open only closed the panel: the click is now passed
   on to the row, which opens its details at once.
