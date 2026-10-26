@@ -78,12 +78,12 @@ async def test_rate_limited_requests_wait_and_retry(caplog, monkeypatch):
         assert (await http.get("https://ghcr.io/v2/")).status_code == 200
     assert inner.calls == 2 and waits == [3]  # the next request waited as asked
     assert limits.limited == {"ghcr.io": 1}
-    assert "ghcr.io rate limited kube-tower, requests to it wait 3s (retry 1/2)" in caplog.text
+    assert "ghcr.io rate limited kube-tower, requests to it wait 3s (retry 1/4)" in caplog.text
     # Without Retry-After: the growing rate limit backoff; the last answer is returned
-    inner = Limited((429, {}), (429, {}), (429, {}))
+    inner = Limited(*[(429, {})] * 5)
     async with _client(inner) as http:
         assert (await http.get("https://ghcr.io/v2/")).status_code == 429
-    assert inner.calls == 3
+    assert inner.calls == 5  # 4 retries, apart from registries.retries
 
 
 async def test_long_rate_limit_fails_at_once():

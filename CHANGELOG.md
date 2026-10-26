@@ -182,6 +182,11 @@ All notable changes to this project are documented here. The format follows
   limit again. A longer limit makes the requests to that registry fail at once until then (instead of
   stalling the scan), with the time left in the error (`HTTP 429 Too Many Requests (retry in 90 min)`).
   A warning is logged when Docker Hub reports no pulls left in the current window.
+- Without `Retry-After` (ghcr.io), a rate limited request waits 15 s, 30 s, then 60 s (4 times, apart
+  from `registries.retries`): ghcr.io limits the tags listed per minute (44000), which repositories with
+  tens of thousands of tags (CI builds, e.g. immich) use up.
+- `images.maxTagPages` defaults to 50 pages of 1000 tags (was 10): ghcr.io lists the tags oldest first, so
+  the recent releases of such repositories were missed. A warning is logged when a list is cut.
 
 - Clusters page: the API server and the source under the cluster name, outdated images and charts
   under their totals, so the table fits without scrolling sideways.

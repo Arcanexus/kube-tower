@@ -16,6 +16,9 @@ RETRIABLE = (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolErr
 RETRIABLE_STATUS = {502, 503, 504}
 # Rate limited (429): wait as long as the registry asks (Retry-After), up to this; beyond, give up at once.
 MAX_RATE_LIMIT_WAIT = 60.0
+# Without Retry-After, wait 15 s, 30 s, 60 s, 60 s: limits are often per minute (ghcr.io: tags listed per
+# minute, which a repository with tens of thousands of tags uses up).
+RATE_LIMIT_RETRIES = 4
 
 
 def retry_after(response: httpx.Response) -> float | None:
@@ -92,7 +95,7 @@ class RetryingClient(httpx.AsyncClient):
         *args,
         retries: int = 2,
         backoff: float = 1.0,
-        rate_limit_backoff: float = 5.0,
+        rate_limit_backoff: float = 15.0,
         rate_limits: RateLimits | None = None,
         **kwargs,
     ):
@@ -104,49 +107,50 @@ class RetryingClient(httpx.AsyncClient):
 
     async def send(self, request: httpx.Request, **kwargs) -> httpx.Response:
         host = request.url.host
-        for attempt in range(self.retries + 1):
-            last = attempt == self.retries
+        attempt = limited = 0  # retries after a transient failure, after a rate limit
+        while True:
             await self.rate_limits.wait(host)
             if blocked := self.rate_limits.blocked_for(host):
                 # Answered without asking the host: it said not to come back before then.
                 return httpx.Response(429, request=request, headers={"retry-after": str(round(blocked))})
-            delay = self.backoff * 2**attempt
             try:
                 response = await super().send(request, **kwargs)
             except RETRIABLE as exc:
-                if last:
+                if attempt == self.retries:
                     raise
                 reason = f"{exc.__class__.__name__}: {exc}".rstrip(": ")
             else:
                 self.rate_limits.note_quota(response)
                 if response.status_code == 429:
                     asked = retry_after(response)
-                    delay = asked if asked is not None else self.rate_limit_backoff * 2**attempt
+                    delay = asked if asked is not None else min(self.rate_limit_backoff * 2**limited, MAX_RATE_LIMIT_WAIT)
                     # Every request to this host waits, not only this one.
                     self.rate_limits.pause(host, delay)
-                    if last or delay > MAX_RATE_LIMIT_WAIT:
+                    if limited == RATE_LIMIT_RETRIES or delay > MAX_RATE_LIMIT_WAIT:
                         return response
+                    limited += 1
                     await response.aclose()
                     log.info(
                         "%s rate limited kube-tower, requests to it wait %.0fs (retry %d/%d)",
                         host,
                         delay,
-                        attempt + 1,
-                        self.retries,
+                        limited,
+                        RATE_LIMIT_RETRIES,
                     )
                     continue
-                if response.status_code not in RETRIABLE_STATUS or last:
+                if response.status_code not in RETRIABLE_STATUS or attempt == self.retries:
                     return response
                 await response.aclose()
                 reason = f"HTTP {response.status_code}"
+            delay = self.backoff * 2**attempt
+            attempt += 1
             log.debug(
                 "%s %s failed (%s), retry %d/%d in %.0fs",
                 request.method,
                 request.url.copy_with(query=None),
                 reason,
-                attempt + 1,
+                attempt,
                 self.retries,
                 delay,
             )
             await asyncio.sleep(delay)
-        raise AssertionError("unreachable")  # pragma: no cover

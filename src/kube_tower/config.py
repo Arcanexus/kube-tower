@@ -70,7 +70,9 @@ class ImagesSettings:
     fetch_tag_digests: bool = True
     # fnmatch patterns on the image name (registry/repository), e.g. "registry.k8s.io/pause*".
     ignore: list[str] = field(default_factory=list)
-    max_tag_pages: int = 10
+    # Pages of 1000 tags read per repository: some have tens of thousands (CI builds), with the releases
+    # anywhere in the list (ghcr.io lists them oldest first).
+    max_tag_pages: int = 50
 
 
 @dataclass

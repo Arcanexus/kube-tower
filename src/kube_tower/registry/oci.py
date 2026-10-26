@@ -122,7 +122,7 @@ class OCIClient:
         http: httpx.AsyncClient,
         credentials: Credentials | dict[str, tuple[str, str]] | None = None,
         mirrors: dict[str, str] | None = None,
-        max_tag_pages: int = 10,
+        max_tag_pages: int = 50,
         insecure: list[str] | None = None,
         insecure_http: httpx.AsyncClient | None = None,
         auth_results: AuthResults | None = None,
@@ -325,6 +325,15 @@ class OCIClient:
             log.debug("%s/%s: %d tag(s) so far", registry, repository, len(tags))
             match = _LINK_RE.search(resp.headers.get("link", ""))
             url = str(resp.url.join(match[1])) if match else None
+        if url is not None:
+            log.warning(
+                "%s/%s has more than %d tags: only the first %d pages were read, the latest version can be missed "
+                "(raise images.maxTagPages)",
+                registry,
+                repository,
+                len(tags),
+                self.max_tag_pages,
+            )
         return tags
 
     async def get_digest(self, registry: str, repository: str, reference: str) -> str | None:
