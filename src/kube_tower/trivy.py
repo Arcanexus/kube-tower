@@ -13,8 +13,10 @@ import fnmatch
 import json
 import logging
 import os
+import re
 import shutil
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -25,6 +27,21 @@ from kube_tower.registry.auth import Credentials
 from kube_tower.registry.oci import RegistryError
 
 log = logging.getLogger(__name__)
+
+# The databases downloaded for a batch of scans serve the next batches for this long (seconds).
+PREPARED_FOR = 600
+SCANS_FAILED = re.compile(r"trivy: (\d+) image scan\(s\) failed")
+
+
+def scans_failed(count: int) -> str:
+    return f"trivy: {count} image scan(s) failed, see the Vulnerabilities page"
+
+
+def merge_scan_errors(errors: list[str]) -> list[str]:
+    """The errors of several batches of scans: each error once, the failed scans counted together."""
+    failed = sum(int(m.group(1)) for e in errors if (m := SCANS_FAILED.match(e)))
+    return [e for e in dict.fromkeys(errors) if not SCANS_FAILED.match(e)] + ([scans_failed(failed)] if failed else [])
+
 
 MESSAGE_LIMIT = 300
 # No progress bars, no usage data sent to Aqua, no update notices in the logs
@@ -146,6 +163,7 @@ class TrivyScanner:
         self.insecure: list[str] = []
         self.ca_bundle = ""
         self.cache: dict[str, VulnerabilityReport] = {}  # by scan target, kept between scans
+        self._prepared_at: float | None = None  # last database download (time.monotonic())
         # The Trivy phase of a scan and the rescans run at the same time, in different threads:
         # one database download at a time.
         self._prepare_lock = threading.Lock()
@@ -189,14 +207,19 @@ class TrivyScanner:
             return -1, b"", b"ERROR timeout"
         return proc.returncode or 0, stdout, stderr
 
-    async def prepare(self) -> str | None:
-        """Download (or refresh) the databases once before the scans. Returns an error message."""
+    async def prepare(self, max_age: float = 0) -> str | None:
+        """Download (or refresh) the databases once before the scans, unless done less than `max_age`
+        seconds ago (the batches of one scan). Returns an error message."""
         if self.settings.server_url:
             return None
         while not self._prepare_lock.acquire(blocking=False):  # polled: cancelling the wait leaves the lock free
             await asyncio.sleep(0.5)
         try:
-            return await self._download_db()
+            if self._prepared_at is not None and time.monotonic() - self._prepared_at < max_age:
+                return None
+            error = await self._download_db()
+            self._prepared_at = None if error else time.monotonic()
+            return error
         finally:
             self._prepare_lock.release()
 
@@ -263,10 +286,13 @@ class TrivyScanner:
         """Scan the images of a full scan: the cache forgets the images gone. Returns error messages."""
         targets = {scan_target(r)[0] for r in reports}
         self.cache = {t: v for t, v in self.cache.items() if t in targets}  # forget images gone
-        return await self.scan_many(reports)
+        return await self.scan_many(reports, prepared_for=0)
 
-    async def scan_many(self, reports: list[ImageReport]) -> list[str]:
-        """Scan the images not cached (setting report.vulnerabilities as each scan ends). Returns error messages."""
+    async def scan_many(self, reports: list[ImageReport], prepared_for: float = PREPARED_FOR) -> list[str]:
+        """Scan the images not cached (setting report.vulnerabilities as each scan ends). Returns error messages.
+        The databases are refreshed first, unless they were less than `prepared_for` seconds ago."""
+        # Results too old to be used are forgotten (the batches of the distributed mode never forget the others).
+        self.cache = {t: v for t, v in self.cache.items() if self._cached(t)}
         todo = []
         for r in reports:
             if cached := self._cached(scan_target(r)[0]):
@@ -275,7 +301,7 @@ class TrivyScanner:
                 todo.append(r)
         if not todo:
             return []
-        if error := await self.prepare():
+        if error := await self.prepare(prepared_for):
             log.error(error)
             for r in todo:
                 r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC), message=error)
@@ -291,4 +317,4 @@ class TrivyScanner:
 
         await asyncio.gather(*(one(r) for r in todo))
         failed = sum(1 for r in todo if r.vulnerabilities and r.vulnerabilities.message)
-        return [f"trivy: {failed} image scan(s) failed, see the Vulnerabilities page"] if failed else []
+        return [scans_failed(failed)] if failed else []

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -7,12 +8,14 @@ import uvicorn
 from fastapi.testclient import TestClient
 
 from kube_tower import internal
+from kube_tower import worker as worker_module
 from kube_tower.config import Settings
 from kube_tower.internal import TaskPuller, create_internal_app
 from kube_tower.main import create_app
-from kube_tower.models import ImageRef, ImageReport, Status, encode
+from kube_tower.models import ImageRef, ImageReport, Status, Usage, VulnerabilityReport, encode
 from kube_tower.scanner import Scanner
 from kube_tower.tasks import CheckImagesTask, CollectTask, QueueRunner, ScanVulnerabilitiesTask, TaskFailed
+from kube_tower.trivy import scans_failed
 from kube_tower.worker import Worker
 from test_scanner import TwoClusters, fakes  # noqa: F401 - fixture
 
@@ -183,3 +186,57 @@ def test_processes_run_their_roles(monkeypatch, caplog):
         pass
     assert ran == ["Scanner", "internal API", "TaskPuller"]
     assert "internal API listening on port 0" in caplog.text
+
+
+async def test_distributed_scan_in_batches(fakes, monkeypatch):  # noqa: F811 - fixture
+    def collect(self, cluster):
+        for image in ("nginx:1.25", "nginx:1.26", "redis:7", "alpine:3"):
+            self.add(image, Usage(cluster.name, "Pod", "default", "web"))
+        return []
+
+    async def scan_many(self, reports, prepared_for=0):
+        for r in reports:
+            r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC), message="boom")
+        return [scans_failed(len(reports))]
+
+    monkeypatch.setattr(worker_module.ImageInventory, "collect", collect)
+    monkeypatch.setattr(worker_module.TrivyScanner, "available", True)
+    monkeypatch.setattr(worker_module.TrivyScanner, "scan_many", scan_many)
+    settings = _settings(["ui", "controller"])
+    settings.internal.batch_size = 2
+    scanner = Scanner(settings, TwoClusters())
+    scanner.runner = runner = QueueRunner(scanner.worker, set())
+    runner.loop = asyncio.get_running_loop()
+    # two processes share the tasks
+    pullers = [_puller(monkeypatch), _puller(monkeypatch)]
+    pulled = []
+    for puller in pullers:
+
+        async def execute(data, run=puller.execute):
+            if data["kind"] in ("check-images", "scan-vulnerabilities"):
+                pulled.append((data["kind"], [i["image"]["repository"] for i in data["task"]["images"]]))
+            return await run(data)
+
+        puller.execute = execute
+
+    async def scanned():
+        await scanner.scan()
+        return scanner.snapshot
+
+    task = asyncio.create_task(scanned())
+    async with _client(runner, pullers[0]) as http:
+        while not task.done():
+            await asyncio.gather(*(p.pull(http, wait=0.05) for p in pullers))
+        snap = task.result()
+    # the images of one name stay together, the results come back in the order of the snapshot
+    checks = sorted(names for kind, names in pulled if kind == "check-images")
+    assert checks == [["library/alpine"], ["library/nginx", "library/nginx"], ["library/redis"]]
+    assert sorted(names for kind, names in pulled if kind == "scan-vulnerabilities") == checks
+    assert [str(r.image) for r in snap.images] == [
+        "docker.io/library/alpine:3",
+        "docker.io/library/nginx:1.25",
+        "docker.io/library/nginx:1.26",
+        "docker.io/library/redis:7",
+    ]
+    assert all(r.status == Status.OUTDATED and r.vulnerabilities.message == "boom" for r in snap.images)
+    assert snap.errors.count(scans_failed(4)) == 1  # the failed scans of the batches, counted together

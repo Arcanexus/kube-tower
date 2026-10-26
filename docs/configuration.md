@@ -76,6 +76,7 @@ internal:                      # between the processes, when the roles run apart
   controllerUrl: ""            # where worker and trivy processes reach it
   tokenEnv: KUBE_TOWER_INTERNAL_TOKEN
   taskTimeout: 30m             # a task not answered by then is given to another process
+  batchSize: 50                # images or charts per task: a scan is shared by the worker and trivy processes
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
@@ -93,7 +94,9 @@ The roles can already run apart, as a preview (the Helm chart still deploys one 
 - the process with `controller` schedules the scans and serves its internal API on `internal.port`;
   the tasks of the roles it does not run wait there;
 - processes with `worker` and/or `trivy` (and no `controller`) pull these tasks from
-  `internal.controllerUrl`, run them and send the results back; a `worker` reads the cluster list itself;
+  `internal.controllerUrl`, run them and send the results back; a `worker` reads the cluster list itself.
+  The version checks and Trivy scans of a scan are split in tasks of `internal.batchSize` images or
+  charts (the tags of one image stay together), so several processes share them;
 - `ui` needs `controller` in the same process for now;
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.

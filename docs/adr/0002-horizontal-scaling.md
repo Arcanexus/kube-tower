@@ -73,7 +73,9 @@ its replicas, resources and HPA.
 4. Internal API, `ui` / `controller` / `worker` / `trivy` roles in any combination, `Lease` election, Redis option.
    Done so far: the internal API of the controller (`internal.py`, its own port, Bearer token) and the
    `QueueRunner`, which queues the tasks of the roles that run elsewhere; `worker` and `trivy`
-   processes pull them (`TaskPuller`) with the credentials of image pull secrets as context. Next: tasks
-   split in batches so that several workers share a scan, a `ui` asking a remote controller, the
+   processes pull them (`TaskPuller`) with the credentials of image pull secrets as context. The
+   version checks and Trivy scans are split in batches (`internal.batchSize`) shared by the processes;
+   a Trivy process refreshes its databases at most every 10 minutes and forgets the results too old to
+   be used (a batch cannot tell which images are gone). Next: a `ui` asking a remote controller, the
    administration actions and logs of the remote roles, `Lease` election.
 5. Chart `mode: distributed`, documentation, release candidate.

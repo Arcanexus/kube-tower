@@ -371,7 +371,7 @@ def test_can_rescan_vulnerabilities():
 async def test_rescan_vulnerabilities_with_trivy(monkeypatch):
     scans = []
 
-    async def prepare(self):
+    async def prepare(self, max_age=0):
         return None
 
     async def scan(self, report):
@@ -398,7 +398,7 @@ async def test_rescan_vulnerabilities_errors(monkeypatch):
     await scanner._rescan_vulnerabilities([image])
     assert "not found" in image.vulnerabilities.message
 
-    async def prepare(self):
+    async def prepare(self, max_age=0):
         return "cannot download the Trivy database: 403"
 
     monkeypatch.setattr(worker_module.TrivyScanner, "available", True)
@@ -463,7 +463,7 @@ async def test_retry_failed(monkeypatch, caplog):
             checked.append(r.chart)
             r.status, r.latest_version = Status.UP_TO_DATE, "1.0.0"
 
-    async def scan_many(self, reports):
+    async def scan_many(self, reports, prepared_for=0):
         scanned.extend(str(r.image) for r in reports)
         for r in reports:
             r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC))
@@ -588,7 +588,7 @@ async def test_rescan_finds_the_new_images_with_the_name(monkeypatch, caplog):
         checked.append(str(report.image))
         report.status = Status.UP_TO_DATE
 
-    async def scan_many(self, reports):
+    async def scan_many(self, reports, prepared_for=0):
         scanned.extend(str(r.image) for r in reports)
         for r in reports:
             r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC))
@@ -831,7 +831,7 @@ async def test_rescans_and_retry_are_tasks(fakes, monkeypatch, caplog):
             raise RuntimeError("unreachable")
         return [(ImageRef("docker.io", "library/nginx", "1.25"), operator)], []
 
-    async def scan_many(self, reports):
+    async def scan_many(self, reports, prepared_for=0):
         for r in reports:
             r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC))
         return []

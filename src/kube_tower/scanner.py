@@ -38,10 +38,14 @@ from kube_tower.tasks import (
     CollectResult,
     CollectTask,
     LocalRunner,
+    QueueRunner,
+    Result,
+    ScanVulnerabilitiesResult,
     ScanVulnerabilitiesTask,
+    Task,
     TaskRunner,
 )
-from kube_tower.trivy import TrivyScanner
+from kube_tower.trivy import TrivyScanner, merge_scan_errors
 from kube_tower.worker import Worker, run_in_thread
 
 log = logging.getLogger(__name__)
@@ -246,10 +250,7 @@ class Scanner:
         attach_operator_reports(snap.images, operator_reports)
 
         # The results are applied to the snapshot reports: in this process they are the same objects.
-        checked_images, checked_charts = await asyncio.gather(
-            self.runner.run(CheckImagesTask(snap.images)), self.runner.run(CheckChartsTask(snap.charts))
-        )
-        snap.images, snap.charts = checked_images.images, checked_charts.charts
+        snap.images, snap.charts = await asyncio.gather(self._check_images(snap.images), self._check_charts(snap.charts))
         snap.charts.sort(key=lambda c: (c.cluster, c.application, c.chart))
         snap.errors += check_errors(snap)
         snap.finished_at = datetime.now(UTC)
@@ -276,13 +277,68 @@ class Scanner:
         settings = self.settings.vulnerabilities
         todo = [r for r in snap.images if r.vulnerabilities is None and not vulnerabilities_ignored(r.image, settings.ignore)]
         if todo and settings.trivy.enabled:
-            result = await self.runner.run(ScanVulnerabilitiesTask(todo, full=True))
+            result = await self._scan_images(todo, full=True)
             for r, vulnerabilities in zip(todo, result.vulnerabilities, strict=True):
                 r.vulnerabilities = vulnerabilities
             snap.errors += result.errors
         snap.vulnerabilities_finished_at = datetime.now(UTC)
         scanned = sum(1 for r in snap.images if r.vulnerabilities and not r.vulnerabilities.message)
         log.info("vulnerability scan finished: %d/%d images with a report", scanned, len(snap.images))
+
+    async def _run_batches[T](
+        self, items: list[T], key: Callable[[T], object], task: Callable[[list[T]], Task]
+    ) -> tuple[list[Result], list[list[int]]]:
+        """Run the tasks of the items: one task when every role runs in this process. In the distributed
+        mode, batches of about internal.batchSize items, shared by the processes of the role; the items with
+        the same key (an image name: its tag list is read once) stay in one batch. Returns the results and
+        the positions in `items` of the items of each batch.
+        """
+        if not isinstance(self.runner, QueueRunner):
+            batches = [list(range(len(items)))]
+        else:
+            groups: dict[object, list[int]] = {}
+            for i, item in enumerate(items):
+                groups.setdefault(key(item), []).append(i)
+            batches = []
+            size = max(1, self.settings.internal.batch_size)
+            for group in groups.values():
+                if batches and len(batches[-1]) + len(group) <= size:
+                    batches[-1] += group
+                else:
+                    batches.append(group)
+        results = await asyncio.gather(*(self.runner.run(task([items[i] for i in b])) for b in batches))
+        return results, batches
+
+    @staticmethod
+    def _in_order[T](size: int, batches: list[list[int]], values: Iterable[list[T]]) -> list[T]:
+        """The values the batches returned for their items, back in the order of the items."""
+        out: list = [None] * size
+        for positions, batch_values in zip(batches, values, strict=True):
+            for i, value in zip(positions, batch_values, strict=True):
+                out[i] = value
+        return out
+
+    async def _check_images(self, images: list[ImageReport]) -> list[ImageReport]:
+        """The checked reports, in the order of `images` (the same objects when the worker is in this process)."""
+        results, batches = await self._run_batches(images, lambda r: r.image.name, CheckImagesTask)
+        return self._in_order(len(images), batches, (r.images for r in results))
+
+    async def _check_charts(self, charts: list[ChartReport]) -> list[ChartReport]:
+        results, batches = await self._run_batches(charts, lambda c: c.repository, CheckChartsTask)
+        return self._in_order(len(charts), batches, (r.charts for r in results))
+
+    async def _scan_images(self, images: list[ImageReport], full: bool = False, fresh: bool = False) -> ScanVulnerabilitiesResult:
+        """Their vulnerability reports, in the order of `images`. Only a single task (every role in this
+        process) is told it holds every image of the scan: a batch cannot tell the Trivy cache which are gone.
+        """
+        full = full and not isinstance(self.runner, QueueRunner)
+        results, batches = await self._run_batches(
+            images, lambda r: r.image.name, lambda b: ScanVulnerabilitiesTask(b, full=full, fresh=fresh)
+        )
+        return ScanVulnerabilitiesResult(
+            self._in_order(len(images), batches, (r.vulnerabilities for r in results)),
+            results[0].errors if len(results) == 1 else merge_scan_errors([e for r in results for e in r.errors]),
+        )
 
     def can_rescan_vulnerabilities(self, report: ImageReport) -> bool:
         """Whether a vulnerability rescan of the image can give a result (see _rescan_vulnerabilities)."""
@@ -363,15 +419,15 @@ class Scanner:
             fresh_images = [_fresh_image(r) for r in images]
             fresh_charts = [_fresh_chart(c) for c in charts]
             checked_images, checked_charts = await asyncio.gather(
-                self.runner.run(CheckImagesTask(fresh_images)), self.runner.run(CheckChartsTask(fresh_charts))
+                self._check_images(fresh_images), self._check_charts(fresh_charts)
             )
-            for report, fresh in zip(images, checked_images.images, strict=True):
+            for report, fresh in zip(images, checked_images, strict=True):
                 _apply_image(report, fresh)
-            for report, fresh in zip(charts, checked_charts.charts, strict=True):
+            for report, fresh in zip(charts, checked_charts, strict=True):
                 _apply_chart(report, fresh)
             if vulnerabilities:
                 # Failed scans are never cached.
-                scanned = await self.runner.run(ScanVulnerabilitiesTask(vulnerabilities))
+                scanned = await self._scan_images(vulnerabilities)
                 for report, v in zip(vulnerabilities, scanned.vulnerabilities, strict=True):
                     report.vulnerabilities = v
             refresh_check_errors(snap, before)
@@ -513,7 +569,7 @@ class Scanner:
                     todo.append(r)
         if not todo or not settings.trivy.enabled:
             return
-        scanned = await self.runner.run(ScanVulnerabilitiesTask(todo, fresh=True))
+        scanned = await self._scan_images(todo, fresh=True)
         for r, v in zip(todo, scanned.vulnerabilities, strict=True):
             r.vulnerabilities = v
 
