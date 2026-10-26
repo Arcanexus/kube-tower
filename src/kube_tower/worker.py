@@ -43,7 +43,7 @@ from kube_tower.tasks import (
     ScanVulnerabilitiesTask,
     Task,
 )
-from kube_tower.trivy import TrivyScanner
+from kube_tower.trivy import TrivyScanner, scan_target
 
 log = logging.getLogger(__name__)
 
@@ -177,16 +177,16 @@ class Worker:
         def collect() -> CollectResult:
             result = CollectResult()
             inventory = ImageInventory(settings.images, settings.registries.use_image_pull_secrets)
-            if settings.images.enabled:
+            if settings.images.enabled and task.images:
                 result.errors += inventory.collect(cluster)
-            if settings.helm.enabled:
+            if settings.helm.enabled and task.charts:
                 result.charts, chart_errors = collect_charts(cluster, settings.helm)
                 result.errors += chart_errors
-            if read_operator:
+            if read_operator and task.operator_reports:
                 reports, operator_errors = collect_operator_reports(cluster)
                 result.operator_reports = [OperatorReport(str(ref), report) for ref, report in reports]
                 result.errors += operator_errors
-            result.images = list(inventory.reports.values())
+            result.images = [r for r in inventory.reports.values() if task.image_name in (None, r.image.name)]
             result.pull_secrets = inventory.pull_secrets
             return result
 
@@ -214,5 +214,8 @@ class Worker:
                 r.vulnerabilities = VulnerabilityReport("trivy", message=message)
         elif task.images:
             self.credentials()  # Secrets may have been rotated
+            if task.fresh:
+                for r in task.images:
+                    self.trivy.cache.pop(scan_target(r)[0], None)
             errors = await (self.trivy.scan_all if task.full else self.trivy.scan_many)(task.images)
         return ScanVulnerabilitiesResult([r.vulnerabilities for r in task.images], errors)

@@ -25,9 +25,14 @@ if TYPE_CHECKING:
 
 @dataclass
 class CollectTask:
-    """Read the images, the Helm charts and the Trivy Operator reports of one cluster."""
+    """Read the images, the Helm charts and the Trivy Operator reports of one cluster (rescans read only
+    some of them: `image_name` keeps the images of this name, registry/repository)."""
 
     cluster: str
+    images: bool = True
+    charts: bool = True
+    operator_reports: bool = True
+    image_name: str | None = None
 
 
 @dataclass
@@ -46,10 +51,12 @@ class CheckChartsTask:
 
 @dataclass
 class ScanVulnerabilitiesTask:
-    """Scan images with Trivy. `full`: the images of a full scan, the Trivy cache forgets the others."""
+    """Scan images with Trivy. `full`: the images of a full scan, the Trivy cache forgets the others.
+    `fresh`: scanned again, not read from the Trivy cache (rescans)."""
 
     images: list[ImageReport]
     full: bool = False
+    fresh: bool = False
 
 
 # Results

@@ -23,10 +23,8 @@ from collections.abc import AsyncIterator, Callable, Coroutine, Iterable
 from datetime import UTC, datetime
 from functools import partial
 
-from kube_tower.checkers import ChartChecker, ImageChecker
 from kube_tower.clusters import Cluster, ClusterRegistry
-from kube_tower.collectors.images import ImageInventory
-from kube_tower.collectors.vulnerabilities import collect_operator_reports, pick_report
+from kube_tower.collectors.vulnerabilities import pick_report
 from kube_tower.config import Settings
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, VulnerabilityReport
 from kube_tower.registry.auth import AuthResults, Credentials, TokenCache
@@ -43,7 +41,7 @@ from kube_tower.tasks import (
     ScanVulnerabilitiesTask,
     TaskRunner,
 )
-from kube_tower.trivy import TrivyScanner, scan_target
+from kube_tower.trivy import TrivyScanner
 from kube_tower.worker import Worker, run_in_thread
 
 log = logging.getLogger(__name__)
@@ -88,7 +86,7 @@ class Scanner:
         self.settings = settings
         self.registry = registry or ClusterRegistry(settings.clusters)
         self.store = store or MemorySnapshotStore()
-        # The worker of this process: rescans and administration actions still use it directly.
+        # The worker of this process: administration actions still use it directly.
         self.worker = Worker(settings)
         self.runner = runner or LocalRunner(self.worker)
         # A scan has two phases, each with its lock: the version checks (`_lock`), then the Trivy scans
@@ -105,7 +103,6 @@ class Scanner:
         self.trivy_started_at: datetime | None = None
         self.trivy_waiting = 0  # scans whose versions are checked, waiting for the Trivy phase of another one
         self._rescan_started: dict[tuple, tuple[str, datetime]] = {}
-        self._clusters: dict[str, Cluster] = {}  # reachable clusters of the last scan, by name
         # Set while an administration action holds the scan lock (e.g. Trivy database update): why scans must wait.
         self.busy: str | None = None
 
@@ -118,6 +115,15 @@ class Scanner:
         self.store.set(snap)
 
     # State of the worker of this process (Trivy results, registry tokens...), kept between scans.
+
+    @property
+    def _clusters(self) -> dict[str, Cluster]:
+        """The reachable clusters of the last scan, by name: the clusters tasks may name."""
+        return self.worker.clusters
+
+    @_clusters.setter
+    def _clusters(self, clusters: dict[str, Cluster]) -> None:
+        self.worker.clusters = clusters
 
     @property
     def trivy(self) -> TrivyScanner:
@@ -220,7 +226,7 @@ class Scanner:
         clusters, snap.clusters = await asyncio.to_thread(self.registry.discover)
         reachable = {s.name for s in snap.clusters if s.reachable}
         clusters = [c for c in clusters if c.name in reachable]
-        self._clusters = self.worker.clusters = {c.name: c for c in clusters}
+        self._clusters = {c.name: c for c in clusters}
         log.info("%d cluster(s) to scan: %s", len(clusters), ", ".join(c.name for c in clusters) or "none")
 
         results: list[CollectResult] = await asyncio.gather(*(self.runner.run(CollectTask(c.name)) for c in clusters))
@@ -356,21 +362,18 @@ class Scanner:
             )
             fresh_images = [_fresh_image(r) for r in images]
             fresh_charts = [_fresh_chart(c) for c in charts]
-            async with self._clients() as (oci, helm, _):
-                concurrency = self.settings.registries.concurrency
-                await asyncio.gather(
-                    ImageChecker(oci, self.settings.images, concurrency).check_all(fresh_images),
-                    ChartChecker(helm, self.settings.helm, concurrency).check_all(fresh_charts),
-                )
-            for report, fresh in zip(images, fresh_images, strict=True):
+            checked_images, checked_charts = await asyncio.gather(
+                self.runner.run(CheckImagesTask(fresh_images)), self.runner.run(CheckChartsTask(fresh_charts))
+            )
+            for report, fresh in zip(images, checked_images.images, strict=True):
                 _apply_image(report, fresh)
-            for report, fresh in zip(charts, fresh_charts, strict=True):
+            for report, fresh in zip(charts, checked_charts.charts, strict=True):
                 _apply_chart(report, fresh)
             if vulnerabilities:
-                if self.trivy.available:
-                    await self.trivy.scan_many(vulnerabilities)  # failed scans are never cached
-                else:
-                    log.warning("vulnerability scans not retried: trivy binary %r not found", self.trivy.settings.binary)
+                # Failed scans are never cached.
+                scanned = await self.runner.run(ScanVulnerabilitiesTask(vulnerabilities))
+                for report, v in zip(vulnerabilities, scanned.vulnerabilities, strict=True):
+                    report.vulnerabilities = v
             refresh_check_errors(snap, before)
             images_left, vulnerabilities_left, charts_left = self.failed_items()
             log.info(
@@ -427,12 +430,9 @@ class Scanner:
                 len(to_check),
                 ", ".join(r.image.tag or r.image.digest or "" for r in to_check),
             )
-            fresh = [_fresh_image(r) for r in to_check]
-            async with self._clients() as (oci, _, _):
-                # One checker: the tag list of the repository is read once for all of them.
-                checker = ImageChecker(oci, self.settings.images, self.settings.registries.concurrency)
-                await asyncio.gather(*(checker.check(f) for f in fresh))
-            for r, f in zip(to_check, fresh, strict=True):
+            # One task: the tag list of the repository is read once for all of them.
+            checked = await self.runner.run(CheckImagesTask([_fresh_image(r) for r in to_check]))
+            for r, f in zip(to_check, checked.images, strict=True):
                 _apply_image(r, f)
                 log.info("rescan of image %s: %s%s", r.image, r.status.value, f" (latest {r.latest_tag})" if r.latest_tag else "")
         to_scan = [r for r in (group if vulnerabilities else new) if self.can_rescan_vulnerabilities(r)]
@@ -457,21 +457,22 @@ class Scanner:
         """
         if not self.settings.images.enabled or not self._clusters:
             return []
-        inventory = ImageInventory(self.settings.images, self.settings.registries.use_image_pull_secrets)
-        clusters = list(self._clusters.values())
-        results = await asyncio.gather(
-            *(run_in_thread(f"rescan-{c.name}", partial(inventory.collect, c)) for c in clusters), return_exceptions=True
-        )
+        clusters = sorted(self._clusters)
+        tasks = (CollectTask(c, charts=False, operator_reports=False, image_name=name) for c in clusters)
+        results = await asyncio.gather(*(self.runner.run(t) for t in tasks), return_exceptions=True)
+        collected: list[list[ImageReport]] = []
         for cluster, result in zip(clusters, results, strict=True):
             if isinstance(result, BaseException):
-                log.warning("[%s] cannot read the images again: %s", cluster.name, result)
+                log.warning("[%s] cannot read the images again: %s", cluster, result)
+                continue
+            for error in result.errors:
+                log.warning(error)
+            collected.append(result.images)
+            self.pull_secrets = {**self.pull_secrets, **result.pull_secrets}
         known = {str(r.image): r for r in snap.images if r.image.name == name}
         new = []
-        self.pull_secrets = {**self.pull_secrets, **inventory.pull_secrets}
-        for key, found in inventory.reports.items():
-            if found.image.name != name:
-                continue
-            if current := known.get(key):
+        for found in merge_images(collected):
+            if current := known.get(str(found.image)):
                 current.usages, current.running_digests = found.usages, found.running_digests
             else:
                 new.append(found)
@@ -490,14 +491,18 @@ class Scanner:
         settings = self.settings.vulnerabilities
         todo = reports
         if settings.trivy_operator:
-            names = {c for r in reports for c in r.clusters}
+            clusters = sorted({c for r in reports for c in r.clusters} & set(self._clusters))
+            tasks = (CollectTask(c, images=False, charts=False) for c in clusters)
+            results = await asyncio.gather(*(self.runner.run(t) for t in tasks), return_exceptions=True)
             found: dict[str, list[VulnerabilityReport]] = {}
-            for cluster in (self._clusters[n] for n in sorted(names) if n in self._clusters):
-                cluster_reports, errors = collect_operator_reports(cluster)
-                for error in errors:
+            for cluster, result in zip(clusters, results, strict=True):
+                if isinstance(result, BaseException):
+                    log.warning("[%s] cannot read the Trivy Operator reports again: %s", cluster, result)
+                    continue
+                for error in result.errors:
                     log.warning(error)
-                for key, v in cluster_reports:
-                    found.setdefault(str(key), []).append(v)
+                for operator_report in result.operator_reports:
+                    found.setdefault(operator_report.image, []).append(operator_report.report)
             todo = []
             for r in reports:
                 if candidates := found.get(str(r.image)):
@@ -508,25 +513,17 @@ class Scanner:
                     todo.append(r)
         if not todo or not settings.trivy.enabled:
             return
-        if not self.trivy.available:
-            message = f"trivy binary {settings.trivy.binary!r} not found (Helm chart: set trivy.enabled=true)"
-            for r in todo:
-                r.vulnerabilities = VulnerabilityReport("trivy", message=message)
-            return
-        self.credentials()  # Secrets may have been rotated
-        for r in todo:
-            self.trivy.cache.pop(scan_target(r)[0], None)  # scanned again, not read from the cache
-        await self.trivy.scan_many(todo)
+        scanned = await self.runner.run(ScanVulnerabilitiesTask(todo, fresh=True))
+        for r, v in zip(todo, scanned.vulnerabilities, strict=True):
+            r.vulnerabilities = v
 
     async def _rescan_chart(self, report: ChartReport) -> None:
         """Run in a worker thread's event loop. Results are computed apart, then set at once."""
         snap = self.snapshot
         before = check_errors(snap)
         log.info("[%s] rescan of chart %s of application %s", report.cluster, report.chart, report.application)
-        fresh = _fresh_chart(report)
-        async with self._clients() as (_, helm, _):
-            await ChartChecker(helm, self.settings.helm, self.settings.registries.concurrency).check(fresh)
-        _apply_chart(report, fresh)
+        checked = await self.runner.run(CheckChartsTask([_fresh_chart(report)]))
+        _apply_chart(report, checked.charts[0])
         log.info(
             "[%s] rescan of chart %s of application %s: %s%s",
             report.cluster,

@@ -68,5 +68,7 @@ its replicas, resources and HPA.
    scan with Trivy), run by the `Worker` of the process (`worker.py`); `SnapshotStore` (`store.py`).
    The collect results carry the credentials of image pull secrets: the internal API sends them to
    the controller and from it to the workers, never outside (token, NetworkPolicies).
+   The rescans of an image or chart and the retry of failed items are tasks too (a collect task can
+   read only the images of one name, or only the Trivy Operator reports; a Trivy task can skip the cache).
 4. Internal API, `ui` / `controller` / `worker` / `trivy` roles in any combination, `Lease` election, Redis option.
 5. Chart `mode: distributed`, documentation, release candidate.
