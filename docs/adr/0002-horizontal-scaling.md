@@ -79,6 +79,8 @@ its replicas, resources and HPA.
    be used (a batch cannot tell which images are gone). A `ui` process without the controller uses the
    `RemoteBackend`: it reads the state of the controller (`/internal/v1/state`, with the snapshot only
    when its revision changed or something runs) and sends the actions (`/internal/v1/actions/...`); the
-   backend actions are async for that. Next: the administration actions and logs of the remote roles,
-   `Lease` election.
+   backend actions are async for that. The Trivy actions of the Administration page reach the trivy
+   processes (a `trivy-admin` task for the status and a database update, generations sent with each
+   task for the others), and the warnings of each task come back with its result to the controller's
+   logs, which the Logs page of every `ui` process shows. Next: `Lease` election.
 5. Chart `mode: distributed`, documentation, release candidate.

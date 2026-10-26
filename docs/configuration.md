@@ -103,8 +103,11 @@ The roles can already run apart, as a preview (the Helm chart still deploys one 
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
 
-The administration actions (Trivy database, cache, connectivity test) act on the process of the
-controller, and the Logs page shows the lines of the process that serves it.
+The Logs page shows the lines of the controller, with the warnings and errors of the worker and
+trivy processes, prefixed with their pod name. When Trivy runs in trivy processes, the Administration
+page reads the status of one of them; a database update runs in one of them and the others refresh
+theirs before their next task, and a cleared cache is forgotten by each one at its next task. The
+connectivity test runs in the controller.
 
 ## Vulnerabilities (Trivy)
 

@@ -7,17 +7,19 @@ import pytest
 import uvicorn
 from fastapi.testclient import TestClient
 
+from kube_tower import administration as administration_module
 from kube_tower import internal
 from kube_tower import worker as worker_module
 from kube_tower.administration import Administration
 from kube_tower.backend import UNREACHABLE, LocalBackend, RemoteBackend
 from kube_tower.config import Settings
 from kube_tower.internal import TaskPuller, create_internal_app
+from kube_tower.logbuffer import LogBuffer
 from kube_tower.main import create_app
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, Usage, VulnerabilityReport, encode
 from kube_tower.scanner import Scanner
 from kube_tower.tasks import CheckImagesTask, CollectTask, QueueRunner, ScanVulnerabilitiesTask, TaskFailed
-from kube_tower.trivy import scans_failed
+from kube_tower.trivy import TrivyStatus, scans_failed
 from kube_tower.worker import Worker
 from test_scanner import TwoClusters, fakes  # noqa: F401 - fixture
 
@@ -255,7 +257,7 @@ async def test_distributed_scan_in_batches(fakes, monkeypatch):  # noqa: F811 - 
 
 def _controller(settings=None):
     """A controller process with a snapshot, and its internal API."""
-    scanner = Scanner(settings or _settings(["controller"]), TwoClusters())
+    scanner = Scanner(settings or _settings(["controller", "worker", "trivy"]), TwoClusters())
     image = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), [Usage("a", "Pod", "default", "web")])
     chart = ChartReport("a", "app", "argocd", "app", "https://charts.example.com", "1.0.0", "helm")
     scanner.snapshot = Snapshot(images=[image], charts=[chart], started_at=datetime.now(UTC), finished_at=datetime.now(UTC))
@@ -341,3 +343,97 @@ async def test_ui_process_without_controller(monkeypatch, caplog):
     remote.http = httpx.AsyncClient(transport=transport, base_url="http://controller:8081", headers=remote.http.headers)
     await remote.refresh()
     assert "the controller answers again" in caplog.text and remote.snapshot.finished_at is not None
+
+
+async def test_trivy_administration_in_trivy_processes(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="kube_tower")
+    monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
+    downloads = []
+
+    async def prepare(self, max_age=0):
+        downloads.append(max_age)
+
+    async def status(self):
+        return TrivyStatus(datetime.now(UTC), version="0.60.0")
+
+    monkeypatch.setattr(worker_module.TrivyScanner, "available", True)
+    monkeypatch.setattr(worker_module.TrivyScanner, "prepare", prepare)
+    monkeypatch.setattr(worker_module.TrivyScanner, "status", status)
+    scanner = Scanner(_settings(["ui", "controller", "worker"]), TwoClusters())
+    administration = Administration(scanner)
+    scanner.runner = runner = QueueRunner(scanner.worker, {"worker"}, context=lambda: {"trivy": administration.generations})
+    runner.loop = asyncio.get_running_loop()
+    backend = LocalBackend(scanner, administration)
+    assert backend.trivy_remote and backend.trivy_available and backend.trivy_cached == 0  # unknown yet
+    trivy = _puller(monkeypatch, roles=["trivy"])
+    trivy.worker.trivy.cache["docker.io/library/nginx:1.25"] = VulnerabilityReport("trivy", datetime.now(UTC))
+    async with _client(runner, trivy) as http:
+        # the status of the trivy process that answered
+        status = await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy, http)
+        assert status.version == "0.60.0" and backend.trivy_status is status and backend.trivy_cached == 1
+        # a database update runs in one trivy process, the others refresh theirs before their next task
+        assert await backend.update_trivy_db() is None and administration.generations == {"db": 1, "cache": 0}
+        await _until_done(next(iter(administration._tasks)), trivy, http)
+        assert downloads == [0] and "database refreshed in one trivy process" in backend.trivy_message
+        # the cache is forgotten by each trivy process at its next task
+        assert await backend.clear_trivy_cache() == -1 and administration.generations == {"db": 1, "cache": 1}
+        await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy, http)
+        assert trivy.worker.trivy.cache == {} and backend.trivy_cached == 0
+        assert "Trivy results cache cleared (1 image(s)), as asked on the Administration page" in caplog.text
+        administration.generations["db"] += 1
+        await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy, http)
+        assert trivy.worker.trivy._prepared_at is None and "the Trivy databases are refreshed before the next scan" in caplog.text
+
+    # no trivy process answers
+    monkeypatch.setattr(administration_module, "REMOTE_STATUS_TIMEOUT", 0.05)
+    monkeypatch.setattr(administration_module, "REMOTE_UPDATE_TIMEOUT", 0.05)
+    assert (await backend.refresh_trivy_status()).message == "no trivy process answered within 0s"
+    assert await backend.update_trivy_db() is None
+    await asyncio.gather(*administration._tasks)
+    assert backend.trivy_message.startswith("no trivy process answered")
+
+    async def broken(self, max_age=0):
+        return "cannot download the Trivy database: 403"
+
+    monkeypatch.setattr(worker_module.TrivyScanner, "prepare", broken)
+    async with _client(runner, trivy) as http:
+        assert await backend.update_trivy_db() is None
+        await _until_done(next(iter(administration._tasks)), trivy, http)
+    assert backend.trivy_message == "cannot download the Trivy database: 403"
+
+
+async def test_logs_of_the_remote_processes(monkeypatch, caplog, fakes):  # noqa: F811 - fixture
+    caplog.set_level(logging.INFO, logger="kube_tower")
+    monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
+
+    def collect(self, cluster):
+        logging.getLogger("kube_tower.collectors.images").warning("[%s] cannot list CronJob: 403 Forbidden", cluster.name)
+        return []
+
+    monkeypatch.setattr(worker_module.ImageInventory, "collect", collect)
+    scanner = Scanner(_settings(["ui", "controller"]), TwoClusters())
+    scanner.runner = runner = QueueRunner(scanner.worker, set())
+    runner.loop = asyncio.get_running_loop()
+    worker = _puller(monkeypatch)
+    worker.source = "kube-tower-worker-1"
+    async with _client(runner, worker) as http:
+        await _until_done(asyncio.create_task(scanner.scan()), worker, http)
+    # the warnings of the worker are logged by the controller, with the worker's name
+    assert "[kube-tower-worker-1] [a] cannot list CronJob: 403 Forbidden" in caplog.text
+    remote_log = next(r for r in caplog.records if "kube-tower-worker-1" in r.getMessage())
+    assert remote_log.name == "kube_tower.collectors.images" and remote_log.levelname == "WARNING"
+
+    # the Logs page of a ui process shows the lines of the controller
+    buffer = LogBuffer()
+    buffer.emit(logging.LogRecord("kube_tower.scanner", logging.INFO, "", 0, "scan finished", None, None))
+    app = create_internal_app(runner, TOKEN, LocalBackend(scanner, Administration(scanner), buffer))
+    remote = RemoteBackend(_settings(["ui"]), transport=httpx.ASGITransport(app))
+    lines = await remote.log_lines()
+    assert [(line.seq, line.logger, line.message) for line in lines] == [(1, "kube_tower.scanner", "scan finished")]
+    assert await remote.log_lines(1) == []
+    ui = create_app(_settings(["ui"]), background=False)
+    ui.state.backend = remote
+    assert "scan finished" in TestClient(ui).get("/logs").text
+
+    remote.http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(503)), base_url="http://c")
+    assert await remote.log_lines() == []

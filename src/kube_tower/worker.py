@@ -42,6 +42,8 @@ from kube_tower.tasks import (
     ScanVulnerabilitiesResult,
     ScanVulnerabilitiesTask,
     Task,
+    TrivyAdminResult,
+    TrivyAdminTask,
 )
 from kube_tower.trivy import TrivyScanner, scan_target
 
@@ -135,6 +137,8 @@ class Worker:
                 return await self._check_charts(task)
             case ScanVulnerabilitiesTask():
                 return await self._scan_vulnerabilities(task)
+            case TrivyAdminTask():
+                return await self._trivy_admin(task)
         raise TypeError(f"unknown task {task!r}")
 
     def credentials(self) -> Credentials:
@@ -219,3 +223,12 @@ class Worker:
                     self.trivy.cache.pop(scan_target(r)[0], None)
             errors = await (self.trivy.scan_all if task.full else self.trivy.scan_many)(task.images)
         return ScanVulnerabilitiesResult([r.vulnerabilities for r in task.images], errors)
+
+    async def _trivy_admin(self, task: TrivyAdminTask) -> TrivyAdminResult:
+        error = None
+        if task.update_db and self.trivy.available:
+            log.info("updating the Trivy database in %s", self.trivy.settings.cache_dir)
+            error = await self.trivy.prepare()
+        return TrivyAdminResult(
+            self.trivy.available, self.trivy.settings.binary, len(self.trivy.cache), await self.trivy.status(), error
+        )

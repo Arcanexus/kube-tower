@@ -566,10 +566,10 @@ def mount(app: FastAPI) -> None:
             return Response(status_code=404)
         return render_detail(request, "_chart_detail", chart_key(report), c=report)
 
-    def _log_lines(request: Request, after: int, level: str, q: str):
+    async def _log_lines(request: Request, after: int, level: str, q: str):
         """Lines after `after` matching the filters, and the sequence number to tail from."""
         minimum = LOG_LEVELS.index(level) if level in LOG_LEVELS else 0
-        lines = request.app.state.log_buffer.since(after)
+        lines = await request.app.state.backend.log_lines(after)
         matching = [
             line
             for line in lines
@@ -580,12 +580,12 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/logs", response_class=HTMLResponse, include_in_schema=False)
     async def logs(request: Request, level: str = "INFO", q: str = ""):
-        lines, after = _log_lines(request, 0, level, q)
+        lines, after = await _log_lines(request, 0, level, q)
         return render(request, "logs", tab="logs", lines=lines, after=after, level=level, q=q, levels=LOG_LEVELS)
 
     @app.get("/logs/tail", response_class=HTMLResponse, include_in_schema=False)
     async def logs_tail(request: Request, after: int = 0, level: str = "INFO", q: str = ""):
-        lines, after = _log_lines(request, after, level, q)
+        lines, after = await _log_lines(request, after, level, q)
         return render(request, "_log_tail", lines=lines, after=after, level=level, q=q)
 
     @app.get("/clusters", response_class=HTMLResponse, include_in_schema=False)
@@ -667,7 +667,12 @@ def mount(app: FastAPI) -> None:
             await backend.refresh_trivy_status()
             notice = "Trivy status read again."
         elif action in ("trivy-cache", "trivy-cache-scan"):
-            notice = f"Trivy results cache cleared ({plural(await backend.clear_trivy_cache(), 'image')})."
+            cleared = await backend.clear_trivy_cache()
+            notice = (
+                "Trivy results cache cleared: each trivy process forgets its results at its next task."
+                if cleared < 0
+                else f"Trivy results cache cleared ({plural(cleared, 'image')})."
+            )
             if action == "trivy-cache-scan":
                 started = await backend.trigger()
                 notice += " Full scan started." if started else " A scan is already running: the next one scans every image."

@@ -79,6 +79,8 @@
     <table class="striped compact">
       <tbody>
         <tr><th>Mode</th><td>{% if t.server_url %}client of the Trivy server <code>{{ t.server_url }}</code>{% else %}standalone, databases in <code>{{ t.cache_dir }}</code>{% endif %}</td></tr>
+        {% if backend.trivy_remote %}<tr><th>Processes</th><td><small>Trivy runs in the trivy processes: the status below is the one of the process that answered last.
+          A database update runs in one of them, the others refresh theirs before their next task.</small></td></tr>{% endif %}
         {% if s and s.message %}<tr><th>Status</th><td><span class="badge badge-error">{{ icon("error") }}error</span> <small>{{ s.message }}</small></td></tr>{% endif %}
         {% if s and s.version %}<tr><th>Trivy</th><td>{{ s.version }}</td></tr>{% endif %}
         {% for label, db in [("Vulnerability DB", s.db if s else None), ("Java DB", s.java_db if s else None)] %}
@@ -107,7 +109,7 @@
     <div class="administration-row">
       <div>
         <strong>Results cache</strong>
-        <p><small>{{ backend.trivy_cached | plural("image") }} cached: they are not scanned again before {{ t.rescan_interval | duration }}
+        <p><small>{{ backend.trivy_cached | plural("image") }} cached{% if backend.trivy_remote %} in the trivy process that answered last{% endif %}: they are not scanned again before {{ t.rescan_interval | duration }}
           (vulnerabilities.trivy.rescanInterval). After clearing it, the next scan scans every image again.</small></p>
       </div>
       <p class="actions">
