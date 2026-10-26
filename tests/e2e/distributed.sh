@@ -28,6 +28,7 @@ wait_for() {
     until "$@" >/dev/null 2>&1; do
         if ((SECONDS > end)); then
             echo "timeout after ${timeout}s: $what" >&2
+            "$@" || true
             return 1
         fi
         sleep 5
@@ -35,7 +36,12 @@ wait_for() {
     log "$what"
 }
 
-snapshot() { kubectl -n "$NS" exec deploy/"$RELEASE"-ui -- wget -qO- http://localhost:8080/api/snapshot; }
+# GET <url> from a pod (target: pod/<name> or deploy/<name>), with the Python of the image
+fetch() {
+    kubectl -n "$NS" exec "$1" -- python -c \
+        'import sys, urllib.request; sys.stdout.write(urllib.request.urlopen(sys.argv[1], timeout=20).read().decode())' "$2"
+}
+snapshot() { fetch deploy/"$RELEASE"-ui http://127.0.0.1:8080/api/snapshot; }
 scanned() { snapshot | jq -e '.finished_at != null and (.images | length) > 0'; }
 vulnerabilities_scanned() { snapshot | jq -e '.vulnerabilities_finished_at != null'; }
 holder() { kubectl -n "$NS" get lease "$RELEASE"-controller -o jsonpath='{.spec.holderIdentity}'; }
@@ -64,13 +70,13 @@ snapshot | jq '[.images[] | select(.vulnerabilities != null and .vulnerabilities
 
 # Every ui pod shows the same inventory, read from the controller
 for pod in $(kubectl -n "$NS" get pods -l app.kubernetes.io/component=ui -o name); do
-    count=$(kubectl -n "$NS" exec "$pod" -- wget -qO- http://localhost:8080/api/snapshot | jq '.images | length')
+    count=$(fetch "$pod" http://127.0.0.1:8080/api/snapshot | jq '.images | length')
     echo "$pod: $count images"
     [ "$count" -gt 0 ]
 done
 # The pages answer, and the metrics come from the controller
-kubectl -n "$NS" exec deploy/"$RELEASE"-ui -- wget -qO- http://localhost:8080/ | grep -q kube-tower
-kubectl -n "$NS" exec deploy/"$RELEASE"-ui -- wget -qO- http://"$RELEASE"-internal:8080/metrics | grep -q kube_tower_images
+fetch deploy/"$RELEASE"-ui http://127.0.0.1:8080/ | grep -q kube-tower
+fetch deploy/"$RELEASE"-ui http://"$RELEASE"-internal:8080/metrics | grep -q kube_tower_image_outdated
 
 log "failover"
 images=$(snapshot | jq '.images | length')
