@@ -146,13 +146,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- Distributed mode: the tasks of the scans go through Valkey ([ADR 0003](docs/adr/0003-valkey-bus.md)).
-  The controller queues them in a Valkey stream per role, worker and trivy pods read them there and
-  send their results back to Valkey; a task not answered within `internal.taskTimeout` is given to
-  another pod, three times at most, and a controller taking over empties the queues of the previous
-  one. Valkey (or `redis.url`) is therefore **required** in distributed mode, the chart refuses to
-  render without it and gives every pod its URL, password and key prefix (`redis.keyPrefix`, the
-  release name by default). The internal API keeps the state, actions, reports and logs for now.
+- Distributed mode: every exchange between the pods goes through Valkey, and only the active controller
+  orchestrates ([ADR 0003](docs/adr/0003-valkey-bus.md)). The controller queues the tasks in a Valkey
+  stream per role, worker and trivy pods read them there and send their results back; a task not
+  answered within `internal.taskTimeout` is given to another pod, three times at most, and a
+  controller taking over empties the queues of the previous one. The controller publishes the state
+  that the ui pods show (they read its revision every second, the inventory only when it has a new
+  revision, instead of copying the whole state every 2 seconds) and runs the actions they send. Every
+  pod writes an expiring presence key and ships its log lines to a capped stream, for the
+  Administration and Logs pages. Valkey (or `redis.url`) is therefore **required** in distributed
+  mode: the chart refuses to render without it and gives every pod its URL, password and key prefix
+  (`redis.keyPrefix`, the release name by default). Migration from rc.3: see
+  [scaling](docs/scaling.md#from-100-rc3).
 - Chart, distributed mode: sizing from measures on a real inventory. `ui`: 1 replica, 100m CPU and 192Mi
   requested (was 2 replicas, 20m, 128Mi: with such a low request, the autoscaling target was reached at
   every page load and the HPA kept adding and removing pods); `worker`: 100m CPU and 256Mi requested.
@@ -164,6 +169,14 @@ All notable changes to this project are documented here. The format follows
   CronJob between two runs) no longer inflate the totals. A **Running images only** switch on each page
   shows them again (`running=0` in the URL), and the links of the Synthesis and Clusters pages keep the
   choice. The API and the metrics are unchanged.
+
+### Removed
+
+- The internal API of the controller (port 8081, `/internal/v1/...`), its token
+  (`$KUBE_TOWER_INTERNAL_TOKEN`) and the settings `internal.port`, `internal.controllerUrl`
+  (`$KUBE_TOWER_CONTROLLER_URL`) and `internal.tokenEnv`. Chart: `distributed.internal.*` (ignored, the
+  notes say so), the token Secret, the internal port of the controller pods and of the NetworkPolicy;
+  the `<release>-internal` Service becomes `<release>-controller` (`/metrics` of the active controller).
 
 ### Fixed
 

@@ -1,7 +1,7 @@
 """Keeps the last application log records in memory for the Logs page of the UI.
 
-In the distributed mode the controller's buffer also holds the lines that the other processes send it
-(internal.Reporter), each with the process (pod) and the roles it came from.
+In the distributed mode every process also ships its lines to Valkey (internal.Reporter), each with the
+process (pod) and the roles it came from: the Logs page shows those of every process.
 """
 
 from __future__ import annotations
@@ -54,15 +54,6 @@ class LogBuffer(logging.Handler):
             )
         except Exception:  # noqa: BLE001 - logging must never break the application
             self.handleError(record)
-
-    def add(self, lines: list[LogLine], source: str, roles: list[str]) -> None:
-        """Lines logged by another process, numbered in this buffer as they arrive."""
-        with self.lock:
-            for line in lines:
-                self.seq += 1
-                self.lines.append(
-                    LogLine(self.seq, line.time, line.level, line.logger, line.thread, line.message, source, list(roles))
-                )
 
     def since(self, after: int = 0) -> list[LogLine]:
         with self.lock:

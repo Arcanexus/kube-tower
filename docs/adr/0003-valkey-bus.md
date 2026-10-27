@@ -1,6 +1,6 @@
 # ADR 0003: the processes talk through Valkey
 
-- Status: accepted, in progress for v1.0.0-rc.4
+- Status: accepted, implemented for v1.0.0-rc.4
 - Date: 2026-10-27
 - Replaces the transport part of [ADR 0002](0002-horizontal-scaling.md) (the internal HTTP API)
 
@@ -33,7 +33,7 @@ manages them.
 | `tasks:worker`, `tasks:trivy` | stream + consumer group | controller | worker, trivy |
 | `results` | stream + consumer group | worker, trivy | controller |
 | `actions`, `reply:<id>` | stream + consumer group, list with a TTL | ui / controller | controller / ui |
-| `state`, `state:rev` | string + counter | controller | ui |
+| `state`, `state:snapshot`, `state:rev` | strings + counter | controller | ui |
 | `pods:<name>` | string with a TTL | every process | controller |
 | `logs` | capped stream | every process | ui |
 
@@ -53,5 +53,8 @@ manages them.
   Valkey to the kube-tower pods.
 - When Valkey cannot be reached, the processes try again with growing delays and the `ui` pods show
   their last copy of the state.
-- Implemented in steps: the bus (`bus.py`), the tasks, the state, actions, presence and logs, then the
-  removal of the internal API with the chart and the docs.
+- A `ui` pod reads the revision every second, the state when it changed, and the snapshot only when
+  its own revision changed. The controller publishes at most every 2 seconds, and at once after an
+  action so that the page shows what the action started.
+- Implemented in steps: the bus (`bus.py`), the tasks, then the state, actions, presence and logs with
+  the removal of the internal API (port, Service, token) from the code and the chart.

@@ -18,21 +18,17 @@ spec:
     {{- end }}
 {{- if include "kube-tower.distributed" . }}
 ---
-# The active controller (its pod is labelled by itself): its internal API, for the other pods, and /metrics
+# The active controller (its pod is labelled by itself): its /metrics, for the ServiceMonitor
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "kube-tower.fullname" . }}-internal
+  name: {{ include "kube-tower.fullname" . }}-controller
   labels:
     {{- include "kube-tower.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
 spec:
   type: ClusterIP
   ports:
-    - port: {{ .Values.distributed.internal.port }}
-      targetPort: internal
-      protocol: TCP
-      name: internal
     - port: 8080
       targetPort: http
       protocol: TCP

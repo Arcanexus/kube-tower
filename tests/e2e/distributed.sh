@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end test of the chart's distributed mode on a kind cluster, with the kube-tower:e2e image
-# loaded in it: every pod starts, a scan goes through the worker and trivy pods, the UI pods show it,
-# and a standby controller takes over (with the inventory kept in Valkey) when the active one stops.
+# loaded in it: every pod starts, a scan goes through the worker and trivy pods (tasks and results in
+# Valkey), the UI pods show the state the controller publishes in Valkey, and a standby controller takes
+# over (with the inventory kept in Valkey) when the active one stops.
 set -euo pipefail
 
 NS=kube-tower
@@ -45,20 +46,19 @@ snapshot() { fetch deploy/"$RELEASE"-ui http://127.0.0.1:8080/api/snapshot; }
 scanned() { snapshot | jq -e '.finished_at != null and (.images | length) > 0'; }
 vulnerabilities_scanned() { snapshot | jq -e '.vulnerabilities_finished_at != null'; }
 holder() { kubectl -n "$NS" get lease "$RELEASE"-controller -o jsonpath='{.spec.holderIdentity}'; }
-# The internal Service reaches the pod of the active controller only (labelled by it)
+# The controller Service (its /metrics) reaches the pod of the active controller only (labelled by it)
 active_endpoint() {
     [ "$(kubectl -n "$NS" get pods -l kube-tower.arcanexus.com/active-controller=true -o name)" = "pod/$(holder)" ] &&
-        [ "$(kubectl -n "$NS" get endpoints "$RELEASE"-internal -o json | jq '[.subsets[]?.addresses[]?] | length')" = "1" ]
+        [ "$(kubectl -n "$NS" get endpoints "$RELEASE"-controller -o json | jq '[.subsets[]?.addresses[]?] | length')" = "1" ]
 }
 
 log "install"
 kubectl create namespace "$NS"
-kubectl -n "$NS" create secret generic kube-tower-internal --from-literal=token="$(openssl rand -hex 32)"
 helm install "$RELEASE" charts/kube-tower -n "$NS" -f tests/e2e/distributed-values.yaml --wait --timeout 10m
 kubectl -n "$NS" get pods -o wide
 
 log "one active controller"
-wait_for 120 "the internal Service reaches the active controller" active_endpoint
+wait_for 120 "the controller Service reaches the active controller" active_endpoint
 first=$(holder)
 [ -n "$first" ]
 echo "active controller: $first"
@@ -68,7 +68,7 @@ snapshot | jq '{finished_at, images: (.images | length), charts: (.charts | leng
 wait_for 900 "the trivy pod scanned the vulnerabilities" vulnerabilities_scanned
 snapshot | jq '[.images[] | select(.vulnerabilities != null and .vulnerabilities.message == null)] | length'
 
-# Every ui pod shows the same inventory, read from the controller
+# Every ui pod shows the same inventory, published by the controller in Valkey
 for pod in $(kubectl -n "$NS" get pods -l app.kubernetes.io/component=ui -o name); do
     count=$(fetch "$pod" http://127.0.0.1:8080/api/snapshot | jq '.images | length')
     echo "$pod: $count images"
@@ -77,9 +77,9 @@ done
 # The pages answer, and the metrics come from the controller
 # grep reads all of a page (no -q): with pipefail, a fetch cut short by `grep -q` fails with SIGPIPE (141)
 fetch deploy/"$RELEASE"-ui http://127.0.0.1:8080/ | grep kube-tower >/dev/null
-fetch deploy/"$RELEASE"-ui http://"$RELEASE"-internal:8080/metrics | grep kube_tower_image_outdated >/dev/null
+fetch deploy/"$RELEASE"-ui http://"$RELEASE"-controller:8080/metrics | grep kube_tower_image_outdated >/dev/null
 
-log "every pod reports to the controller"
+log "every pod tells it is there and ships its log lines"
 pods() { kubectl -n "$NS" get pods -l 'app.kubernetes.io/component in (controller,ui,worker,trivy)' -o jsonpath='{.items[*].metadata.name}'; }
 all_reported() {
     page=$(fetch deploy/"$RELEASE"-ui http://127.0.0.1:8080/administration/processes) || return 1

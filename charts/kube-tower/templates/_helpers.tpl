@@ -160,18 +160,7 @@ defaults of the top-level values. The group running trivy has one replica and no
 {{- if eq .Values.mode "distributed" }}true{{ end }}
 {{- end }}
 
-{{- /* Secret holding the token of the internal API (distributed mode) */ -}}
-{{- define "kube-tower.internalSecretName" -}}
-{{- if .Values.distributed.internal.existingSecret }}
-{{- .Values.distributed.internal.existingSecret }}
-{{- else if .Values.distributed.internal.token }}
-{{- printf "%s-internal" (include "kube-tower.fullname" .) }}
-{{- else }}
-{{- fail "mode distributed: set distributed.internal.token (e.g. openssl rand -hex 32) or distributed.internal.existingSecret" }}
-{{- end }}
-{{- end }}
-
-{{- /* Redis / Valkey URL of the controller, empty when the snapshot stays in memory */ -}}
+{{- /* Redis / Valkey URL: where the pods of the distributed mode talk, and the controller keeps the snapshot; empty when none */ -}}
 {{- define "kube-tower.redisUrl" -}}
 {{- if .Values.redis.valkey.enabled }}
 {{- printf "redis://%s-valkey:%v/0" (include "kube-tower.fullname" .) .Values.redis.valkey.port }}

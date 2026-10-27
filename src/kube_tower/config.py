@@ -177,14 +177,8 @@ ROLES = ("ui", "controller", "worker", "trivy")
 
 @dataclass
 class InternalSettings:
-    """The internal API between the processes of the distributed mode (unused when one process runs every role)."""
+    """How the processes of the distributed mode share the work (unused when one process runs every role)."""
 
-    # Port of the controller's internal API, apart from the UI port so that NetworkPolicies can keep it internal.
-    port: int = 8081
-    # Where worker and trivy processes reach the controller, e.g. http://kube-tower-controller:8081.
-    controller_url: str = ""
-    # Env var holding the token shared by the processes (sent as a Bearer token).
-    token_env: str = "KUBE_TOWER_INTERNAL_TOKEN"
     # A task pulled by a worker and not answered within this time is given to another one (seconds or 10m).
     task_timeout: int = 30 * 60
     # Images (or charts) per version check or Trivy task: a scan is shared by the worker and trivy processes.
@@ -194,7 +188,8 @@ class InternalSettings:
     # The Lease, in the namespace of the pod.
     lease_name: str = "kube-tower-controller"
     # Label the pod of the active controller kube-tower.arcanexus.com/active-controller=true (patch on its own
-    # pod), for a Service selecting it while the standbys stay ready. Off: use /leaderz as readiness probe.
+    # pod), for a Service selecting it (its /metrics) while the standbys stay ready. Off: use /leaderz as
+    # readiness probe.
     label_pod: bool = False
 
 
@@ -231,7 +226,7 @@ class Settings:
 
     @property
     def distributed(self) -> bool:
-        """Some roles run in other processes: the tasks and results go through the internal API."""
+        """Some roles run in other processes: every exchange goes through Valkey (ADR 0003)."""
         return set(self.roles) != set(ROLES) and "all" not in self.roles
 
 
@@ -271,8 +266,6 @@ def load_settings(path: str | None = None) -> Settings:
         settings.refresh_interval = parse_duration(interval)
     if roles := os.environ.get("KUBE_TOWER_ROLES"):
         settings.roles = [r.strip() for r in roles.split(",") if r.strip()]
-    if url := os.environ.get("KUBE_TOWER_CONTROLLER_URL"):
-        settings.internal.controller_url = url
     if url := os.environ.get("KUBE_TOWER_REDIS_URL"):
         settings.redis.url = url
     if prefix := os.environ.get("KUBE_TOWER_REDIS_KEY_PREFIX"):
@@ -293,22 +286,9 @@ def check_roles(roles: list[str]) -> list[str]:
 
 
 def check_internal(settings: Settings) -> None:
-    """The distributed mode needs Valkey, the shared token, and the controller URL in processes without the controller."""
-    if not settings.distributed:
-        return
-    if not settings.redis.url:
+    """The distributed mode needs Valkey (or Redis), where the processes talk."""
+    if settings.distributed and not settings.redis.url:
         raise ValueError(
             f"roles {', '.join(settings.roles)}: the processes talk through Valkey or Redis, set redis.url"
             " (or $KUBE_TOWER_REDIS_URL)"
         )
-    if not internal_token(settings):
-        raise ValueError(f"roles {', '.join(settings.roles)}: set the internal API token in ${settings.internal.token_env}")
-    if "controller" not in settings.roles and not settings.internal.controller_url:
-        raise ValueError(
-            f"roles {', '.join(settings.roles)}: set internal.controllerUrl (or $KUBE_TOWER_CONTROLLER_URL)"
-            " to reach the controller"
-        )
-
-
-def internal_token(settings: Settings) -> str:
-    return os.environ.get(settings.internal.token_env, "")

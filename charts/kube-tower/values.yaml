@@ -89,14 +89,6 @@ distributed:
           memory: 512Mi
         limits:
           memory: 1536Mi
-  # Internal API of the controller, between the pods. It carries registry credentials: never expose it.
-  internal:
-    port: 8081
-    # Token shared by the pods, required: an existing Secret...
-    existingSecret: ""
-    secretKey: token
-    # ...or the token itself (e.g. openssl rand -hex 32), the chart then creates the Secret.
-    token: ""
 
 # Redis / Valkey. Required by mode distributed: the pods talk through it (ADR 0003). In both modes the
 # controller keeps a copy of the inventory there: a restarted controller (or a standby taking over) shows

@@ -2,6 +2,7 @@
 
 - Status: accepted, implemented for v1.0.0
 - Date: 2026-10-24 (updated 2026-10-26: separate `trivy` role, roles combined per pod)
+- The internal HTTP API below was replaced by Valkey on 2026-10-27: see [ADR 0003](0003-valkey-bus.md)
 
 ## Context
 

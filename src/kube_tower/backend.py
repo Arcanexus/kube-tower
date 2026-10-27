@@ -2,8 +2,9 @@
 
 The pages and the API only go through a Backend, never through the Scanner or the Administration
 directly. A process with the controller role uses the LocalBackend (the Scanner and the Administration
-of the process). A `ui` process without the controller uses the RemoteBackend, which asks the
-controller over its internal API (ADR 0002): the web layer does not change.
+of the process). A `ui` process without the controller uses the RemoteBackend, which reads the state
+that the controller publishes in Valkey and sends it the actions there (ADR 0003): the web layer does
+not change.
 """
 
 from __future__ import annotations
@@ -16,10 +17,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-import httpx
+from redis.exceptions import RedisError
 
 from kube_tower.administration import Administration, ConnectivityReport
-from kube_tower.config import Settings, internal_token
+from kube_tower.bus import Bus, pack, unpack
+from kube_tower.config import Settings
 from kube_tower.logbuffer import LogBuffer, LogLine
 from kube_tower.models import ChartReport, ImageReport, Snapshot, decode, encode
 from kube_tower.processes import Processes, ProcessInfo
@@ -98,6 +100,7 @@ class LocalBackend:
         log_buffer: LogBuffer | None = None,
         processes: Processes | None = None,
         state: Callable[[], str] = lambda: "active",
+        bus: Bus | None = None,
     ):
         self.scanner = scanner
         self.administration = administration
@@ -105,12 +108,15 @@ class LocalBackend:
         # The other processes, as they report to this controller; `state` is the one of this process.
         self.process_registry = processes or Processes(scanner.settings.roles)
         self.process_state = state
+        self.bus = bus  # distributed mode: the log lines of every process are in Valkey
 
     def processes(self) -> list[ProcessInfo]:
         return self.process_registry.list(self.process_state())
 
     async def log_lines(self, after: int = 0) -> list[LogLine]:
-        return self.log_buffer.since(after)
+        if self.bus is None:
+            return self.log_buffer.since(after)
+        return await _log_lines(self.bus, after)
 
     @property
     def snapshot(self) -> Snapshot:
@@ -292,25 +298,33 @@ class BackendState:
     snapshot: Snapshot | None = None
 
 
-POLL = 2.0  # seconds between two reads of the controller state by a UI process
+POLL = 1.0  # seconds between two reads of the revision of the state by a UI process
+ACTION_TIMEOUT = 45.0  # seconds a UI process waits for the answer of the controller to an action
 UNREACHABLE = "the controller cannot be reached: {}"
 
 
+async def _log_lines(bus: Bus, after: int) -> list[LogLine]:
+    from kube_tower.internal import read_log_lines
+
+    try:
+        return await read_log_lines(bus, after)
+    except RedisError as exc:
+        log.warning("log lines not read from Valkey: %s", exc)
+        return []
+
+
 class RemoteBackend:
-    """A `ui` process without the controller: the state of the controller, read again every POLL seconds,
-    and the actions sent to it, over its internal API.
+    """A `ui` process without the controller: shows the state that the controller publishes in Valkey (its
+    revision read every POLL seconds, the state read again when it changed, the snapshot when it has a new
+    revision), and sends it the actions there.
     """
 
-    def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(self, settings: Settings, bus: Bus):
         self.settings = settings
-        self.http = httpx.AsyncClient(
-            base_url=settings.internal.controller_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {internal_token(settings)}", "User-Agent": "kube-tower"},
-            timeout=30,
-            transport=transport,
-        )
+        self.bus = bus
         self.state = BackendState()
         self._snapshot = Snapshot()
+        self._published = -1  # revision of the published state this process has
         self._unreachable = False
 
     async def run_forever(self) -> None:
@@ -320,31 +334,38 @@ class RemoteBackend:
 
     async def refresh(self) -> None:
         try:
-            answer = await self.http.post("/internal/v1/state", json={"revision": self.state.revision})
-            answer.raise_for_status()
-        except httpx.HTTPError as exc:
+            if (published := await self.bus.state_revision()) == self._published:
+                state = None
+            else:
+                published, data = await self.bus.state()
+                # In a thread: a large state takes a while to decode, the pages of this process wait for nothing.
+                state = await asyncio.to_thread(lambda: decode(BackendState, json.loads(data))) if data else BackendState()
+                if state.revision != self.state.revision and (raw := await self.bus.published_snapshot()) is not None:
+                    self._snapshot = await asyncio.to_thread(lambda: decode(Snapshot, unpack(raw)))
+        except RedisError as exc:
             if not self._unreachable:
-                log.warning("%s (the pages show its last known state)", UNREACHABLE.format(exc))
+                log.warning("Valkey cannot be reached (%s): the pages show the last known state", exc)
             self._unreachable = True
             return
         if self._unreachable:
-            log.info("the controller answers again")
+            log.info("Valkey answers again")
         self._unreachable = False
-        # In a thread: a new snapshot takes a while to decode, the pages of this process wait for nothing.
-        state = await asyncio.to_thread(lambda: decode(BackendState, json.loads(answer.content)))
-        if state.snapshot is not None:
-            self._snapshot, state.snapshot = state.snapshot, None
-        self.state = state
+        if state is not None:
+            self.state, self._published = state, published
 
     async def _action(self, name: str, unreachable: Any = None, **params: Any) -> Any:
         try:
-            answer = await self.http.post(f"/internal/v1/actions/{name}", json=params)
-            answer.raise_for_status()
-        except httpx.HTTPError as exc:
-            log.warning("action %s not sent: %s", name, UNREACHABLE.format(exc))
-            return UNREACHABLE.format(exc) if unreachable is None else unreachable
+            answer = await self.bus.request("actions", pack({"name": name, "params": params}), ACTION_TIMEOUT, name=name)
+            error = None if answer is not None else f"no answer within {ACTION_TIMEOUT:.0f}s"
+            reply = unpack(answer) if answer is not None else {}
+            error = error or reply.get("error")
+        except RedisError as exc:
+            error = str(exc)
+        if error is not None:
+            log.warning("action %s not run: %s", name, UNREACHABLE.format(error))
+            return UNREACHABLE.format(error) if unreachable is None else unreachable
         await self.refresh()  # the page shows what the action started
-        return answer.json()["result"]
+        return reply["result"]
 
     @property
     def snapshot(self) -> Snapshot:
@@ -458,10 +479,4 @@ class RemoteBackend:
         return self.state.processes
 
     async def log_lines(self, after: int = 0) -> list[LogLine]:
-        try:
-            answer = await self.http.post("/internal/v1/logs", json={"after": after})
-            answer.raise_for_status()
-        except httpx.HTTPError as exc:
-            log.warning("log lines not read: %s", UNREACHABLE.format(exc))
-            return []
-        return decode(list[LogLine], answer.json())
+        return await _log_lines(self.bus, after)

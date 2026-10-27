@@ -69,6 +69,19 @@ def _message(entry_id: Any, raw: dict, stream: str = "") -> Message:
     return Message(_text(entry_id), data, {k: _text(v) for k, v in fields.items()}, stream)
 
 
+SEQ = 100_000  # stream ids as numbers: milliseconds * SEQ + sequence
+
+
+def seq_of(entry_id: str) -> int:
+    """A stream id (`<milliseconds>-<sequence>`) as an increasing number."""
+    ms, _, n = entry_id.partition("-")
+    return int(ms) * SEQ + int(n or 0)
+
+
+def id_of(seq: int) -> str:
+    return f"{seq // SEQ}-{seq % SEQ}"
+
+
 def pack(value: Any) -> bytes:
     """A JSON-ready value as a payload: compressed JSON (a result can weigh megabytes). Slow for large values:
     call it in a thread."""
@@ -168,6 +181,13 @@ class Bus:
 
     # Capped streams read by everyone (e.g. the log lines)
 
+    async def send_many(self, stream: str, payloads: list[bytes], maxlen: int) -> list[str]:
+        """Add messages to a capped stream, in one round trip: their ids."""
+        async with self.redis.pipeline(transaction=False) as pipe:
+            for data in payloads:
+                pipe.xadd(self.key(stream), {DATA: data}, maxlen=maxlen, approximate=True)
+            return [_text(sent) for sent in await pipe.execute()]
+
     async def read(self, stream: str, after: str = "0", count: int = 1000) -> list[Message]:
         """The messages after this id, oldest first."""
         entries = await self.redis.xrange(self.key(stream), min=f"({after}" if after != "0" else "-", count=count)
@@ -180,13 +200,19 @@ class Bus:
 
     # The state of the controller
 
-    async def publish_state(self, data: bytes) -> int:
-        """Write the state and give it a new revision: the revision."""
+    async def publish_state(self, data: bytes, snapshot: bytes | None = None) -> int:
+        """Write the state (and the snapshot, when given: it changes less often and weighs more) and give it a
+        new revision: the revision."""
         async with self.redis.pipeline(transaction=True) as pipe:
             pipe.set(self.key("state"), data)
+            if snapshot is not None:
+                pipe.set(self.key("state", "snapshot"), snapshot)
             pipe.incr(self.key("state", "rev"))
-            _, revision = await pipe.execute()
+            revision = (await pipe.execute())[-1]
         return int(revision)
+
+    async def published_snapshot(self) -> bytes | None:
+        return await self.redis.get(self.key("state", "snapshot"))
 
     async def state_revision(self) -> int:
         """The revision of the published state, 0 when none was published."""
