@@ -531,3 +531,29 @@ async def test_large_results_and_states_stay_off_the_event_loop(fakes, monkeypat
         assert fresh.headers["content-type"] == "application/json" and fresh.json()["snapshot"]["images"]
         same = await http.post("/internal/v1/state", json={"revision": scanner.revision})
         assert same.json()["snapshot"] is None
+
+
+async def test_registry_authentication_seen_by_the_workers_reaches_the_controller():
+    """The controller shows on its Administration page whether the registries accepted the credentials:
+    the check results of the worker pods carry what the registries answered them."""
+    from datetime import UTC, datetime, timedelta
+
+    from kube_tower.registry.auth import AuthResult
+    from kube_tower.tasks import CheckImagesResult, CheckImagesTask, encode_result
+
+    controller = Worker(Settings())
+    runner = QueueRunner(controller, set())
+    old = datetime.now(UTC) - timedelta(hours=1)
+    controller.registry_auth.record("ghcr.io", True)  # newer than what the worker saw: kept
+    pod = Worker(Settings())
+    pod.registry_auth.record("docker.io", False, "HTTP 401")
+    pod.registry_auth._results["ghcr.io"] = AuthResult("ghcr.io", False, old, "old refusal")
+    running = asyncio.create_task(runner.run(CheckImagesTask([])))
+    task = await runner.next({"worker"}, wait=1)
+    assert runner.complete(task["id"], encode_result(CheckImagesResult([], pod.registry_auth.all())))
+    result = await running
+    assert [a.host for a in result.registry_auth] == ["docker.io", "ghcr.io"]
+    assert controller.registry_auth.get("docker.io").message == "HTTP 401"
+    assert controller.registry_auth.get("ghcr.io").ok  # the latest answer wins
+    # The worker side sends what it saw with each check
+    assert (await pod.execute(CheckImagesTask([]))).registry_auth == pod.registry_auth.all()

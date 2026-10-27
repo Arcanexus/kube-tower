@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from kube_tower.models import ChartReport, ImageReport, VulnerabilityReport, decode, encode
+from kube_tower.registry.auth import AuthResult
 from kube_tower.trivy import TrivyStatus
 
 if TYPE_CHECKING:
@@ -101,11 +102,14 @@ class CollectResult:
 @dataclass
 class CheckImagesResult:
     images: list[ImageReport]
+    # Whether the registries accepted the credentials, as seen by the process that ran the task
+    registry_auth: list[AuthResult] = field(default_factory=list)
 
 
 @dataclass
 class CheckChartsResult:
     charts: list[ChartReport]
+    registry_auth: list[AuthResult] = field(default_factory=list)
 
 
 @dataclass
@@ -232,7 +236,11 @@ class QueueRunner:
         try:
             # In a thread: decoding a large result (e.g. the vulnerabilities of 50 images) takes seconds, and this
             # event loop also serves the internal API and, in a process with the ui role, the pages.
-            return await asyncio.to_thread(decode_result, kind, await queued.future)
+            result = await asyncio.to_thread(decode_result, kind, await queued.future)
+            # The registries answered the worker pod: the Administration page of the controller shows it.
+            if auth := getattr(result, "registry_auth", None):
+                self.worker.registry_auth.merge(auth)
+            return result
         finally:  # done, or the scan was cancelled: forget it
             if queued in self.queue:
                 self.queue.remove(queued)

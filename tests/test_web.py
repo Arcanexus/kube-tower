@@ -317,7 +317,7 @@ def test_metrics():
     assert not any(line.startswith("kube_tower_image_workload_info") and 'kind="Node"' in line for line in lines)
 
 
-def test_settings_page_shows_credentials_without_secrets(monkeypatch):
+def test_administration_page_shows_credentials_without_secrets(monkeypatch):
     from kube_tower.config import RegistryCredential
 
     monkeypatch.setenv("DOCKERHUB_TOKEN", "super-secret-token")
@@ -327,14 +327,20 @@ def test_settings_page_shows_credentials_without_secrets(monkeypatch):
         RegistryCredential("ghcr.io", password_file="/nonexistent"),
     ]
     scanner = FakeScanner()
-    page = TestClient(create_app(settings, scanner, background=False)).get("/settings").text
+    page = TestClient(create_app(settings, scanner, background=False)).get("/administration").text
+    assert '<article id="registries">' in page
     assert "docker.io" in page and "alex" in page and "loaded" in page and "invalid" in page
     assert page.count("not tried yet") == 2
     scanner.registry_auth.record("docker.io", True)
     scanner.registry_auth.record("ghcr.io", False, "ghcr.io refused the credentials: HTTP 403 Forbidden")
-    page = TestClient(create_app(settings, scanner, background=False)).get("/settings").text
+    client = TestClient(create_app(settings, scanner, background=False))
+    page = client.get("/administration").text
     assert "not tried yet" not in page and "accepted" in page and "refused" in page and "HTTP 403 Forbidden" in page
     assert "super-secret-token" not in page
+    # The Settings page only references the secrets, and points to the Administration page for the credentials
+    page = client.get("/settings").text
+    assert "super-secret-token" not in page and "Registry credentials</header>" not in page
+    assert 'href="administration#registries"' in page
     assert "passwordEnv: DOCKERHUB_TOKEN" in page  # camelCase like config.yaml
 
 

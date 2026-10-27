@@ -148,6 +148,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Distributed mode: the authentication status of the registries stayed **not tried yet** after a scan,
+  because the worker pods, not the controller, query the registries. The results of the version checks
+  now carry what the registries answered, and the controller keeps the latest answer of each one. The
+  registry credentials and their status moved from the Settings page to the Administration page.
 - Trivy scans failing on a transient error (an image layer read cut short with `unexpected EOF`, a
   connection reset or timeout, a registry answering 429 or 5xx) are tried again after 10 then 30
   seconds, up to 3 attempts, instead of waiting for the next scan. The retries are logged at INFO, the
