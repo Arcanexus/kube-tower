@@ -130,6 +130,7 @@ async def test_internal_api_token(monkeypatch):
 
 
 async def test_queue_runner(monkeypatch, caplog, bus):
+    caplog.set_level(logging.INFO)  # also when run alone: the logger level is set by create_app
     monkeypatch.setattr(tasks_module, "WATCH", 3600)  # the tasks are looked at by the test only
     worker = Worker(Settings())
     seen = []
@@ -663,3 +664,25 @@ async def test_registry_authentication_seen_by_the_workers_reaches_the_controlle
     assert controller.registry_auth.get("ghcr.io").ok  # the latest answer wins
     # The worker side sends what it saw with each check
     assert (await pod.execute(CheckImagesTask([]))).registry_auth == pod.registry_auth.all()
+
+
+async def test_the_controller_waits_for_valkey_at_startup(monkeypatch, caplog, bus):
+    slept, real_sleep, real_reset = [], asyncio.sleep, bus.reset
+    failures = iter([True, True])
+
+    async def sleep(delay):
+        slept.append(delay)
+        await real_sleep(0)
+
+    async def reset(*args):
+        if next(failures, False):  # Valkey still starting
+            raise RedisConnectionError("connection refused")
+        await real_reset(*args)
+
+    monkeypatch.setattr(bus, "reset", reset)
+    runner = _runner(Worker(Settings()), set(), bus)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    async with _serving(runner):
+        pass
+    assert "cannot prepare the task streams in Valkey, the scans wait (connection refused): trying again in 1s" in caplog.text
+    assert slept[:2] == [1, 2]

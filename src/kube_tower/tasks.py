@@ -277,9 +277,16 @@ class QueueRunner:
     async def serve(self) -> None:
         """Run by the active controller: empty the streams of the previous one, then read the results and
         watch the tasks being run."""
-        for role in ("worker", "trivy"):
-            await self.bus.reset(task_stream(role), TASK_GROUP)
-        await self.bus.reset("results", RESULT_GROUP)
+        errors = 0
+        while True:  # e.g. Valkey still starting along with the controller
+            try:
+                for role in ("worker", "trivy"):
+                    await self.bus.reset(task_stream(role), TASK_GROUP)
+                await self.bus.reset("results", RESULT_GROUP)
+                break
+            except RedisError as exc:
+                await _backoff(errors, "cannot prepare the task streams in Valkey, the scans wait", exc)
+                errors += 1
         self._ready.set()
         log.info("tasks of the worker and trivy processes go through Valkey (epoch %s)", self.epoch)
         await asyncio.gather(self._read_results(), self._watch())
