@@ -1,5 +1,8 @@
 {{- $distributed := include "kube-tower.distributed" . }}
 {{- $redisUrl := include "kube-tower.redisUrl" . }}
+{{- if and $distributed (not $redisUrl) }}
+{{- fail "mode distributed: the pods talk through Valkey, set redis.valkey.enabled=true or redis.url" }}
+{{- end }}
 {{- range $name, $g := include "kube-tower.groups" . | fromJson }}
 {{- $roles := $g.roles }}
 {{- /* Groups with only the ui role reach no Kubernetes API, registry nor git host */ -}}
@@ -117,9 +120,14 @@ spec:
             - name: KUBE_TOWER_CONTROLLER_URL
               value: "http://{{ include "kube-tower.fullname" $ }}-internal:{{ $.Values.distributed.internal.port }}"
             {{- end }}
-            {{- if and $controller $redisUrl }}
+            {{- /* Distributed mode: every pod talks through Valkey (ADR 0003); single mode: the snapshot */ -}}
+            {{- if or $distributed (and $controller $redisUrl) }}
             - name: KUBE_TOWER_REDIS_URL
               value: {{ $redisUrl | quote }}
+            {{- if $distributed }}
+            - name: KUBE_TOWER_REDIS_KEY_PREFIX
+              value: {{ $.Values.redis.keyPrefix | default (include "kube-tower.fullname" $) | quote }}
+            {{- end }}
             {{- with include "kube-tower.redisSecretName" $ }}
             - name: KUBE_TOWER_REDIS_PASSWORD
               valueFrom:

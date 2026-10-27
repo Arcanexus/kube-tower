@@ -200,8 +200,9 @@ class InternalSettings:
 
 @dataclass
 class RedisSettings:
-    """Optional Redis / Valkey where the controller keeps the snapshot: a new controller (restart, or a standby
-    taking over) starts with it instead of an empty inventory. Unused while `url` is empty."""
+    """Redis / Valkey: required in the distributed mode, where the processes talk through it (ADR 0003).
+    The controller also keeps the snapshot there: a new controller (restart, or a standby taking over) starts
+    with it instead of an empty inventory. Optional when one process runs every role."""
 
     # redis://host:6379/0, or rediss:// for TLS.
     url: str = ""
@@ -274,6 +275,8 @@ def load_settings(path: str | None = None) -> Settings:
         settings.internal.controller_url = url
     if url := os.environ.get("KUBE_TOWER_REDIS_URL"):
         settings.redis.url = url
+    if prefix := os.environ.get("KUBE_TOWER_REDIS_KEY_PREFIX"):
+        settings.redis.key_prefix = prefix
     settings.roles = check_roles(settings.roles)
     check_internal(settings)
     return settings
@@ -290,9 +293,14 @@ def check_roles(roles: list[str]) -> list[str]:
 
 
 def check_internal(settings: Settings) -> None:
-    """The distributed mode needs the shared token, and the controller URL in processes without the controller."""
+    """The distributed mode needs Valkey, the shared token, and the controller URL in processes without the controller."""
     if not settings.distributed:
         return
+    if not settings.redis.url:
+        raise ValueError(
+            f"roles {', '.join(settings.roles)}: the processes talk through Valkey or Redis, set redis.url"
+            " (or $KUBE_TOWER_REDIS_URL)"
+        )
     if not internal_token(settings):
         raise ValueError(f"roles {', '.join(settings.roles)}: set the internal API token in ${settings.internal.token_env}")
     if "controller" not in settings.roles and not settings.internal.controller_url:

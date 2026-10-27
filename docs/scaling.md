@@ -12,17 +12,24 @@ that work together (`mode: distributed`). The image is the same: each pod runs s
 | `worker` | Collects the clusters, checks the versions in registries and Helm repositories | any, autoscaling | read-only ClusterRole, cluster Secrets |
 | `trivy` | Scans the images with Trivy, keeps the Trivy databases and results | always 1 | none needed |
 
-See [architecture](architecture.md) for the diagrams and [ADR 0002](adr/0002-horizontal-scaling.md) for the design.
+See [architecture](architecture.md) for the diagrams, [ADR 0002](adr/0002-horizontal-scaling.md) and
+[ADR 0003](adr/0003-valkey-bus.md) for the design.
 
 ```
                 ┌──────── ui (×N) ◄─── Ingress / Service
                 │  state, actions
                 ▼
           controller (1 active, standbys) ◄─── Prometheus (/metrics)
-         ▲  tasks / results  ▲         └──► Redis / Valkey (optional)
-         │                   │
+                ▲  tasks / results
+                ▼
+             Valkey (required)
+                ▲  tasks / results
+         ┌──────┴────────────┐
     worker (×N)          trivy (×1)
 ```
+
+The tasks of the scans go through Valkey; the state and the actions of the ui pods still go through
+the internal API of the controller, until they move to Valkey too ([ADR 0003](adr/0003-valkey-bus.md)).
 
 ## Distributed mode
 
@@ -32,6 +39,10 @@ distributed:
   internal:
     # Token shared by the pods (required): an existing Secret, or `token` inline
     existingSecret: kube-tower-internal     # key: token
+# Required: the pods talk through Valkey (or an existing Redis, see below)
+redis:
+  valkey:
+    enabled: true
 ```
 
 ```sh
@@ -48,7 +59,8 @@ This renders four Deployments, `<release>-controller`, `-ui`, `-worker` and `-tr
   replace one controller pod at a time (`maxUnavailable: 1`, `maxSurge: 0`);
 - the **ui** pods serve the pages through the usual Service and Ingress. They get no ServiceAccount
   token, no registry credential nor git token;
-- the **worker** pods pull the collection and version check tasks from the controller;
+- the **worker** pods read the collection and version check tasks from Valkey, where the controller
+  queues them, and send their results back there;
 - the **trivy** pod scans the images: one replica only, whatever the values, so the Trivy databases
   are downloaded once and the results cache is shared by every cluster.
 
@@ -98,7 +110,8 @@ to another pod, e.g. when a worker was stopped in the middle of it.
 ### Network policies
 
 With `networkPolicy.enabled`, the kube-tower pods also accept the internal port from each other only,
-and reach it and Valkey. The internal API carries registry credentials: never expose it.
+and reach it and Valkey, which accepts the kube-tower pods only. The tasks carry registry credentials
+(image pull secrets): a Valkey password is recommended (`redis.password` or `redis.existingSecret`).
 
 ### Sizing
 
@@ -124,11 +137,12 @@ after 2 minutes above the target; pods removed after 5 minutes below it. Workers
 registries, so their CPU says little about the work queued: a fixed number of workers is usually the
 better choice, autoscaling them helps with many clusters scanned often.
 
-## Keeping the inventory across restarts (Redis / Valkey)
+## Redis / Valkey
 
-The controller keeps the inventory in memory: a restarted controller, or a standby taking over,
-starts with an empty one and scans first. With Redis or Valkey it keeps a copy there and shows it at
-once, then waits for the rest of `refreshInterval` before the next scan. This works in both modes.
+The distributed mode requires it: the pods talk through it. In both modes, the controller also keeps
+a copy of the inventory there: a restarted controller, or a standby taking over, shows it at once,
+then waits for the rest of `refreshInterval` before the next scan. Without it (single mode only), a
+restarted controller starts with an empty inventory and scans first.
 
 ```yaml
 redis:
@@ -138,11 +152,14 @@ redis:
   # ...or an existing Redis / Valkey
   url: rediss://my-redis.example:6380/0
   existingSecret: kube-tower-redis   # optional password, key: password
+  keyPrefix: ""                      # prefix of the keys (empty: the release name)
 ```
 
-Only the controller connects to it. The chart's Valkey keeps its data in memory: it survives a
-controller restart, not its own. A scan in progress is never kept: a new controller starts a new one
-when one is due.
+In single mode only the controller connects to it; in distributed mode every pod does. The chart's
+Valkey keeps its data in memory: it survives a controller restart, not its own. A scan in progress
+is never kept: a new controller empties the task queues of the previous one and starts a new scan
+when one is due. Several installations can share one Redis: each uses its own `keyPrefix` (and
+`config.redis.key` for the snapshot).
 
 ## With ArgoCD
 

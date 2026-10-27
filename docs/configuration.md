@@ -80,7 +80,7 @@ internal:                      # between the processes, when the roles run apart
   leaderElection: false        # several controller replicas: one active, elected through a Lease
   leaseName: kube-tower-controller
   labelPod: false              # the active controller labels its pod (for a Service selecting it)
-redis:                         # optional Redis / Valkey keeping the snapshot across controller restarts
+redis:                         # Redis / Valkey: required when the roles are apart, optional otherwise
   url: ""                      # redis://host:6379/0 or rediss:// (TLS); empty: the snapshot stays in memory
   passwordEnv: KUBE_TOWER_REDIS_PASSWORD
   key: kube-tower:snapshot     # change it when several installations share one Redis
@@ -90,7 +90,7 @@ redis:                         # optional Redis / Valkey keeping the snapshot ac
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
 
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLES`
-(comma-separated), `KUBE_TOWER_CONTROLLER_URL`, `KUBE_TOWER_REDIS_URL`.
+(comma-separated), `KUBE_TOWER_CONTROLLER_URL`, `KUBE_TOWER_REDIS_URL`, `KUBE_TOWER_REDIS_KEY_PREFIX`.
 
 `roles` is the horizontal scaling (see [scaling](scaling.md) and
 [ADR 0002](adr/0002-horizontal-scaling.md)): one image whose pods run any combination of the `ui`,
@@ -98,10 +98,12 @@ Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `K
 a process runs every role (`all`). The chart sets all of this with `mode: distributed`; when the roles
 run apart:
 
-- the process with `controller` schedules the scans and serves its internal API on `internal.port`;
-  the tasks of the roles it does not run wait there;
-- processes with `worker` and/or `trivy` (and no `controller`) pull these tasks from
-  `internal.controllerUrl`, run them and send the results back; a `worker` reads the cluster list itself.
+- every process talks through Redis or Valkey (`redis.url`, required, see
+  [ADR 0003](adr/0003-valkey-bus.md)); the process with `controller` schedules the scans, queues there
+  the tasks of the roles it does not run, and serves its internal API on `internal.port`;
+- processes with `worker` and/or `trivy` (and no `controller`) read these tasks from Valkey, run them
+  and send the results back there; a `worker` reads the cluster list itself. A task not answered
+  within `internal.taskTimeout` (its process stopped) is queued again, three times at most.
   The version checks and Trivy scans of a scan are split in tasks of `internal.batchSize` images or
   charts (the tags of one image stay together), so several processes share them;
 - a process with `ui` and no `controller` shows the state of the controller, read every 2 seconds
@@ -115,12 +117,12 @@ run apart:
   `kube-tower.arcanexus.com/active-controller=true` (and a standby `false`; RBAC: patch `pods`), for a
   Service selecting the active one while every controller pod stays ready; otherwise use `/leaderz`
   as readiness probe. A controller that cannot renew its Lease in time stops and is restarted as a standby.
-  The new controller starts with a full scan, unless `redis.url` is set (below), and the worker and
-  trivy processes pull from it;
+  The new controller empties the task queues of the previous one and starts a full scan, unless the
+  stored snapshot is recent (below);
 - with `redis.url`, the controller also writes the snapshot to Redis or Valkey (compressed, at each
   change, the last version only) and reads it back when it becomes the active controller: a restarted
   controller, or a standby taking over, shows the last inventory at once and waits for the rest of
-  `refreshInterval` before scanning. Only the controller connects to it. A scan in progress is not kept: it starts again;
+  `refreshInterval` before scanning. A scan in progress is not kept: it starts again;
 - every process reads the shared token from `$KUBE_TOWER_INTERNAL_TOKEN`, which is required as soon as
   the roles are apart. The internal API carries registry credentials: keep its port inside the cluster.
 

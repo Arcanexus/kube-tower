@@ -20,9 +20,11 @@ can share one Valkey. The payloads are bytes: the callers encode them (JSON, oft
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import uuid
+import zlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,6 +45,7 @@ class Message:
     id: str
     data: bytes
     fields: dict[str, str]  # the other fields of the message (e.g. the task kind, the reply key)
+    stream: str = ""  # the stream it was read from, without the prefix
 
 
 @dataclass(frozen=True)
@@ -59,11 +62,21 @@ def _text(value: Any) -> str:
     return value.decode() if isinstance(value, bytes) else str(value)
 
 
-def _message(entry_id: Any, raw: dict) -> Message:
+def _message(entry_id: Any, raw: dict, stream: str = "") -> Message:
     fields = {_text(k): v for k, v in raw.items()}
     data = fields.pop(DATA.decode(), b"")
     data = data if isinstance(data, bytes) else str(data).encode()
-    return Message(_text(entry_id), data, {k: _text(v) for k, v in fields.items()})
+    return Message(_text(entry_id), data, {k: _text(v) for k, v in fields.items()}, stream)
+
+
+def pack(value: Any) -> bytes:
+    """A JSON-ready value as a payload: compressed JSON (a result can weigh megabytes). Slow for large values:
+    call it in a thread."""
+    return zlib.compress(json.dumps(value).encode())
+
+
+def unpack(data: bytes) -> Any:
+    return json.loads(zlib.decompress(data))
 
 
 class Bus:
@@ -93,19 +106,23 @@ class Bus:
         sent = await self.redis.xadd(self.key(stream), entry, maxlen=maxlen, approximate=True)
         return _text(sent)
 
-    async def receive(self, stream: str, group: str, consumer: str, block: float, count: int = 1) -> list[Message]:
-        """The next messages of the group for this consumer, waiting up to `block` seconds for one. The group is
-        created again when Valkey lost it (e.g. restarted without persistence)."""
-        read = lambda: self.redis.xreadgroup(group, consumer, {self.key(stream): ">"}, count=count, block=int(block * 1000))  # noqa: E731
+    async def receive(self, streams: str | list[str], group: str, consumer: str, block: float, count: int = 1) -> list[Message]:
+        """The next messages of the group (same name in each stream) for this consumer, waiting up to `block`
+        seconds for one. The groups are created again when Valkey lost them (e.g. restarted without persistence)."""
+        names = [streams] if isinstance(streams, str) else streams
+        wanted = {self.key(name): ">" for name in names}
+        read = lambda: self.redis.xreadgroup(group, consumer, wanted, count=count, block=int(block * 1000))  # noqa: E731
         try:
             answer = await read()
         except ResponseError as exc:
             if "NOGROUP" not in str(exc):
                 raise
-            log.info("stream %s or its group %s missing in Valkey: created again", self.key(stream), group)
-            await self.ensure_group(stream, group)
+            log.info("stream %s or its group %s missing in Valkey: created again", ", ".join(wanted), group)
+            for name in names:
+                await self.ensure_group(name, group)
             answer = await read()
-        return [_message(entry_id, raw) for _, entries in answer or [] for entry_id, raw in entries if raw]
+        start = len(self.key(""))
+        return [_message(entry_id, raw, _text(key)[start:]) for key, entries in answer or [] for entry_id, raw in entries if raw]
 
     async def done(self, stream: str, group: str, *ids: str) -> None:
         """Acknowledge messages and delete them: nobody reads them again."""

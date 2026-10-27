@@ -142,10 +142,17 @@ All notable changes to this project are documented here. The format follows
   holds the Valkey keys through which the processes will talk instead of the internal HTTP API (task
   and result streams read by consumer groups, pending tasks given to another process, the published
   state and its revision, replies to the actions, one expiring key per process, capped log streams).
-  New setting `redis.keyPrefix`. Not used yet: the next steps move each exchange onto it.
+  New setting `redis.keyPrefix`.
 
 ### Changed
 
+- Distributed mode: the tasks of the scans go through Valkey ([ADR 0003](docs/adr/0003-valkey-bus.md)).
+  The controller queues them in a Valkey stream per role, worker and trivy pods read them there and
+  send their results back to Valkey; a task not answered within `internal.taskTimeout` is given to
+  another pod, three times at most, and a controller taking over empties the queues of the previous
+  one. Valkey (or `redis.url`) is therefore **required** in distributed mode, the chart refuses to
+  render without it and gives every pod its URL, password and key prefix (`redis.keyPrefix`, the
+  release name by default). The internal API keeps the state, actions, reports and logs for now.
 - Chart, distributed mode: sizing from measures on a real inventory. `ui`: 1 replica, 100m CPU and 192Mi
   requested (was 2 replicas, 20m, 128Mi: with such a low request, the autoscaling target was reached at
   every page load and the HPA kept adding and removing pods); `worker`: 100m CPU and 256Mi requested.
