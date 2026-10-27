@@ -285,7 +285,7 @@ class QueueRunner:
                 await self.bus.reset("results", RESULT_GROUP)
                 break
             except RedisError as exc:
-                await _backoff(errors, "cannot prepare the task streams in Valkey, the scans wait", exc)
+                await backoff(errors, "cannot prepare the task streams in Valkey, the scans wait", exc)
                 errors += 1
         self._ready.set()
         log.info("tasks of the worker and trivy processes go through Valkey (epoch %s)", self.epoch)
@@ -298,7 +298,7 @@ class QueueRunner:
                 messages = await self.bus.receive("results", RESULT_GROUP, self.epoch, block=WATCH, count=10)
                 errors = 0
             except RedisError as exc:
-                await _backoff(errors, "cannot read the results of the tasks from Valkey", exc)
+                await backoff(errors, "cannot read the results of the tasks from Valkey", exc)
                 errors += 1
                 continue
             for message in messages:
@@ -352,7 +352,7 @@ class QueueRunner:
                     self.messages[new_id] = (task_id, role, attempt + 1)
 
 
-async def _backoff(errors: int, message: str, exc: Exception) -> None:
+async def backoff(errors: int, message: str, exc: Exception) -> None:
     delay = RETRY[min(errors, len(RETRY) - 1)]
     log.warning("%s (%s): trying again in %ss", message, exc, delay)
     await asyncio.sleep(delay)

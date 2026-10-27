@@ -42,8 +42,7 @@ The four **roles** are parts of the same program, in the same image:
 
 ## Single mode (default)
 
-One pod runs every role (`roles: [all]`). The roles call each other in memory: no internal API, no
-token, no Redis needed.
+One pod runs every role (`roles: [all]`). The roles call each other in memory: no Redis needed.
 
 ```mermaid
 flowchart LR
@@ -60,9 +59,8 @@ flowchart LR
 ## Distributed mode
 
 With `mode: distributed`, the chart renders one Deployment per group of roles (by default one per
-role). The tasks of the scans go through **Valkey** (required, [ADR 0003](adr/0003-valkey-bus.md)); the ui
-pods and the reports still use the **internal API** of the controller (`:8081`, a shared token in
-`Authorization: Bearer`), reached through the `<release>-internal` Service, until they move to Valkey too.
+role). The pods never call each other: every exchange goes through **Valkey** (required), and only the
+active controller orchestrates ([ADR 0003](adr/0003-valkey-bus.md)).
 
 ```mermaid
 flowchart TB
@@ -77,11 +75,11 @@ flowchart TB
         standby["controller pod<br/>standby"]
     end
 
-    isvc["Service kube-tower-internal :8081<br/>selects the active controller"] --> active
+    isvc["Service kube-tower-controller :8080<br/>selects the active controller"] --> active
 
-    ui1 & ui2 -->|"state (every 2 s), actions, logs"| isvc
-    standby -.->|"report (every 5 s)"| isvc
-    active <-->|"queue tasks, read results,<br/>snapshot copy"| valkey[(Valkey<br/>chart or existing Redis)]
+    active <-->|"queue tasks, read results, publish the state,<br/>run actions, snapshot copy"| valkey[(Valkey<br/>chart or existing Redis)]
+    ui1 & ui2 <-->|"read the state, send actions, read logs"| valkey
+    standby -.->|"presence, logs (every 5 s)"| valkey
     w1[worker pod] & w2[worker pod] <-->|"read tasks, send results"| valkey
     tr[trivy pod ×1] <-->|"read tasks, send results"| valkey
 
@@ -92,11 +90,13 @@ flowchart TB
     tr --> regs[(Registries ·<br/>Trivy databases)]
 ```
 
-- **ui** pods hold no state: each reads the state of the controller every 2 seconds and sends it the
-  actions of the users (scan, rescan, retry, Administration). Any replica can serve any request, so
-  the ui Deployment can autoscale. They get no ServiceAccount token nor credential.
+- **ui** pods hold no state: each reads the revision of the state published by the controller every
+  second, the state when it changed, the inventory when it has a new revision, and sends the actions of
+  the users (scan, rescan, retry, Administration) to the controller through Valkey, waiting for its
+  answer. Any replica can serve any request, so the ui Deployment can autoscale. They get no
+  ServiceAccount token nor credential.
 - **controller**: one active pod at a time. The active one holds the `Lease` and labels its pod
-  `kube-tower.arcanexus.com/active-controller=true`: the internal Service routes to it only. A standby
+  `kube-tower.arcanexus.com/active-controller=true`: the controller Service (`/metrics`) routes to it only. A standby
   takes the Lease about 15 s after the active one stopped renewing it; an active controller that
   cannot renew it in time stops itself, so two controllers never hand out tasks together.
 - **worker** pods read their tasks from the Valkey stream of their role (one pod gets each task), run
@@ -105,14 +105,15 @@ flowchart TB
   over empties the queues of the previous one.
 - **trivy**: one pod, so the Trivy databases are downloaded once and the results cache is shared by
   every cluster.
-- **Reports**: every pod but the active controller (standbys included) reports to the controller
-  every 5 seconds: its name, roles, version, and its new log lines. The controller keeps them for the
-  **Administration** page (state of each role and pod, task each one runs) and the **Logs** page (lines
-  of every pod, filtered by role). A pod not heard of for 30 seconds is shown as lost; a pod that stops
-  says so and leaves the list.
+- **Presence and logs**: every pod but the active controller (standbys included) writes every 5 seconds
+  a Valkey key that expires: its roles, state and version. The controller reads them for the
+  **Administration** page (state of each role and pod, task each one runs). Every pod ships its new log
+  lines to a capped Valkey stream, read by the **Logs** page (lines of every pod, filtered by role). A pod
+  not heard of for 30 seconds is shown as lost; a pod that stops says so and leaves the list.
 - **Valkey / Redis** (required in distributed mode, optional in single mode): the task queues and
-  results, and a copy of the snapshot that the active controller writes after each change and reads
-  when it becomes active. A scan in progress is not kept: a new controller starts a new one.
+  results, the published state, the actions and their answers, the presence keys and the log lines,
+  and a copy of the snapshot that the active controller writes after each change and reads when it
+  becomes active. A scan in progress is not kept: a new controller starts a new one.
 
 ## A scan, step by step
 
@@ -122,20 +123,22 @@ sequenceDiagram
     participant C as Controller
     participant W as Worker pods
     participant T as Trivy pod
-    participant S as Snapshot (+ Valkey)
+    participant V as Valkey
     participant U as UI pods
 
     C->>C: refreshInterval elapsed, or Scan now
-    C->>W: collect task, one per cluster
-    W-->>C: images, charts, pods, nodes, Trivy Operator reports
-    C->>W: check-images / check-charts tasks, batches of 50
-    W-->>C: latest versions, digests, statuses
-    C->>S: inventory with versions
-    C->>T: scan-vulnerabilities tasks, batches of 50
-    T-->>C: vulnerabilities
-    C->>S: final inventory
-    U->>C: state (revision changed?)
-    C-->>U: new snapshot
+    C->>V: collect tasks, one per cluster
+    V->>W: one task per worker pod
+    W-->>V: images, charts, pods, nodes, Trivy Operator reports
+    V-->>C: results
+    C->>V: check-images / check-charts tasks, batches of 50
+    W-->>V: latest versions, digests, statuses
+    C->>V: inventory with versions (published state)
+    C->>V: scan-vulnerabilities tasks, batches of 50
+    T-->>V: vulnerabilities
+    C->>V: final inventory (published state, snapshot copy)
+    U->>V: revision changed?
+    V-->>U: new state and inventory
 ```
 
 Each repository is asked once per scan, whatever the number of clusters using it. Rescans of one
@@ -146,11 +149,11 @@ image or chart, and the retry of failed items, are the same tasks on a few items
 | Port | Served by | Paths |
 | --- | --- | --- |
 | `8080` (`http`) | every pod | pages, `/api/...`, `/metrics` (controller), `/healthz`, `/readyz`, `/leaderz` |
-| `8081` (`internal`) | controller (distributed mode) | `/internal/v1/state`, `/internal/v1/logs`, `/internal/v1/actions/{name}`, `/internal/v1/heartbeat` |
 | `6379` | Valkey | Redis protocol: every pod in distributed mode, the controller only in single mode |
 
-The tasks carry registry credentials (image pull secrets) through Valkey: set a Valkey password. With
-`networkPolicy.enabled`, only the kube-tower pods reach Valkey and the internal API.
+No other port: the pods never call each other. The tasks carry registry credentials (image pull
+secrets) through Valkey: set a Valkey password. With `networkPolicy.enabled`, only the kube-tower pods
+reach Valkey.
 
 ## Code
 
@@ -160,7 +163,7 @@ The tasks carry registry credentials (image pull secrets) through Valkey: set a 
 | `scanner.py`, `tasks.py` | controller: scans split in tasks queued in Valkey, results merged in the snapshot |
 | `worker.py`, `collectors/`, `registry/`, `checkers.py`, `trivy.py` | what the worker and trivy roles run |
 | `bus.py` | the Valkey keys through which the processes talk: task streams, results, state, replies, presence, logs |
-| `internal.py` | internal API, task puller of the worker and trivy processes, reports of the processes |
+| `internal.py` | the exchanges of the processes: task puller (worker, trivy), publisher of the controller (state, actions, processes), reporter (presence, logs) |
 | `processes.py`, `logbuffer.py` | the pods known to the controller and their state, the log lines of every pod |
 | `backend.py` | what the web layer uses: `LocalBackend` (same process) or `RemoteBackend` (ui pods) |
 | `election.py` | controller election with a Kubernetes `Lease`, active pod label |

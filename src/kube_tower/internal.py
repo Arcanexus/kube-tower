@@ -1,38 +1,37 @@
-"""The exchanges of the distributed mode. Worker and trivy processes read their tasks from Valkey and send
-their results back there (TaskPuller, ADR 0003). Over the internal API of the controller (ADR 0002), `ui`
-processes read the state of the controller (its snapshot, what runs) and send it the actions of the users
-(see backend.RemoteBackend).
+"""The exchanges between the processes of the distributed mode, all through Valkey (bus.py, ADR 0003).
 
-The other processes also report to the controller every few seconds (Reporter): who they are, and their
-new log lines, for the Administration and Logs pages.
+- Worker and trivy processes read their tasks from Valkey and send their results back there (TaskPuller;
+  the controller side is tasks.QueueRunner).
+- The active controller publishes the state that the `ui` processes show (its snapshot, what runs), and
+  runs the actions of their users (Publisher; the ui side is backend.RemoteBackend).
+- Every process tells it is alive and ships its new log lines (Reporter), for the Administration and Logs
+  pages; the active controller reads the processes (Publisher).
 
-The controller serves it on its own port (internal.port), apart from the UI, behind a token shared by
-the processes: it must never be exposed.
+No process calls another one: they only know the address of Valkey.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hmac
+import contextlib
+import dataclasses
+import json
 import logging
 import time
 from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from pydantic import BaseModel
 from redis.exceptions import RedisError
 
 from kube_tower import __version__
-from kube_tower.bus import Bus, Message, pack, unpack
+from kube_tower.bus import Bus, Message, id_of, pack, seq_of, unpack
 from kube_tower.clusters import ClusterRegistry
-from kube_tower.config import Settings, internal_token
+from kube_tower.config import Settings
 from kube_tower.logbuffer import LogBuffer, LogLine
 from kube_tower.models import decode, encode, to_json
 from kube_tower.processes import STARTED, process_name
-from kube_tower.tasks import RETRY, TASK_GROUP, CollectTask, decode_task, encode_result, role_of, task_stream
+from kube_tower.tasks import RETRY, TASK_GROUP, CollectTask, backoff, decode_task, encode_result, role_of, task_stream
 from kube_tower.worker import Worker
 
 if TYPE_CHECKING:
@@ -40,71 +39,114 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-PREFIX = "/internal/v1"
-WAIT = 20.0  # seconds a worker waits for a task before asking Valkey again
+WAIT = 20.0  # seconds a process waits for a task (or the controller for an action) before asking Valkey again
 CLUSTERS_TTL = 300  # seconds before a worker reads the cluster list again
-HEARTBEAT = 5.0  # seconds between two reports of a process to the controller
+HEARTBEAT = 5.0  # seconds between two reports of a process
+PRESENCE_TTL = 3 * HEARTBEAT  # seconds the key of a process lives without a new report
+STOPPED_TTL = 60.0  # seconds the key of a stopped process tells it stopped
 REPORT_LINES = 500  # log lines sent at most per report
+LOG_LINES = 10000  # log lines kept in Valkey, of every process
+PUBLISH = 2.0  # seconds between two publications of the state, when it changed
+ACTION_GROUP = "controller"  # the consumer group of the actions: the active controller
 
 
-class StateRequest(BaseModel):
-    revision: int = -1  # the revision of the snapshot the UI process has
+async def read_log_lines(bus: Bus, after: int = 0) -> list[LogLine]:
+    """The log lines of every process after this sequence number (the last LOG_LINES at first), oldest first."""
+    messages = await (bus.read("logs", id_of(after), LOG_LINES) if after else bus.last("logs", LOG_LINES))
+
+    def decoded() -> list[LogLine]:
+        return [dataclasses.replace(decode(LogLine, json.loads(m.data)), seq=seq_of(m.id)) for m in messages]
+
+    return await asyncio.to_thread(decoded)
 
 
-class LogsRequest(BaseModel):
-    after: int = 0  # the sequence number of the last line the UI process has
+class Publisher:
+    """The active controller: publishes in Valkey the state that the ui processes show, runs the actions they
+    send, and keeps the list of the processes from their keys (Administration page)."""
 
+    def __init__(self, backend: LocalBackend, bus: Bus):
+        self.backend, self.bus = backend, bus
+        self.name = process_name()
+        self._published: bytes | None = None
+        self._snapshot_revision: int | None = None
+        self._actions: set[asyncio.Task] = set()
 
-class Heartbeat(BaseModel):
-    """A process tells the controller it is alive (Reporter), with its log lines since the last report."""
-
-    name: str
-    roles: list[str]
-    state: str = "ok"  # standby for a controller waiting for the Lease, stopped when the process stops
-    version: str = ""
-    started_at: datetime | None = None
-    logs: list[dict[str, Any]] = []
-
-
-def create_internal_app(token: str, backend: LocalBackend | None = None) -> FastAPI:
-    def authorized(request: Request) -> None:
-        sent = request.headers.get("Authorization", "")
-        if not hmac.compare_digest(sent.encode(), f"Bearer {token}".encode()):
-            raise HTTPException(401, "invalid internal API token")
-
-    app = FastAPI(title="kube-tower internal API", docs_url=None, redoc_url=None, openapi_url=None)
-
-    @app.get("/healthz")
-    async def healthz() -> dict:
-        return {"status": "ok"}
-
-    if backend is not None:
-
-        @app.post(f"{PREFIX}/state", dependencies=[Depends(authorized)])
-        async def state(asked: StateRequest) -> Response:
-            # Encoded in a thread, to JSON too: a large snapshot would hold the event loop meanwhile.
-            body = await asyncio.to_thread(lambda: to_json(backend.state(asked.revision)))
-            return Response(body, media_type="application/json")
-
-        @app.post(f"{PREFIX}/logs", dependencies=[Depends(authorized)])
-        async def logs(asked: LogsRequest) -> list:
-            return encode(await backend.log_lines(asked.after))
-
-        @app.post(f"{PREFIX}/heartbeat", status_code=204, dependencies=[Depends(authorized)])
-        async def heartbeat(beat: Heartbeat) -> None:
-            backend.process_registry.seen(beat.name, beat.roles, beat.state, beat.version, beat.started_at)
-            if beat.logs:
-                backend.log_buffer.add(decode(list[LogLine], beat.logs), beat.name, beat.roles)
-
-        @app.post(f"{PREFIX}/actions/{{name}}", dependencies=[Depends(authorized)])
-        async def action(name: str, request: Request) -> dict:
-            params = await request.json() if await request.body() else {}
+    async def serve(self) -> None:
+        errors = 0
+        while True:  # e.g. Valkey still starting along with the controller
             try:
-                return {"result": await backend.action(name, params)}
-            except ValueError as exc:
-                raise HTTPException(404, str(exc)) from exc
+                await self.bus.reset("actions", ACTION_GROUP)  # those of a previous controller were not answered in time
+                break
+            except RedisError as exc:
+                await backoff(errors, "cannot prepare the actions stream in Valkey, the ui processes wait", exc)
+                errors += 1
+        await asyncio.gather(self._loop(self.publish, PUBLISH), self._loop(self.read_processes, HEARTBEAT), self._read_actions())
 
-    return app
+    async def _loop(self, step: Callable[[], Any], every: float) -> None:
+        failing = False
+        while True:
+            try:
+                await step()
+                failing = False
+            except RedisError as exc:
+                if not failing:
+                    log.warning("cannot reach Valkey (%s): the ui processes show the last state published", exc)
+                failing = True
+            await asyncio.sleep(every)
+
+    async def publish(self) -> None:
+        """Publish the state when it changed, with the snapshot when it has a new revision."""
+        backend = self.backend
+        revision = backend.scanner.revision
+        # Encoded in threads: a large snapshot would hold the event loop meanwhile.
+        data = await asyncio.to_thread(lambda: to_json(backend.state(revision)))
+        snapshot = None
+        if revision != self._snapshot_revision:
+            snapshot = await asyncio.to_thread(lambda: pack(encode(backend.snapshot)))
+        elif data == self._published:
+            return
+        await self.bus.publish_state(data, snapshot)
+        self._published, self._snapshot_revision = data, revision
+
+    async def read_processes(self) -> None:
+        for name, raw in (await self.bus.processes()).items():
+            try:
+                info = json.loads(raw)
+                started = datetime.fromisoformat(info["started_at"]) if info.get("started_at") else None
+                self.backend.process_registry.seen(name, info["roles"], info["state"], info.get("version", ""), started)
+            except (ValueError, KeyError, TypeError) as exc:  # e.g. written by another version of kube-tower
+                log.debug("process %s: unreadable report (%s)", name, exc)
+
+    async def _read_actions(self) -> None:
+        errors = 0
+        while True:
+            try:
+                messages = await self.bus.receive("actions", ACTION_GROUP, self.name, block=WAIT, count=10)
+                errors = 0
+            except RedisError as exc:
+                delay = RETRY[min(errors, len(RETRY) - 1)]
+                errors += 1
+                log.warning("cannot read the actions of the ui processes from Valkey (%s): trying again in %ss", exc, delay)
+                await asyncio.sleep(delay)
+                continue
+            for message in messages:  # each apart: an action can wait for a trivy process
+                task = asyncio.create_task(self.run_action(message))
+                self._actions.add(task)
+                task.add_done_callback(self._actions.discard)
+
+    async def run_action(self, message: Message) -> None:
+        try:
+            asked = unpack(message.data)
+            answer = {"result": await self.backend.action(asked["name"], asked.get("params") or {})}
+        except Exception as exc:  # noqa: BLE001 - told to the ui process that asked
+            answer = {"error": f"{type(exc).__name__}: {exc}"}
+        with contextlib.suppress(RedisError):
+            await self.publish()  # the page shows what the action started
+        try:
+            await self.bus.reply(message, pack(answer))
+            await self.bus.done("actions", ACTION_GROUP, message.id)
+        except RedisError as exc:
+            log.warning("answer to the action of a ui process lost: %s", exc)
 
 
 class TaskPuller:
@@ -210,28 +252,15 @@ class TaskPuller:
 
 
 class Reporter:
-    """A process other than the active controller: tells the controller every HEARTBEAT seconds that it is
-    alive, with its roles and its new log lines (Administration and Logs pages of every UI)."""
+    """Every process of the distributed mode: tells every HEARTBEAT seconds that it is alive, with its roles
+    (Administration page), and ships its new log lines (Logs page of every UI) to Valkey."""
 
-    def __init__(
-        self,
-        settings: Settings,
-        buffer: LogBuffer,
-        roles: list[str],
-        state: Callable[[], str | None] = lambda: "ok",
-        transport: httpx.AsyncBaseTransport | None = None,
-    ):
-        self.buffer, self.roles = buffer, roles
-        # The state to report, None while there is nothing to report (e.g. this controller became active).
+    def __init__(self, bus: Bus, buffer: LogBuffer, roles: list[str], state: Callable[[], str | None] = lambda: "ok"):
+        self.bus, self.buffer, self.roles = bus, buffer, roles
+        # The state to report, None when the process is not listed this way (the active controller lists itself).
         self.state = state
         self.name = process_name()
         self.sent = 0  # sequence number of the last log line sent
-        self.http = httpx.AsyncClient(
-            base_url=settings.internal.controller_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {internal_token(settings)}", "User-Agent": "kube-tower"},
-            timeout=10,
-            transport=transport,
-        )
 
     async def run_forever(self) -> None:
         try:
@@ -243,24 +272,17 @@ class Reporter:
             raise
 
     async def report(self, stopped: bool = False) -> bool:
-        """Whether the controller got the report. Failures are not logged: the other loops of the process
-        already tell when the controller cannot be reached."""
-        if (state := self.state()) is None:
-            self.sent = self.buffer.seq  # the active controller keeps its own lines
-            return False
+        """Whether Valkey got the report. Failures are not logged: the other loops of the process already
+        tell when Valkey cannot be reached."""
         lines = self.buffer.since(self.sent)[:REPORT_LINES]
-        beat = {
-            "name": self.name,
-            "roles": self.roles,
-            "state": "stopped" if stopped else state,
-            "version": __version__,
-            "started_at": STARTED.isoformat(),
-            "logs": [encode(line) for line in lines],
-        }
+        state = "stopped" if stopped else self.state()
         try:
-            answer = await self.http.post(f"{PREFIX}/heartbeat", json=beat)
-            answer.raise_for_status()
-        except httpx.HTTPError:
+            if lines:
+                await self.bus.send_many("logs", [json.dumps(encode(line)).encode() for line in lines], LOG_LINES)
+            if state is not None:
+                info = {"roles": self.roles, "state": state, "version": __version__, "started_at": STARTED.isoformat()}
+                await self.bus.set_process(self.name, json.dumps(info).encode(), STOPPED_TTL if stopped else PRESENCE_TTL)
+        except RedisError:
             return False
         if lines:
             self.sent = lines[-1].seq

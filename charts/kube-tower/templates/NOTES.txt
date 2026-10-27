@@ -11,3 +11,9 @@ To register another cluster, create on it the read-only ServiceAccount from
 deploy/remote-cluster-rbac.yaml, then add an entry to the `clusters` value (inline credentials
 or existingSecret) or a Secret labelled kube-tower.arcanexus.com/secret-type=cluster
 in namespace {{ .Release.Namespace }}.
+
+{{- if and (include "kube-tower.distributed" .) (.Values.distributed.internal) }}
+
+WARNING: distributed.internal is ignored since 1.0.0-rc.4: the pods talk through Valkey, without an internal
+API nor its token. Remove it from your values; the Secret of the token can be deleted.
+{{- end }}

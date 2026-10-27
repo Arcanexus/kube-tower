@@ -111,14 +111,6 @@ spec:
             {{- if $distributed }}
             - name: KUBE_TOWER_ROLES
               value: {{ join "," $roles | quote }}
-            - name: KUBE_TOWER_INTERNAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "kube-tower.internalSecretName" $ }}
-                  key: {{ ternary $.Values.distributed.internal.secretKey "token" (not (empty $.Values.distributed.internal.existingSecret)) }}
-            # The active controller, also reached by the standbys (to report to it)
-            - name: KUBE_TOWER_CONTROLLER_URL
-              value: "http://{{ include "kube-tower.fullname" $ }}-internal:{{ $.Values.distributed.internal.port }}"
             {{- end }}
             {{- /* Distributed mode: every pod talks through Valkey (ADR 0003); single mode: the snapshot */ -}}
             {{- if or $distributed (and $controller $redisUrl) }}
@@ -151,10 +143,6 @@ spec:
           ports:
             - name: http
               containerPort: 8080
-            {{- if and $distributed $controller }}
-            - name: internal
-              containerPort: {{ $.Values.distributed.internal.port }}
-            {{- end }}
           {{- with $.Values.startupProbe }}
           startupProbe:
             httpGet:

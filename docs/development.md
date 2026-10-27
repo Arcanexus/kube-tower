@@ -53,7 +53,7 @@ src/kube_tower/
   election.py          controller election with a Kubernetes Lease, active controller pod label
   processes.py         the processes (pods) known to the controller and their state (Administration page)
   bus.py               Valkey keys through which the processes of the distributed mode talk (ADR 0003)
-  internal.py          internal API of the controller, and the task puller of worker and trivy processes
+  internal.py          exchanges of the distributed mode: task puller, publisher of the controller, reporter
   administration.py    Administration page actions (Trivy database, connectivity tests, unused node images)
   backend.py           Backend interface: all the web layer may use of the scans and the administration
   errors.py            explicit error messages (what failed, status, what to do)

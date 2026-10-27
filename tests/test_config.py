@@ -43,7 +43,7 @@ def test_unknown_key(tmp_path):
 
 
 def test_roles(tmp_path, monkeypatch):
-    for name in ("KUBE_TOWER_ROLES", "KUBE_TOWER_INTERNAL_TOKEN", "KUBE_TOWER_CONTROLLER_URL", "KUBE_TOWER_REDIS_URL"):
+    for name in ("KUBE_TOWER_ROLES", "KUBE_TOWER_REDIS_URL", "KUBE_TOWER_REDIS_KEY_PREFIX"):
         monkeypatch.delenv(name, raising=False)
     missing = str(tmp_path / "missing.yaml")
     every = ["ui", "controller", "worker", "trivy"]
@@ -51,25 +51,18 @@ def test_roles(tmp_path, monkeypatch):
     assert settings.roles == every and not settings.distributed
     monkeypatch.setenv("KUBE_TOWER_ROLES", "trivy, worker,ui,controller")  # every role, listed: same as all
     assert load_settings(missing).roles == every
-    # roles apart: Valkey, the token of the internal API, and the controller URL where the controller is not
+    # roles apart: the processes talk through Valkey
     monkeypatch.setenv("KUBE_TOWER_ROLES", "worker,trivy")
     with pytest.raises(ValueError, match="roles worker, trivy: the processes talk through Valkey or Redis, set redis.url"):
         load_settings(missing)
     monkeypatch.setenv("KUBE_TOWER_REDIS_URL", "redis://kube-tower-valkey:6379/0")
     monkeypatch.setenv("KUBE_TOWER_REDIS_KEY_PREFIX", "my-release")
-    with pytest.raises(ValueError, match="roles worker, trivy: set the internal API token in \\$KUBE_TOWER_INTERNAL_TOKEN"):
-        load_settings(missing)
-    monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", "secret")
-    with pytest.raises(ValueError, match="set internal.controllerUrl"):
-        load_settings(missing)
-    monkeypatch.setenv("KUBE_TOWER_CONTROLLER_URL", "http://kube-tower-controller:8081")
     settings = load_settings(missing)
     assert settings.roles == ["worker", "trivy"] and settings.distributed
-    assert settings.internal.controller_url == "http://kube-tower-controller:8081"
     assert settings.redis.key_prefix == "my-release"
     monkeypatch.setenv("KUBE_TOWER_ROLES", "controller,ui")
     assert load_settings(missing).roles == ["ui", "controller"]
-    monkeypatch.setenv("KUBE_TOWER_ROLES", "ui")  # asks the controller at its URL
+    monkeypatch.setenv("KUBE_TOWER_ROLES", "ui")  # shows what the controller publishes
     assert load_settings(missing).roles == ["ui"]
     monkeypatch.delenv("KUBE_TOWER_ROLES")
     (tmp_path / "config.yaml").write_text("roles: [ui, scanner]\n")

@@ -6,13 +6,11 @@ import asyncio
 import contextlib
 import logging
 import os
-import signal
 import socket
 import sys
 import time
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI
 from kubernetes import client
 
@@ -20,9 +18,9 @@ from kube_tower.administration import Administration
 from kube_tower.backend import LocalBackend, RemoteBackend
 from kube_tower.bus import Bus, connect
 from kube_tower.clusters import current_namespace
-from kube_tower.config import Settings, check_roles, internal_token, load_settings
+from kube_tower.config import Settings, check_roles, load_settings
 from kube_tower.election import LeaderElection, PodLabel
-from kube_tower.internal import Reporter, TaskPuller, create_internal_app
+from kube_tower.internal import Publisher, Reporter, TaskPuller
 from kube_tower.logbuffer import LogBuffer
 from kube_tower.logger import get_logger
 from kube_tower.models import encode
@@ -59,23 +57,6 @@ async def watch_event_loop(ui: bool = True) -> None:
             log.info("the event loop was busy for %.1fs (a task using the CPU): no page is served by this process", lag)
 
 
-class InternalServer(uvicorn.Server):
-    """The internal API server, run next to the main one: the main server handles the signals."""
-
-    @contextlib.contextmanager
-    def capture_signals(self):
-        yield
-
-    async def serve(self, sockets=None) -> None:
-        try:
-            await super().serve(sockets)
-        except (OSError, SystemExit) as exc:  # e.g. the port is taken
-            if not self.should_exit:
-                # The workers and UIs could not reach this controller: stop, Kubernetes restarts the pod.
-                logging.getLogger(__name__).critical("the internal API cannot listen, stopping: %s", exc)
-                os.kill(os.getpid(), signal.SIGTERM)
-
-
 def _election(settings: Settings, scanner: Scanner) -> LeaderElection:
     local = scanner.registry.local_client()
     if local is None:
@@ -97,13 +78,13 @@ def create_app(
     sys.setswitchinterval(SWITCH_INTERVAL)
     logger = get_logger("kube_tower", level=settings.logs.level.upper(), format_type=settings.logs.format)
     roles = check_roles(settings.roles)
-    # Last log lines, shown on the Logs page of the UI; a distributed controller also keeps those of the other pods.
-    capacity = 10000 if settings.distributed and "controller" in roles else 2000
-    log_buffer = LogBuffer(capacity, source=process_name(), roles=roles)
+    # Last log lines of this process, shown on the Logs page of the UI (distributed mode: shipped to Valkey too).
+    log_buffer = LogBuffer(2000, source=process_name(), roles=roles)
     logger.addHandler(log_buffer)
     runs: list = []  # what the process runs in the background: coroutine functions
-    internal: InternalServer | None = None
     backend: LocalBackend | RemoteBackend | None = None
+    # Distributed mode: every exchange with the other processes goes through Valkey (ADR 0003).
+    bus = (bus or connect(settings)) if settings.distributed else None
     if "controller" in roles:
         scanner = scanner or Scanner(settings, store=redis_store(settings) if settings.redis.url else None)
         runs.append(scanner.run_forever)
@@ -114,30 +95,20 @@ def create_app(
             log_buffer,
             Processes(roles),
             state=lambda: "active" if election is None or election.leader else "standby",
+            bus=bus,
         )
-        if settings.distributed:
-            # The tasks of the roles that run elsewhere go through Valkey (ADR 0003).
+        if bus is not None:
             scanner.runner = runner = QueueRunner(
                 scanner.worker,
                 set(roles) & {"worker", "trivy"},
-                bus or connect(settings),
+                bus,
                 settings.internal.task_timeout,
                 context=lambda: {"pull_secrets": encode(scanner.pull_secrets), "trivy": administration.generations},
                 on_task=backend.process_registry.task,
             )
-            runs.append(runner.serve)
-            config = uvicorn.Config(
-                create_internal_app(internal_token(settings), backend),
-                host="0.0.0.0",  # noqa: S104 - reached by the other pods; NetworkPolicies keep it internal
-                port=settings.internal.port,
-                log_level="warning",
-                access_log=False,
-                lifespan="off",
-            )
-            internal = InternalServer(config)
-            runs.append(internal.serve)
+            runs += [runner.serve, Publisher(backend, bus).serve]
         if settings.internal.leader_election:
-            # Standby replicas run nothing until they hold the Lease (the Services route to the active one only).
+            # Standby replicas run nothing until they hold the Lease (the Service routes to the active one only).
             election = election or _election(settings, scanner)
             controller_runs, runs = runs, []
 
@@ -145,16 +116,15 @@ def create_app(
                 await asyncio.gather(*(run() for run in controller_runs))
 
             runs.append(lambda: election.run(lead))
-            if settings.internal.controller_url:  # a standby tells the active controller it is there
-                state = lambda: None if election.leader else "standby"  # noqa: E731
-                runs.append(Reporter(settings, log_buffer, roles, state).run_forever)
-    else:
-        if settings.distributed:  # tells the controller it is there, sends it its log lines
-            runs.append(Reporter(settings, log_buffer, roles).run_forever)
+        if bus is not None:  # a standby tells it is there; the active controller lists itself
+            state = lambda: None if election is None or election.leader else "standby"  # noqa: E731
+            runs.append(Reporter(bus, log_buffer, roles, state).run_forever)
+    elif bus is not None:
+        runs.append(Reporter(bus, log_buffer, roles).run_forever)  # tells it is there, ships its log lines
         if pulled := [r for r in roles if r in ("worker", "trivy")]:
-            runs.append(TaskPuller(settings, Worker(settings), pulled, bus or connect(settings)).run_forever)
-        if "ui" in roles:  # the pages show the state of the controller, read over its internal API
-            backend = RemoteBackend(settings)
+            runs.append(TaskPuller(settings, Worker(settings), pulled, bus).run_forever)
+        if "ui" in roles:  # the pages show the state that the controller publishes
+            backend = RemoteBackend(settings, bus)
             runs.append(backend.run_forever)
 
     @asynccontextmanager
@@ -164,8 +134,6 @@ def create_app(
         watch = lambda: watch_event_loop(ui="ui" in roles)  # noqa: E731
         tasks = [asyncio.create_task(run()) for run in [*runs, watch]] if background else []
         yield
-        if internal is not None:
-            internal.should_exit = True
         for task in tasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -188,6 +156,4 @@ def create_app(
         app.include_router(api.probes)  # no UI or API: only the health probes
     log = logging.getLogger(__name__)
     log.info("kube-tower started with roles %s (refresh every %ss)", ", ".join(roles), settings.refresh_interval)
-    if internal is not None:
-        log.info("internal API listening on port %s", settings.internal.port)
     return app

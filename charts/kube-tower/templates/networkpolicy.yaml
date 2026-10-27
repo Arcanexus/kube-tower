@@ -21,16 +21,6 @@ spec:
       from:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-    {{- if include "kube-tower.distributed" . }}
-    # Internal API of the controller: from the kube-tower pods only
-    - from:
-        - podSelector:
-            matchLabels:
-              {{- include "kube-tower.selectorLabels" . | nindent 14 }}
-      ports:
-        - port: internal
-          protocol: TCP
-    {{- end }}
   egress:
     - ports:
         - port: 53
@@ -50,15 +40,6 @@ spec:
               {{- include "kube-tower.trivySelectorLabels" . | nindent 14 }}
       ports:
         - port: {{ .Values.trivy.server.port }}
-          protocol: TCP
-    {{- end }}
-    {{- if include "kube-tower.distributed" . }}
-    - to:
-        - podSelector:
-            matchLabels:
-              {{- include "kube-tower.selectorLabels" . | nindent 14 }}
-      ports:
-        - port: {{ .Values.distributed.internal.port }}
           protocol: TCP
     {{- end }}
     {{- if .Values.redis.valkey.enabled }}

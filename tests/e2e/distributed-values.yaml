@@ -5,8 +5,6 @@ image:
   pullPolicy: Never
 mode: distributed
 distributed:
-  internal:
-    existingSecret: kube-tower-internal
   groups:
     # Small requests: everything runs on one kind node of a CI runner
     controller:

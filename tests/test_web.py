@@ -1046,21 +1046,32 @@ def test_roles_and_pods_on_the_administration_page():
 
 
 def test_logs_of_every_pod_filtered_by_role():
+    import json
+
+    import fakeredis
+
+    from kube_tower.bus import Bus
     from kube_tower.logbuffer import LogLine
+    from kube_tower.models import encode
     from kube_tower.worker import Worker
 
     settings = Settings(roles=["ui", "controller"])
     settings.redis.url = "redis://kube-tower-valkey:6379/0"
     scanner = FakeScanner()
     scanner.worker = Worker(settings)
-    client = TestClient(create_app(settings, scanner, background=False))
+    server = fakeredis.FakeServer()
+    bus = Bus(fakeredis.FakeAsyncRedis(server=server), "kt")
+    valkey = fakeredis.FakeRedis(server=server)  # the other pods ship their lines there
+
+    def ship(source, roles, level, logger, message):
+        line = LogLine(0, datetime.now(), level, logger, "", message, source, roles)
+        valkey.xadd("kt:logs", {"data": json.dumps(encode(line))})
+
+    client = TestClient(create_app(settings, scanner, background=False, bus=bus))
     assert 'name="role"' in client.get("/logs").text  # distributed mode only
     assert 'name="role"' not in _client()[0].get("/logs").text
-    buffer = client.app.state.log_buffer
-    now = datetime.now()
-    warning = LogLine(0, now, "WARNING", "kube_tower.collectors.images", "", "cannot list CronJob")
-    buffer.add([warning], "kube-tower-worker-1", ["worker"])
-    buffer.add([LogLine(0, now, "INFO", "kube_tower.trivy", "", "database updated")], "kube-tower-trivy-0", ["trivy"])
+    ship("kube-tower-worker-1", ["worker"], "WARNING", "kube_tower.collectors.images", "cannot list CronJob")
+    ship("kube-tower-trivy-0", ["trivy"], "INFO", "kube_tower.trivy", "database updated")
     page = client.get("/logs").text
     assert "cannot list CronJob" in page and "database updated" in page
     assert '<span class="log-source" title="Roles: worker">kube-tower-worker-1</span>' in page
@@ -1068,10 +1079,11 @@ def test_logs_of_every_pod_filtered_by_role():
     assert "cannot list CronJob" in page and "database updated" not in page
     assert "&amp;role=worker" in page and "bogus" not in page.split('id="log-tail"')[1]
     assert "database updated" in client.get("/logs?q=trivy-0").text  # the text filter also matches the pod
-    after = buffer.seq
-    buffer.add([LogLine(0, now, "INFO", "kube_tower.trivy", "", "scan done")], "kube-tower-trivy-0", ["trivy"])
+    after = re.search(r"after=(\d+)", client.get("/logs?role=trivy").text).group(1)
+    ship("kube-tower-trivy-0", ["trivy"], "INFO", "kube_tower.trivy", "scan done")
     assert "scan done" not in client.get(f"/logs/tail?after={after}&role=ui&role=worker").text
     assert "scan done" in client.get(f"/logs/tail?after={after}&role=trivy").text
+    assert "database updated" not in client.get(f"/logs/tail?after={after}&role=trivy").text
 
 
 def test_synthesis_counts_the_running_images_by_default():

@@ -308,8 +308,6 @@ To follow the development version, point `source` at the git repository instead:
 | `replicaCount` | `1` | Single mode: keep 1, the inventory lives in memory |
 | `distributed.groups.<name>.roles` / `.replicas` / `.resources` / `.autoscaling` | controller ×2, ui ×1, worker ×2, trivy ×1 | Distributed mode: the Deployments and their roles; the trivy group always has 1 replica; `autoscaling` (ui, worker) from 1 to 4 pods with a damped `behavior`, see [scaling](scaling.md#sizing) |
 | `distributed.groups.<name>.nodeSelector` / `.tolerations` / `.affinity` | top-level values | Scheduling of a group |
-| `distributed.internal.existingSecret` / `.secretKey` / `.token` | `""` / `token` / `""` | Token of the internal API between the pods (required in distributed mode) |
-| `distributed.internal.port` | `8081` | Internal API of the controller (`<release>-internal` Service) |
 | `redis.valkey.enabled` | `false` | A Valkey Deployment through which the pods of the distributed mode talk, also keeping a copy of the inventory, see [scaling](scaling.md#redis--valkey). Distributed mode: this or `redis.url` is required |
 | `redis.valkey.image` / `.port` / `.resources` | `docker.io/valkey/valkey:8.1.1` / `6379` / 20m CPU, 64Mi | Valkey settings |
 | `redis.url` | `""` | An existing Redis / Valkey instead (`redis://` or `rediss://`) |

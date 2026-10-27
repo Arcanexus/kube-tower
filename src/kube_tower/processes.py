@@ -1,8 +1,8 @@
 """The processes (pods) of a kube-tower installation and their state, shown on the Administration page.
 
-In the distributed mode every process but the active controller reports to the controller every few
-seconds (internal.Reporter): who it is, its roles, and its new log lines. The controller keeps what
-it heard here; a process it has not heard of for LOST seconds is shown as lost, then forgotten.
+In the distributed mode every process but the active controller tells every few seconds who it is
+and its roles, in a Valkey key that expires (internal.Reporter). The controller reads these keys and
+keeps what it read here; a process it has not heard of for LOST seconds is shown as lost, then forgotten.
 """
 
 from __future__ import annotations
