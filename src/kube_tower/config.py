@@ -209,6 +209,9 @@ class RedisSettings:
     password_env: str = "KUBE_TOWER_REDIS_PASSWORD"
     # Key of the snapshot: change it when several kube-tower installations share one Redis.
     key: str = "kube-tower:snapshot"
+    # Prefix of the keys through which the processes of the distributed mode talk (bus.py): change it too
+    # when several kube-tower installations share one Redis.
+    key_prefix: str = "kube-tower"
 
 
 @dataclass

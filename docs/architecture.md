@@ -2,7 +2,8 @@
 
 How kube-tower is built and how its parts talk to each other. The design choices are explained in
 [ADR 0001](adr/0001-architecture.md) (application) and [ADR 0002](adr/0002-horizontal-scaling.md)
-(horizontal scaling); [scaling](scaling.md) tells how to deploy the distributed mode.
+(horizontal scaling), [ADR 0003](adr/0003-valkey-bus.md) (the processes talk through Valkey);
+[scaling](scaling.md) tells how to deploy the distributed mode.
 
 ## Overview
 

@@ -84,6 +84,7 @@ redis:                         # optional Redis / Valkey keeping the snapshot ac
   url: ""                      # redis://host:6379/0 or rediss:// (TLS); empty: the snapshot stays in memory
   passwordEnv: KUBE_TOWER_REDIS_PASSWORD
   key: kube-tower:snapshot     # change it when several installations share one Redis
+  keyPrefix: kube-tower        # prefix of the keys of the distributed mode (ADR 0003); change it likewise
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
