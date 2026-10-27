@@ -138,6 +138,12 @@ All notable changes to this project are documented here. The format follows
 - UI: Synthesis home page (status distributions, pending updates, registries, most used outdated images,
   per cluster figures); the version shown by the UI and `kube_tower_build_info` comes from the image tag.
 
+- Valkey bus of the distributed mode ([ADR 0003](docs/adr/0003-valkey-bus.md), first step): `bus.py`
+  holds the Valkey keys through which the processes will talk instead of the internal HTTP API (task
+  and result streams read by consumer groups, pending tasks given to another process, the published
+  state and its revision, replies to the actions, one expiring key per process, capped log streams).
+  New setting `redis.keyPrefix`. Not used yet: the next steps move each exchange onto it.
+
 ### Changed
 
 - Chart, distributed mode: sizing from measures on a real inventory. `ui`: 1 replica, 100m CPU and 192Mi
