@@ -6,20 +6,23 @@ another kube-tower process as JSON (encode_task / decode_task, encode_result / d
 
 When every role runs in the process, the LocalRunner hands the tasks to the Worker of the process,
 without encoding them (the reports are updated in place, so the UI shows the results as they come).
-In the distributed mode, the QueueRunner queues the tasks of the roles that run elsewhere: worker and
-trivy processes pull them over the internal API of the controller (internal.py) and send the results back.
+In the distributed mode, the QueueRunner queues the tasks of the roles that run elsewhere in Valkey
+(bus.py, ADR 0003): worker and trivy processes read them there (internal.TaskPuller) and send the results back.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import logging
-import time
-from collections import deque
+import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
+from redis.exceptions import RedisError
+
+from kube_tower.bus import Bus, Message, pack, unpack
 from kube_tower.models import ChartReport, ImageReport, VulnerabilityReport, decode, encode
 from kube_tower.registry.auth import AuthResult
 from kube_tower.trivy import TrivyStatus
@@ -30,6 +33,8 @@ if TYPE_CHECKING:
     from kube_tower.worker import Worker
 
 log = logging.getLogger(__name__)
+
+RETRY = (1, 2, 5, 10, 30)  # seconds before asking Valkey again after an error (the last one repeats)
 
 
 # Tasks
@@ -184,41 +189,54 @@ class TaskFailed(Exception):
     """A worker or trivy process could not run a task."""
 
 
-@dataclass
-class _Queued:
-    id: str
-    role: str
-    data: dict[str, Any]  # encode_task()
-    future: asyncio.Future
-    deadline: float | None = None  # while pulled: when it is given to another process
+TASK_GROUP = "processes"  # the consumer group of the task streams: the worker and trivy processes
+RESULT_GROUP = "controller"  # the consumer group of the results: the active controller
+ATTEMPTS = 3  # times a task lost with its process is queued, before its scan gets an error
+WATCH = 5.0  # seconds between two looks at the tasks being run
+
+
+def task_stream(role: str) -> str:
+    return f"tasks:{role}"
 
 
 class QueueRunner:
-    """The distributed mode: the tasks of the roles of this process run here, the others wait in a queue
-    until a process with their role pulls them (next), then for its result (complete / fail).
+    """The distributed mode: the tasks of the roles of this process run here; the others go through Valkey
+    (bus.py, ADR 0003) to the processes with their role, and this controller waits for their results.
 
-    A task pulled and not answered within `timeout` (the process died) is queued again, first in line.
-    The queue lives in the event loop of the internal API (`loop`): the scans, which run in their own
-    threads and event loops, hand their tasks over to it.
+    A task is a message of the stream of its role (`tasks:worker`, `tasks:trivy`), read by one process of
+    the role (consumer group), which acknowledges it once it sent the result to the `results` stream. A task
+    read and not answered within `timeout` (its process died) is queued again, ATTEMPTS times at most.
+
+    Each controller has its own epoch: the one taking over empties the streams of the previous one, whose
+    scans died with it, and ignores the results that come late for them.
+
+    The futures of the tasks live in the event loop that runs `serve` (`loop`): the scans, which run in
+    their own threads and event loops, hand their tasks over to it.
     """
 
     def __init__(
         self,
         worker: Worker,
         local_roles: set[str],
+        bus: Bus,
         timeout: float = 30 * 60,
         context: Callable[[], dict[str, Any]] | None = None,
+        on_task: Callable[[str, str], None] | None = None,
     ):
         self.worker = worker
         self.local_roles = local_roles
+        self.bus = bus
         self.timeout = timeout
         # What a process needs with each task, e.g. the credentials of the image pull secrets.
         self.context = context or dict
-        self.queue: deque[_Queued] = deque()
-        self.pulled: dict[str, _Queued] = {}
+        # Told which process runs a task (its kind), or finished one (empty kind): the Administration page.
+        self.on_task = on_task or (lambda process, kind: None)
+        self.epoch = uuid.uuid4().hex[:12]
+        self.waiting: dict[str, asyncio.Future] = {}  # by task id, until its result came
+        self.messages: dict[str, tuple[str, str, int]] = {}  # message id -> task id, role, attempt
         self._ids = itertools.count(1)
-        self._added = asyncio.Event()
-        self.loop: asyncio.AbstractEventLoop | None = None  # set when the internal API starts
+        self._ready = asyncio.Event()  # the streams of this epoch exist
+        self.loop: asyncio.AbstractEventLoop | None = None  # set when the process starts
 
     async def run(self, task: Task) -> Any:
         if role_of(task) in self.local_roles:
@@ -230,64 +248,111 @@ class QueueRunner:
 
     async def _queued(self, task: Task) -> Any:
         role, kind = role_of(task), kind_of(task)
-        queued = _Queued(f"{kind}-{next(self._ids)}", role, encode_task(task), asyncio.get_running_loop().create_future())
-        self.queue.append(queued)
-        self._added.set()
+        task_id = f"{kind}-{next(self._ids)}"
+        future = self.waiting[task_id] = asyncio.get_running_loop().create_future()
+        message_id = None
         try:
-            # In a thread: decoding a large result (e.g. the vulnerabilities of 50 images) takes seconds, and this
-            # event loop also serves the internal API and, in a process with the ui role, the pages.
-            result = await asyncio.to_thread(decode_result, kind, await queued.future)
+            # In a thread: encoding a large task (images and their usages) takes a while, and this event loop
+            # also serves, in a process with the ui role, the pages.
+            data = await asyncio.to_thread(pack, {**encode_task(task), "context": self.context()})
+            await self._ready.wait()
+            message_id = await self.bus.send(task_stream(role), data, id=task_id, kind=kind, epoch=self.epoch)
+            self.messages[message_id] = (task_id, role, 1)
+            answer = await future
+            if "error" in answer:
+                raise TaskFailed(f"task {task_id} failed: {answer['error']}")
+            result = await asyncio.to_thread(decode_result, kind, answer["result"])
             # The registries answered the worker pod: the Administration page of the controller shows it.
             if auth := getattr(result, "registry_auth", None):
                 self.worker.registry_auth.merge(auth)
             return result
         finally:  # done, or the scan was cancelled: forget it
-            if queued in self.queue:
-                self.queue.remove(queued)
-            self.pulled.pop(queued.id, None)
+            self.waiting.pop(task_id, None)
+            for mid in [m for m, (tid, _, _) in self.messages.items() if tid == task_id]:
+                del self.messages[mid]
+                if not future.done() or future.cancelled():  # cancelled: no process needs to run it anymore
+                    with contextlib.suppress(Exception):
+                        await self.bus.done(task_stream(role), TASK_GROUP, mid)
 
-    def waiting(self) -> dict[str, int]:
-        """Tasks queued and not pulled yet, by role."""
-        counts = dict.fromkeys(sorted({q.role for q in self.queue}), 0)
-        for q in self.queue:
-            counts[q.role] += 1
-        return counts
-
-    async def next(self, roles: set[str], wait: float) -> dict[str, Any] | None:
-        """The next task for a process with these roles, waiting up to `wait` seconds for one."""
-        deadline = time.monotonic() + wait
-        while True:
-            self._requeue_expired()
-            if queued := next((q for q in self.queue if q.role in roles), None):
-                self.queue.remove(queued)
-                queued.deadline = time.monotonic() + self.timeout
-                self.pulled[queued.id] = queued
-                return {"id": queued.id, **queued.data, "context": self.context()}
-            if (left := deadline - time.monotonic()) <= 0:
-                return None
-            self._added.clear()
+    async def serve(self) -> None:
+        """Run by the active controller: empty the streams of the previous one, then read the results and
+        watch the tasks being run."""
+        errors = 0
+        while True:  # e.g. Valkey still starting along with the controller
             try:
-                await asyncio.wait_for(self._added.wait(), min(left, 5))  # 5: also look for expired tasks
-            except TimeoutError:
-                pass
+                for role in ("worker", "trivy"):
+                    await self.bus.reset(task_stream(role), TASK_GROUP)
+                await self.bus.reset("results", RESULT_GROUP)
+                break
+            except RedisError as exc:
+                await _backoff(errors, "cannot prepare the task streams in Valkey, the scans wait", exc)
+                errors += 1
+        self._ready.set()
+        log.info("tasks of the worker and trivy processes go through Valkey (epoch %s)", self.epoch)
+        await asyncio.gather(self._read_results(), self._watch())
 
-    def complete(self, task_id: str, result: dict[str, Any]) -> bool:
-        """Whether the task was still waiting for this result."""
-        if (queued := self.pulled.pop(task_id, None)) is None or queued.future.done():
-            return False
-        queued.future.set_result(result)
-        return True
+    async def _read_results(self) -> None:
+        errors = 0
+        while True:
+            try:
+                messages = await self.bus.receive("results", RESULT_GROUP, self.epoch, block=WATCH, count=10)
+                errors = 0
+            except RedisError as exc:
+                await _backoff(errors, "cannot read the results of the tasks from Valkey", exc)
+                errors += 1
+                continue
+            for message in messages:
+                await self._result(message)
 
-    def fail(self, task_id: str, message: str) -> bool:
-        if (queued := self.pulled.pop(task_id, None)) is None or queued.future.done():
-            return False
-        queued.future.set_exception(TaskFailed(f"task {task_id} failed: {message}"))
-        return True
+    async def _result(self, message: Message) -> None:
+        task_id, source = message.fields.get("id", ""), message.fields.get("source", "")
+        self.on_task(source, "")
+        future = self.waiting.get(task_id)
+        if message.fields.get("epoch") != self.epoch or future is None or future.done():
+            log.info(
+                "result of task %s from %s not needed anymore (the scan is over, or a previous controller's)", task_id, source
+            )
+        else:
+            try:
+                future.set_result(await asyncio.to_thread(unpack, message.data))
+            except Exception as exc:  # noqa: BLE001 - e.g. sent by another version of kube-tower
+                future.set_result({"error": f"result not readable: {exc}"})
+        with contextlib.suppress(RedisError):
+            await self.bus.done("results", RESULT_GROUP, message.id)
 
-    def _requeue_expired(self) -> None:
-        now = time.monotonic()
-        for queued in [q for q in self.pulled.values() if q.deadline is not None and q.deadline < now]:
-            log.warning("task %s not answered within %.0fs: given to another process", queued.id, self.timeout)
-            del self.pulled[queued.id]
-            queued.deadline = None
-            self.queue.appendleft(queued)
+    async def _watch(self) -> None:
+        while True:
+            try:
+                await self.check_tasks()
+            except RedisError as exc:
+                log.warning("cannot read the tasks being run from Valkey: %s", exc)
+            await asyncio.sleep(WATCH)
+
+    async def check_tasks(self) -> None:
+        """Tell which process runs which task, and queue again a task not answered within the timeout."""
+        for role in ("worker", "trivy"):
+            for pending in await self.bus.pending(task_stream(role), TASK_GROUP):
+                if (known := self.messages.get(pending.id)) is None:
+                    continue
+                task_id, _, attempt = known
+                self.on_task(pending.consumer, task_id.rsplit("-", 1)[0])
+                if pending.idle < self.timeout:
+                    continue
+                del self.messages[pending.id]
+                if attempt >= ATTEMPTS:
+                    log.error("task %s not answered %d times: given up", task_id, attempt)
+                    if (future := self.waiting.get(task_id)) is not None and not future.done():
+                        future.set_result({"error": f"not answered within {self.timeout:.0f}s, {attempt} times"})
+                    await self.bus.done(task_stream(role), TASK_GROUP, pending.id)
+                    continue
+                log.warning(
+                    "task %s not answered by %s within %.0fs: given to another process", task_id, pending.consumer, self.timeout
+                )
+                if (new_id := await self.bus.requeue(task_stream(role), TASK_GROUP, pending.id)) is not None:
+                    self.messages[new_id] = (task_id, role, attempt + 1)
+
+
+async def _backoff(errors: int, message: str, exc: Exception) -> None:
+    delay = RETRY[min(errors, len(RETRY) - 1)]
+    log.warning("%s (%s): trying again in %ss", message, exc, delay)
+    await asyncio.sleep(delay)

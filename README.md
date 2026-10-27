@@ -88,8 +88,8 @@ its published versions (each repository once per scan), then reads or scans the 
 of every image, and keeps the result in memory.
 The [architecture](docs/architecture.md) page draws the parts of kube-tower and how they talk to
 each other; design choices are explained in [ADR 0001](docs/adr/0001-architecture.md). For large inventories,
-the chart can split kube-tower in UI, controller, worker and Trivy Deployments scaled apart, with an
-optional Redis / Valkey: see [scaling](docs/scaling.md) and [ADR 0002](docs/adr/0002-horizontal-scaling.md).
+the chart can split kube-tower in UI, controller, worker and Trivy Deployments scaled apart, with
+Valkey (or Redis) between them: see [scaling](docs/scaling.md), [ADR 0002](docs/adr/0002-horizontal-scaling.md) and [ADR 0003](docs/adr/0003-valkey-bus.md).
 
 ## Documentation
 

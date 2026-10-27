@@ -407,11 +407,15 @@ def test_image_pull_secrets_rbac(tmp_path):
     assert settings.use_image_pull_secrets and settings.insecure == ["registry.local:5000"] and settings.ca_file == ""
 
 
-DISTRIBUTED = {"mode": "distributed", "distributed": {"internal": {"token": "t0ken"}}}
+DISTRIBUTED = {"mode": "distributed", "distributed": {"internal": {"token": "t0ken"}}, "redis": {"valkey": {"enabled": True}}}
 
 
 def with_groups(groups):
-    return {"mode": "distributed", "distributed": {"internal": {"token": "t"}, "groups": groups}}
+    return {
+        "mode": "distributed",
+        "distributed": {"internal": {"token": "t"}, "groups": groups},
+        "redis": {"valkey": {"enabled": True}},
+    }
 
 
 def deployment(docs, group):
@@ -437,6 +441,7 @@ def test_distributed_mode(tmp_path):
         "kt-kube-tower-controller",
         "kt-kube-tower-trivy",
         "kt-kube-tower-ui",
+        "kt-kube-tower-valkey",
         "kt-kube-tower-worker",
     ]
     roles = {g: env(deployment(docs, g))["KUBE_TOWER_ROLES"] for g in ("controller", "ui", "worker", "trivy")}
@@ -450,6 +455,9 @@ def test_distributed_mode(tmp_path):
         assert spec["template"]["metadata"]["labels"][f"kube-tower.arcanexus.com/{group}"] == "true"
         # every pod reaches the active controller, the standby controllers too (to report to it)
         assert env(spec)["KUBE_TOWER_CONTROLLER_URL"] == "http://kt-kube-tower-internal:8081"
+        # and talks through Valkey, under the keys of this release
+        assert env(spec)["KUBE_TOWER_REDIS_URL"] == "redis://kt-kube-tower-valkey:6379/0"
+        assert env(spec)["KUBE_TOWER_REDIS_KEY_PREFIX"] == "kt-kube-tower"
 
     assert deployment(docs, "controller")["strategy"]["rollingUpdate"] == {"maxUnavailable": 1, "maxSurge": 0}
     assert "strategy" not in deployment(docs, "ui")
@@ -502,7 +510,8 @@ def test_distributed_groups(tmp_path):
             }
         },
     )
-    assert sorted(k[1] for k in docs if k[0] == "Deployment") == [f"kt-kube-tower-{g}" for g in ("controller", "trivy", "worker")]
+    groups = ("controller", "trivy", "valkey", "worker")
+    assert sorted(k[1] for k in docs if k[0] == "Deployment") == [f"kt-kube-tower-{g}" for g in groups]
     assert not [k for k in docs if k[0] == "Secret"]
     controller = env(deployment(docs, "controller"))
     assert controller["KUBE_TOWER_INTERNAL_TOKEN"]["secretKeyRef"] == {"name": "kt-internal", "key": "key"}
@@ -528,7 +537,8 @@ def test_distributed_groups(tmp_path):
     ("values", "error"),
     [
         ({"mode": "multi"}, 'mode: "multi" is not single or distributed'),
-        ({"mode": "distributed"}, "set distributed.internal.token"),
+        ({"mode": "distributed", "redis": {"valkey": {"enabled": True}}}, "set distributed.internal.token"),
+        ({"mode": "distributed", "distributed": {"internal": {"token": "t"}}}, "set redis.valkey.enabled=true or redis.url"),
         (with_groups({"trivy": None}), "runs the trivy role"),
         (with_groups({"ui": {"roles": ["ui", "controller"]}}), "the controller role must run in one group"),
         (with_groups({"ui": {"roles": ["web"]}}), 'unknown role "web"'),
@@ -557,13 +567,18 @@ def test_valkey(tmp_path):
 def test_existing_redis_in_distributed_mode(tmp_path):
     docs = render(
         tmp_path,
-        DISTRIBUTED | {"redis": {"url": "rediss://redis.example:6380/1", "existingSecret": "redis", "passwordKey": "pass"}},
+        DISTRIBUTED
+        | {
+            "redis": {"url": "rediss://redis.example:6380/1", "existingSecret": "redis", "passwordKey": "pass", "keyPrefix": "kt"}
+        },
     )
     assert ("Deployment", "kt-kube-tower-valkey") not in docs
     controller = env(deployment(docs, "controller"))
     assert controller["KUBE_TOWER_REDIS_URL"] == "rediss://redis.example:6380/1"
     assert controller["KUBE_TOWER_REDIS_PASSWORD"] == {"secretKeyRef": {"name": "redis", "key": "pass"}}
-    assert "KUBE_TOWER_REDIS_URL" not in env(deployment(docs, "worker"))  # the controller only
+    worker = env(deployment(docs, "worker"))  # every pod talks through it
+    assert worker["KUBE_TOWER_REDIS_URL"] == "rediss://redis.example:6380/1" and worker["KUBE_TOWER_REDIS_KEY_PREFIX"] == "kt"
+    assert worker["KUBE_TOWER_REDIS_PASSWORD"] == {"secretKeyRef": {"name": "redis", "key": "pass"}}
     render(tmp_path, {"redis": {"url": "redis://r:6379/0"}})  # no password
 
 
@@ -572,4 +587,5 @@ def test_distributed_network_policy(tmp_path):
     spec = docs[("NetworkPolicy", "kt-kube-tower")]["spec"]
     assert spec["ingress"][1]["ports"] == [{"port": "internal", "protocol": "TCP"}]
     assert spec["ingress"][1]["from"][0]["podSelector"]["matchLabels"]["app.kubernetes.io/instance"] == "kt"
-    assert {"port": 8081, "protocol": "TCP"} in spec["egress"][-1]["ports"]
+    assert {"port": 8081, "protocol": "TCP"} in spec["egress"][-2]["ports"]
+    assert {"port": 6379, "protocol": "TCP"} in spec["egress"][-1]["ports"]  # every pod reaches Valkey

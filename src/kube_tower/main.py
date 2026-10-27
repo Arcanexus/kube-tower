@@ -18,6 +18,7 @@ from kubernetes import client
 
 from kube_tower.administration import Administration
 from kube_tower.backend import LocalBackend, RemoteBackend
+from kube_tower.bus import Bus, connect
 from kube_tower.clusters import current_namespace
 from kube_tower.config import Settings, check_roles, internal_token, load_settings
 from kube_tower.election import LeaderElection, PodLabel
@@ -90,6 +91,7 @@ def create_app(
     background: bool = True,
     administration: Administration | None = None,
     election: LeaderElection | None = None,
+    bus: Bus | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     sys.setswitchinterval(SWITCH_INTERVAL)
@@ -114,15 +116,18 @@ def create_app(
             state=lambda: "active" if election is None or election.leader else "standby",
         )
         if settings.distributed:
-            # The tasks of the roles that run elsewhere are pulled over the internal API.
+            # The tasks of the roles that run elsewhere go through Valkey (ADR 0003).
             scanner.runner = runner = QueueRunner(
                 scanner.worker,
                 set(roles) & {"worker", "trivy"},
+                bus or connect(settings),
                 settings.internal.task_timeout,
                 context=lambda: {"pull_secrets": encode(scanner.pull_secrets), "trivy": administration.generations},
+                on_task=backend.process_registry.task,
             )
+            runs.append(runner.serve)
             config = uvicorn.Config(
-                create_internal_app(runner, internal_token(settings), backend),
+                create_internal_app(internal_token(settings), backend),
                 host="0.0.0.0",  # noqa: S104 - reached by the other pods; NetworkPolicies keep it internal
                 port=settings.internal.port,
                 log_level="warning",
@@ -147,7 +152,7 @@ def create_app(
         if settings.distributed:  # tells the controller it is there, sends it its log lines
             runs.append(Reporter(settings, log_buffer, roles).run_forever)
         if pulled := [r for r in roles if r in ("worker", "trivy")]:
-            runs.append(TaskPuller(settings, Worker(settings), pulled).run_forever)
+            runs.append(TaskPuller(settings, Worker(settings), pulled, bus or connect(settings)).run_forever)
         if "ui" in roles:  # the pages show the state of the controller, read over its internal API
             backend = RemoteBackend(settings)
             runs.append(backend.run_forever)

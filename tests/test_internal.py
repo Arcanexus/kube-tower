@@ -1,18 +1,23 @@
 import asyncio
+import contextlib
 import logging
 from datetime import UTC, datetime, timedelta
 
+import fakeredis
 import httpx
 import pytest
 import uvicorn
 from fastapi.testclient import TestClient
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from kube_tower import administration as administration_module
 from kube_tower import internal
 from kube_tower import processes as processes_module
+from kube_tower import tasks as tasks_module
 from kube_tower import worker as worker_module
 from kube_tower.administration import Administration
 from kube_tower.backend import UNREACHABLE, LocalBackend, RemoteBackend
+from kube_tower.bus import Bus, Message, pack, unpack
 from kube_tower.config import Settings
 from kube_tower.internal import Reporter, TaskPuller, create_internal_app
 from kube_tower.logbuffer import LogBuffer
@@ -20,7 +25,15 @@ from kube_tower.main import create_app
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, Usage, VulnerabilityReport, encode
 from kube_tower.processes import Processes
 from kube_tower.scanner import Scanner
-from kube_tower.tasks import CheckImagesTask, CollectTask, QueueRunner, ScanVulnerabilitiesTask, TaskFailed
+from kube_tower.tasks import (
+    TASK_GROUP,
+    CheckImagesTask,
+    CollectTask,
+    QueueRunner,
+    ScanVulnerabilitiesTask,
+    TaskFailed,
+    task_stream,
+)
 from kube_tower.trivy import TrivyStatus, scans_failed
 from kube_tower.worker import Worker
 from test_scanner import TwoClusters, fakes  # noqa: F401 - fixture
@@ -28,97 +41,196 @@ from test_scanner import TwoClusters, fakes  # noqa: F401 - fixture
 TOKEN = "secret"
 
 
+class FakeBus(Bus):
+    """fakeredis answers a blocking read at once: wait for a message as Valkey does."""
+
+    async def receive(self, streams, group, consumer, block, count=1):
+        deadline = asyncio.get_running_loop().time() + block
+        while not (messages := await super().receive(streams, group, consumer, 0.001, count)):
+            if asyncio.get_running_loop().time() >= deadline:
+                break
+            await asyncio.sleep(0.005)
+        return messages
+
+
+@pytest.fixture
+async def bus(monkeypatch):
+    monkeypatch.setattr(tasks_module, "WATCH", 0.02)  # the controller looks at the results and tasks often
+    bus = FakeBus(fakeredis.FakeAsyncRedis(), "kt-test")
+    yield bus
+    await bus.close()
+
+
 def _settings(roles):
     settings = Settings(roles=roles)
     settings.internal.controller_url = "http://controller:8081"
+    settings.redis.url = "redis://valkey:6379/0"
     return settings
 
 
-def _puller(monkeypatch, roles=("worker", "trivy"), registry=None):
+def _runner(worker, local_roles, bus, **kwargs):
+    runner = QueueRunner(worker, local_roles, bus, **kwargs)
+    runner.loop = asyncio.get_running_loop()  # the scans run in their own threads and loops
+    return runner
+
+
+@contextlib.asynccontextmanager
+async def _serving(runner):
+    """The controller reads the results and watches the tasks meanwhile."""
+    serving = asyncio.create_task(runner.serve())
+    await runner._ready.wait()
+    try:
+        yield
+    finally:
+        serving.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await serving
+
+
+def _puller(monkeypatch, bus, roles=("worker", "trivy"), registry=None, source="kube-tower-worker-1"):
     monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
     settings = _settings(list(roles))
-    return TaskPuller(settings, Worker(settings), list(roles), registry or TwoClusters())
+    puller = TaskPuller(settings, Worker(settings), list(roles), bus, registry or TwoClusters())
+    puller.source = source
+    return puller
 
 
-def _client(runner, puller, token=TOKEN):
-    transport = httpx.ASGITransport(create_internal_app(runner, TOKEN))
-    return httpx.AsyncClient(transport=transport, base_url=puller.url, headers={"Authorization": f"Bearer {token}"})
-
-
-async def _until_done(task, puller, http):
+async def _until_done(task, *pullers):
     while not task.done():
-        await puller.pull(http, wait=0.05)
+        await asyncio.gather(*(p.pull(wait=0.02) for p in pullers))
     return task.result()
 
 
-async def test_distributed_scan_through_the_internal_api(fakes, monkeypatch):  # noqa: F811 - fixture
+async def test_distributed_scan_through_valkey(fakes, monkeypatch, bus):  # noqa: F811 - fixture
     settings = _settings(["ui", "controller"])
     scanner = Scanner(settings, TwoClusters())
     scanner.pull_secrets = {"ghcr.io": ("user", "token")}  # sent with each task
-    scanner.runner = runner = QueueRunner(scanner.worker, set(), context=lambda: {"pull_secrets": encode(scanner.pull_secrets)})
-    runner.loop = asyncio.get_running_loop()  # the scans run in their own threads and loops
-    puller = _puller(monkeypatch)
-    async with _client(runner, puller) as http:
-        snap = await _until_done(asyncio.create_task(scanner.scan()), puller, http)
+    scanner.runner = runner = _runner(scanner.worker, set(), bus, context=lambda: {"pull_secrets": encode(scanner.pull_secrets)})
+    puller = _puller(monkeypatch, bus)
+    async with _serving(runner):
+        snap = await _until_done(asyncio.create_task(scanner.scan()), puller)
     # Every task ran in the puller: the collect tasks with the clusters it read itself.
     assert sorted(puller.worker.clusters) == ["a", "b"]
     assert puller.worker.pull_secrets == {"ghcr.io": ("user", "token")}
     assert [str(r.image) for r in snap.images] == ["docker.io/library/nginx:1.25"]
     assert [u.cluster for u in snap.images[0].usages] == ["a", "b"] and snap.images[0].status == Status.OUTDATED
     assert [c.status for c in snap.charts] == [Status.UP_TO_DATE, Status.UP_TO_DATE]
-    assert not runner.queue and not runner.pulled
+    # nothing left in Valkey: every task and result was deleted once handled
+    assert not runner.waiting and not runner.messages
+    assert [await bus.length(s) for s in ("tasks:worker", "tasks:trivy", "results")] == [0, 0, 0]
 
 
-async def test_internal_api_token_and_unknown_tasks(monkeypatch):
-    runner = QueueRunner(Worker(Settings()), set())
-    puller = _puller(monkeypatch)
-    async with _client(runner, puller, token="wrong") as http:
-        assert (await http.post("/internal/v1/tasks/next", json={"roles": ["worker"]})).status_code == 401
-    async with _client(runner, puller) as http:
+async def test_internal_api_token(monkeypatch):
+    _, app = _controller()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://controller:8081") as http:
         assert (await http.get("/healthz")).json() == {"status": "ok"}
-        assert (await http.post("/internal/v1/tasks/next", json={"roles": ["worker"], "wait": 0})).status_code == 204
-        assert (await http.post("/internal/v1/tasks/collect-9/result", json={"result": {}})).status_code == 404
+        assert (await http.post("/internal/v1/state", json={})).status_code == 401
+        wrong = {"Authorization": "Bearer wrong"}
+        assert (await http.post("/internal/v1/state", json={}, headers=wrong)).status_code == 401
 
 
-async def test_queue_runner(monkeypatch, caplog):
+async def test_queue_runner(monkeypatch, caplog, bus):
+    caplog.set_level(logging.INFO)  # also when run alone: the logger level is set by create_app
+    monkeypatch.setattr(tasks_module, "WATCH", 3600)  # the tasks are looked at by the test only
     worker = Worker(Settings())
-    runner = QueueRunner(worker, {"trivy"}, timeout=0)
+    seen = []
+    runner = _runner(worker, {"trivy"}, bus, timeout=0, on_task=lambda process, kind: seen.append((process, kind)))
     # a role of this process: run here
     assert (await runner.run(ScanVulnerabilitiesTask([]))).vulnerabilities == []
-    # not answered in time: given to the next process asking
-    waiting = asyncio.create_task(runner.run(CollectTask("a")))
-    await asyncio.sleep(0)
-    assert runner.waiting() == {"worker": 1}
-    assert await runner.next({"trivy"}, 0) is None  # not for this role
-    first = await runner.next({"worker"}, 0)
-    again = await runner.next({"worker"}, 0)
-    assert first["id"] == again["id"] == "collect-1" and first["task"] == {
-        "cluster": "a",
-        "images": True,
-        "charts": True,
-        "operator_reports": True,
-        "image_name": None,
-    }
-    assert "task collect-1 not answered within 0s: given to another process" in caplog.text
-    assert runner.fail("collect-1", "boom") and not runner.complete("collect-1", {})
-    with pytest.raises(TaskFailed, match="task collect-1 failed: boom"):
-        await waiting
-    # the scan is cancelled: the task is forgotten
-    waiting = asyncio.create_task(runner.run(CheckImagesTask([])))
-    await asyncio.sleep(0)
-    waiting.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await waiting
-    assert not runner.queue
-    # a pull waits for the next task
-    pulling = asyncio.create_task(runner.next({"worker"}, 5))
-    await asyncio.sleep(0)
-    waiting = asyncio.create_task(runner.run(CheckImagesTask([])))
-    pulled = await pulling
-    assert runner.complete(pulled["id"], {"images": []}) and (await waiting).images == []
+    async with _serving(runner):
+        # read by a process that dies: given to another one, ATTEMPTS times
+        waiting = asyncio.create_task(runner.run(CollectTask("a")))
+        [first] = await bus.receive(task_stream("worker"), TASK_GROUP, "pod-dead", block=1)
+        assert first.fields["id"] == "collect-1" and first.fields["epoch"] == runner.epoch
+        assert unpack(first.data)["task"] == {
+            "cluster": "a",
+            "images": True,
+            "charts": True,
+            "operator_reports": True,
+            "image_name": None,
+        }
+        await runner.check_tasks()
+        assert ("pod-dead", "collect") in seen
+        assert "task collect-1 not answered by pod-dead within 0s: given to another process" in caplog.text
+        [second] = await bus.receive(task_stream("worker"), TASK_GROUP, "pod-dead-too", block=1)
+        await runner.check_tasks()
+        [third] = await bus.receive(task_stream("worker"), TASK_GROUP, "pod-also-dead", block=1)
+        assert first.data == second.data == third.data
+        await runner.check_tasks()
+        with pytest.raises(TaskFailed, match="task collect-1 failed: not answered within 0s, 3 times"):
+            await waiting
+        assert "task collect-1 not answered 3 times: given up" in caplog.text
+        assert await bus.pending(task_stream("worker"), TASK_GROUP) == []
+
+        # the scan is cancelled: the task is deleted, nobody runs it
+        waiting = asyncio.create_task(runner.run(CheckImagesTask([])))
+        while not await bus.length(task_stream("worker")):
+            await asyncio.sleep(0.01)
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        assert await bus.length(task_stream("worker")) == 0 and not runner.waiting
+
+        # the result of a previous controller, or of a task forgotten: ignored and deleted
+        await bus.send("results", pack({"result": {}}), id="collect-9", epoch="another", source="pod-a")
+        await bus.send("results", pack({"result": {}}), id="collect-9", epoch=runner.epoch, source="pod-a")
+        while await bus.length("results"):
+            await asyncio.sleep(0.01)
+        assert "result of task collect-9 from pod-a not needed anymore" in caplog.text
+
+        # a result that cannot be read fails its task
+        waiting = asyncio.create_task(runner.run(CheckImagesTask([])))
+        [task] = await bus.receive(task_stream("worker"), TASK_GROUP, "pod-a", block=1)
+        await bus.send("results", b"not compressed", id=task.fields["id"], epoch=runner.epoch, source="pod-a")
+        with pytest.raises(TaskFailed, match="result not readable"):
+            await waiting
+        assert seen[-1] == ("pod-a", "")
 
 
-async def test_puller_errors(monkeypatch, caplog):
+async def test_a_new_controller_empties_the_streams_of_the_previous_one(bus):
+    old = _runner(Worker(Settings()), set(), bus)
+    async with _serving(old):
+        asyncio.create_task(old.run(CollectTask("a")))
+        while not await bus.length(task_stream("worker")):
+            await asyncio.sleep(0.01)
+    new = _runner(Worker(Settings()), set(), bus)
+    async with _serving(new):
+        assert await bus.length(task_stream("worker")) == 0 and new.epoch != old.epoch
+
+
+async def test_the_controller_waits_while_valkey_cannot_be_reached(monkeypatch, caplog, bus):
+    slept = []
+    real_sleep = asyncio.sleep
+
+    async def sleep(delay):
+        slept.append(delay)
+        await real_sleep(0)
+
+    calls = {"receive": 0, "pending": 0}
+
+    async def receive(*args, **kwargs):
+        calls["receive"] += 1
+        if calls["receive"] > 2:
+            await real_sleep(1)
+        raise RedisConnectionError("connection refused")
+
+    async def pending(*args, **kwargs):
+        calls["pending"] += 1
+        raise RedisConnectionError("connection refused")
+
+    runner = _runner(Worker(Settings()), set(), bus)
+    async with _serving(runner):
+        monkeypatch.setattr(asyncio, "sleep", sleep)
+        monkeypatch.setattr(bus, "receive", receive)
+        monkeypatch.setattr(bus, "pending", pending)
+        while calls["receive"] < 3 or calls["pending"] < 1:
+            await real_sleep(0.01)
+    assert "cannot read the results of the tasks from Valkey (connection refused): trying again in 1s" in caplog.text
+    assert "cannot read the tasks being run from Valkey: connection refused" in caplog.text
+    assert slept[:1] == [1] and 2 in slept
+
+
+async def test_puller_errors(monkeypatch, caplog, bus):
     slept, real_sleep = [], asyncio.sleep
 
     async def sleep(delay):
@@ -126,36 +238,37 @@ async def test_puller_errors(monkeypatch, caplog):
             slept.append(delay)
         await real_sleep(0)
 
-    monkeypatch.setattr(asyncio, "sleep", sleep)
-    runner = QueueRunner(Worker(Settings()), set())
-    trivy = _puller(monkeypatch, roles=["trivy"])
+    runner = _runner(Worker(Settings()), set(), bus)
+    trivy = _puller(monkeypatch, bus, roles=["trivy"])
 
     # a task for another role, or that fails: the error goes back to the controller
-    async with _client(runner, trivy) as http:
+    async with _serving(runner):
+        await bus.ensure_group(task_stream("trivy"), TASK_GROUP)
         task = asyncio.create_task(runner.run(CheckImagesTask([])))
-        await asyncio.sleep(0)
-        runner.queue[0].role = "trivy"  # sent to the wrong process
-        assert await trivy.pull(http, wait=0)
+        [message] = await bus.receive(task_stream("worker"), TASK_GROUP, "nobody", block=1)
+        await bus.send(task_stream("trivy"), message.data, **message.fields)  # sent to the wrong process
+        assert await trivy.pull(wait=1)
         with pytest.raises(TaskFailed, match="ValueError: a worker task was sent to a process with roles trivy"):
             await task
+        assert not await trivy.pull(wait=0.01)  # no task meanwhile
 
-    # the controller cannot be reached: the next tries wait longer
-    def unreachable(request):
-        raise httpx.ConnectError("connection refused")
+    # Valkey cannot be reached: the next tries wait longer
+    monkeypatch.setattr(asyncio, "sleep", sleep)
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(unreachable), base_url=trivy.url) as http:
-        assert not await trivy.pull(http) and not await trivy.pull(http)
-        image = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"))
-        sent = {"id": "scan-vulnerabilities-1", "kind": "scan-vulnerabilities", "task": {"images": [encode(image)]}}
-        await trivy.answer(http, sent)
-    assert slept[:2] == [1, 2] and slept[2:] == list(internal.RETRY)
-    assert "cannot reach the controller at http://controller:8081" in caplog.text
+    async def unreachable(*args, **kwargs):
+        raise RedisConnectionError("connection refused")
+
+    monkeypatch.setattr(bus, "receive", unreachable)
+    assert not await trivy.pull() and not await trivy.pull()
+    assert slept == [1, 2] and "cannot read the tasks from Valkey (connection refused): trying again in 1s" in caplog.text
+
+    # the result cannot be sent: tried again, then lost (the controller gives the task to another process)
+    monkeypatch.setattr(bus, "send", unreachable)
+    image = ImageReport(ImageRef("docker.io", "library/nginx", "1.25"))
+    data = pack({"id": "scan-vulnerabilities-1", "kind": "scan-vulnerabilities", "task": {"images": [encode(image)]}})
+    await trivy.answer(Message("1-1", data, {"id": "scan-vulnerabilities-1", "epoch": "e"}, task_stream("trivy")))
+    assert slept[2:] == list(tasks_module.RETRY)
     assert "result of task scan-vulnerabilities-1 lost" in caplog.text
-
-    # the result came too late
-    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404)), base_url=trivy.url) as http:
-        await trivy.answer(http, {"id": "scan-vulnerabilities-2", "kind": "scan-vulnerabilities", "task": {"images": []}})
-    assert "result of task scan-vulnerabilities-2 not needed anymore" in caplog.text
 
 
 def test_processes_by_role(monkeypatch):
@@ -192,6 +305,7 @@ def test_processes_run_their_roles(monkeypatch, caplog):
 
     monkeypatch.setattr(Scanner, "run_forever", run_forever)
     monkeypatch.setattr(TaskPuller, "run_forever", run_forever)
+    monkeypatch.setattr(QueueRunner, "serve", run_forever)
     monkeypatch.setattr(uvicorn.Server, "serve", serve)
     settings = _settings(["controller", "worker"])
     settings.internal.port = 0
@@ -199,11 +313,11 @@ def test_processes_run_their_roles(monkeypatch, caplog):
         pass
     with TestClient(create_app(_settings(["trivy"]))):
         pass
-    assert ran == ["Scanner", "internal API", "TaskPuller"]
+    assert ran == ["Scanner", "QueueRunner", "internal API", "TaskPuller"]
     assert "internal API listening on port 0" in caplog.text
 
 
-async def test_distributed_scan_in_batches(fakes, monkeypatch):  # noqa: F811 - fixture
+async def test_distributed_scan_in_batches(fakes, monkeypatch, bus):  # noqa: F811 - fixture
     def collect(self, cluster):
         for image in ("nginx:1.25", "nginx:1.26", "redis:7", "alpine:3"):
             self.add(image, Usage(cluster.name, "Pod", "default", "web"))
@@ -220,10 +334,9 @@ async def test_distributed_scan_in_batches(fakes, monkeypatch):  # noqa: F811 - 
     settings = _settings(["ui", "controller"])
     settings.internal.batch_size = 2
     scanner = Scanner(settings, TwoClusters())
-    scanner.runner = runner = QueueRunner(scanner.worker, set())
-    runner.loop = asyncio.get_running_loop()
+    scanner.runner = runner = _runner(scanner.worker, set(), bus)
     # two processes share the tasks
-    pullers = [_puller(monkeypatch), _puller(monkeypatch)]
+    pullers = [_puller(monkeypatch, bus, source="worker-1"), _puller(monkeypatch, bus, source="worker-2")]
     pulled = []
     for puller in pullers:
 
@@ -238,11 +351,8 @@ async def test_distributed_scan_in_batches(fakes, monkeypatch):  # noqa: F811 - 
         await scanner.scan()
         return scanner.snapshot
 
-    task = asyncio.create_task(scanned())
-    async with _client(runner, pullers[0]) as http:
-        while not task.done():
-            await asyncio.gather(*(p.pull(http, wait=0.05) for p in pullers))
-        snap = task.result()
+    async with _serving(runner):
+        snap = await _until_done(asyncio.create_task(scanned()), *pullers)
     # the images of one name stay together, the results come back in the order of the snapshot
     checks = sorted(names for kind, names in pulled if kind == "check-images")
     assert checks == [["library/alpine"], ["library/nginx", "library/nginx"], ["library/redis"]]
@@ -264,7 +374,7 @@ def _controller(settings=None):
     chart = ChartReport("a", "app", "argocd", "app", "https://charts.example.com", "1.0.0", "helm")
     scanner.snapshot = Snapshot(images=[image], charts=[chart], started_at=datetime.now(UTC), finished_at=datetime.now(UTC))
     backend = LocalBackend(scanner, Administration(scanner))
-    return scanner, create_internal_app(QueueRunner(scanner.worker, set()), TOKEN, backend)
+    return scanner, create_internal_app(TOKEN, backend)
 
 
 async def test_ui_process_reads_the_controller(monkeypatch):
@@ -347,7 +457,7 @@ async def test_ui_process_without_controller(monkeypatch, caplog):
     assert "the controller answers again" in caplog.text and remote.snapshot.finished_at is not None
 
 
-async def test_trivy_administration_in_trivy_processes(monkeypatch, caplog):
+async def test_trivy_administration_in_trivy_processes(monkeypatch, caplog, bus):
     caplog.set_level(logging.INFO, logger="kube_tower")
     monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
     downloads = []
@@ -363,27 +473,26 @@ async def test_trivy_administration_in_trivy_processes(monkeypatch, caplog):
     monkeypatch.setattr(worker_module.TrivyScanner, "status", status)
     scanner = Scanner(_settings(["ui", "controller", "worker"]), TwoClusters())
     administration = Administration(scanner)
-    scanner.runner = runner = QueueRunner(scanner.worker, {"worker"}, context=lambda: {"trivy": administration.generations})
-    runner.loop = asyncio.get_running_loop()
+    scanner.runner = runner = _runner(scanner.worker, {"worker"}, bus, context=lambda: {"trivy": administration.generations})
     backend = LocalBackend(scanner, administration)
     assert backend.trivy_remote and backend.trivy_available and backend.trivy_cached == 0  # unknown yet
-    trivy = _puller(monkeypatch, roles=["trivy"])
+    trivy = _puller(monkeypatch, bus, roles=["trivy"])
     trivy.worker.trivy.cache["docker.io/library/nginx:1.25"] = VulnerabilityReport("trivy", datetime.now(UTC))
-    async with _client(runner, trivy) as http:
+    async with _serving(runner):
         # the status of the trivy process that answered
-        status = await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy, http)
+        status = await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy)
         assert status.version == "0.60.0" and backend.trivy_status is status and backend.trivy_cached == 1
         # a database update runs in one trivy process, the others refresh theirs before their next task
         assert await backend.update_trivy_db() is None and administration.generations == {"db": 1, "cache": 0}
-        await _until_done(next(iter(administration._tasks)), trivy, http)
+        await _until_done(next(iter(administration._tasks)), trivy)
         assert downloads == [0] and "database refreshed in one trivy process" in backend.trivy_message
         # the cache is forgotten by each trivy process at its next task
         assert await backend.clear_trivy_cache() == -1 and administration.generations == {"db": 1, "cache": 1}
-        await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy, http)
+        await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy)
         assert trivy.worker.trivy.cache == {} and backend.trivy_cached == 0
         assert "Trivy results cache cleared (1 image(s)), as asked on the Administration page" in caplog.text
         administration.generations["db"] += 1
-        await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy, http)
+        await _until_done(asyncio.create_task(backend.refresh_trivy_status()), trivy)
         assert trivy.worker.trivy._prepared_at is None and "the Trivy databases are refreshed before the next scan" in caplog.text
 
     # no trivy process answers
@@ -398,37 +507,33 @@ async def test_trivy_administration_in_trivy_processes(monkeypatch, caplog):
         return "cannot download the Trivy database: 403"
 
     monkeypatch.setattr(worker_module.TrivyScanner, "prepare", broken)
-    async with _client(runner, trivy) as http:
+    async with _serving(runner):
         assert await backend.update_trivy_db() is None
-        await _until_done(next(iter(administration._tasks)), trivy, http)
+        await _until_done(next(iter(administration._tasks)), trivy)
     assert backend.trivy_message == "cannot download the Trivy database: 403"
 
 
-async def test_logs_and_state_of_the_remote_processes(monkeypatch, fakes):  # noqa: F811 - fixture
+async def test_logs_and_state_of_the_remote_processes(monkeypatch, fakes, bus):  # noqa: F811 - fixture
     monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", TOKEN)
     monkeypatch.setenv("POD_NAME", "kube-tower-controller-0")
     scanner = Scanner(_settings(["ui", "controller"]), TwoClusters())
-    scanner.runner = runner = QueueRunner(scanner.worker, set())
-    runner.loop = asyncio.get_running_loop()
     buffer = LogBuffer(source="kube-tower-controller-0", roles=["ui", "controller"])
     buffer.emit(logging.LogRecord("kube_tower.scanner", logging.INFO, "", 0, "scan finished", None, None))
     backend = LocalBackend(scanner, Administration(scanner), buffer, Processes(["ui", "controller"]))
-    app = create_internal_app(runner, TOKEN, backend)
-    worker = _puller(monkeypatch)
-    worker.source = "kube-tower-worker-1"
+    app = create_internal_app(TOKEN, backend)
     seen = []
-    original = backend.process_registry.task
 
     def task(name, kind=""):
         seen.append((name, kind))
-        original(name, kind)
+        backend.process_registry.task(name, kind)
 
-    backend.process_registry.task = task
+    scanner.runner = runner = _runner(scanner.worker, set(), bus, on_task=task)
+    worker = _puller(monkeypatch, bus)
+    async with _serving(runner):
+        await _until_done(asyncio.create_task(scanner.scan()), worker)
+    # the controller knows which process sent the last result
+    assert seen[-1] == ("kube-tower-worker-1", "")
     transport = httpx.ASGITransport(app)
-    async with httpx.AsyncClient(transport=transport, base_url=worker.url, headers={"Authorization": f"Bearer {TOKEN}"}) as http:
-        await _until_done(asyncio.create_task(scanner.scan()), worker, http)
-    # the controller knows which task each process runs
-    assert ("kube-tower-worker-1", "collect") in seen and seen[-1] == ("kube-tower-worker-1", "")
 
     # a worker reports its log lines, kept by the controller with the pod and its roles
     monkeypatch.setenv("POD_NAME", "kube-tower-worker-1")
@@ -501,7 +606,7 @@ async def test_logs_and_state_of_the_remote_processes(monkeypatch, fakes):  # no
     assert [p.name for p in backend.processes()] == ["kube-tower-controller-0"]
 
 
-async def test_large_results_and_states_stay_off_the_event_loop(fakes, monkeypatch):  # noqa: F811 - fixture
+async def test_large_results_and_states_stay_off_the_event_loop(fakes, monkeypatch, bus):  # noqa: F811 - fixture
     import threading
 
     from kube_tower import tasks as tasks_module
@@ -516,15 +621,15 @@ async def test_large_results_and_states_stay_off_the_event_loop(fakes, monkeypat
     monkeypatch.setattr(tasks_module, "decode_result", spy)
     settings = _settings(["ui", "controller"])
     scanner = Scanner(settings, TwoClusters())
-    scanner.runner = runner = QueueRunner(scanner.worker, set())
-    runner.loop = asyncio.get_running_loop()
+    scanner.runner = runner = _runner(scanner.worker, set(), bus)
     backend = LocalBackend(scanner, Administration(scanner))
-    puller = _puller(monkeypatch)
-    transport = httpx.ASGITransport(create_internal_app(runner, TOKEN, backend))
-    async with httpx.AsyncClient(transport=transport, base_url=puller.url, headers={"Authorization": f"Bearer {TOKEN}"}) as http:
-        await _until_done(asyncio.create_task(scanner.scan()), puller, http)
-        # the results of the worker were decoded in threads, never on the event loop of the internal API
-        assert on_loop and not any(on_loop)
+    puller = _puller(monkeypatch, bus)
+    async with _serving(runner):
+        await _until_done(asyncio.create_task(scanner.scan()), puller)
+    # the results of the worker were decoded in threads, never on the event loop of the controller
+    assert on_loop and not any(on_loop)
+    transport = httpx.ASGITransport(create_internal_app(TOKEN, backend))
+    async with httpx.AsyncClient(transport=transport, base_url="http://c", headers={"Authorization": f"Bearer {TOKEN}"}) as http:
         # the snapshot is sent only to the UIs that do not have its revision, even while something runs
         monkeypatch.setattr(LocalBackend, "activities", lambda self: ["a rescan"])
         fresh = await http.post("/internal/v1/state", json={"revision": -1})
@@ -533,7 +638,7 @@ async def test_large_results_and_states_stay_off_the_event_loop(fakes, monkeypat
         assert same.json()["snapshot"] is None
 
 
-async def test_registry_authentication_seen_by_the_workers_reaches_the_controller():
+async def test_registry_authentication_seen_by_the_workers_reaches_the_controller(bus):
     """The controller shows on its Administration page whether the registries accepted the credentials:
     the check results of the worker pods carry what the registries answered them."""
     from datetime import UTC, datetime, timedelta
@@ -542,18 +647,42 @@ async def test_registry_authentication_seen_by_the_workers_reaches_the_controlle
     from kube_tower.tasks import CheckImagesResult, CheckImagesTask, encode_result
 
     controller = Worker(Settings())
-    runner = QueueRunner(controller, set())
+    runner = _runner(controller, set(), bus)
     old = datetime.now(UTC) - timedelta(hours=1)
     controller.registry_auth.record("ghcr.io", True)  # newer than what the worker saw: kept
     pod = Worker(Settings())
     pod.registry_auth.record("docker.io", False, "HTTP 401")
     pod.registry_auth._results["ghcr.io"] = AuthResult("ghcr.io", False, old, "old refusal")
-    running = asyncio.create_task(runner.run(CheckImagesTask([])))
-    task = await runner.next({"worker"}, wait=1)
-    assert runner.complete(task["id"], encode_result(CheckImagesResult([], pod.registry_auth.all())))
-    result = await running
+    async with _serving(runner):
+        running = asyncio.create_task(runner.run(CheckImagesTask([])))
+        [task] = await bus.receive(task_stream("worker"), TASK_GROUP, "pod", block=1)
+        answer = pack({"result": encode_result(CheckImagesResult([], pod.registry_auth.all()))})
+        await bus.send("results", answer, id=task.fields["id"], epoch=runner.epoch, source="pod")
+        result = await running
     assert [a.host for a in result.registry_auth] == ["docker.io", "ghcr.io"]
     assert controller.registry_auth.get("docker.io").message == "HTTP 401"
     assert controller.registry_auth.get("ghcr.io").ok  # the latest answer wins
     # The worker side sends what it saw with each check
     assert (await pod.execute(CheckImagesTask([]))).registry_auth == pod.registry_auth.all()
+
+
+async def test_the_controller_waits_for_valkey_at_startup(monkeypatch, caplog, bus):
+    slept, real_sleep, real_reset = [], asyncio.sleep, bus.reset
+    failures = iter([True, True])
+
+    async def sleep(delay):
+        slept.append(delay)
+        await real_sleep(0)
+
+    async def reset(*args):
+        if next(failures, False):  # Valkey still starting
+            raise RedisConnectionError("connection refused")
+        await real_reset(*args)
+
+    monkeypatch.setattr(bus, "reset", reset)
+    runner = _runner(Worker(Settings()), set(), bus)
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    async with _serving(runner):
+        pass
+    assert "cannot prepare the task streams in Valkey, the scans wait (connection refused): trying again in 1s" in caplog.text
+    assert slept[:2] == [1, 2]

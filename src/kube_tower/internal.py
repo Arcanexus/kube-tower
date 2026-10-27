@@ -1,19 +1,19 @@
-"""The internal API of the distributed mode (ADR 0002): worker and trivy processes pull tasks from the
-controller and send their results back; `ui` processes read the state of the controller (its snapshot,
-what runs) and send it the actions of the users (see backend.RemoteBackend).
+"""The exchanges of the distributed mode. Worker and trivy processes read their tasks from Valkey and send
+their results back there (TaskPuller, ADR 0003). Over the internal API of the controller (ADR 0002), `ui`
+processes read the state of the controller (its snapshot, what runs) and send it the actions of the users
+(see backend.RemoteBackend).
 
 The other processes also report to the controller every few seconds (Reporter): who they are, and their
 new log lines, for the Administration and Logs pages.
 
 The controller serves it on its own port (internal.port), apart from the UI, behind a token shared by
-the processes: the tasks carry the credentials of image pull secrets, it must never be exposed.
+the processes: it must never be exposed.
 """
 
 from __future__ import annotations
 
 import asyncio
 import hmac
-import json
 import logging
 import time
 from collections.abc import Callable
@@ -23,14 +23,16 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
+from redis.exceptions import RedisError
 
 from kube_tower import __version__
+from kube_tower.bus import Bus, Message, pack, unpack
 from kube_tower.clusters import ClusterRegistry
 from kube_tower.config import Settings, internal_token
 from kube_tower.logbuffer import LogBuffer, LogLine
 from kube_tower.models import decode, encode, to_json
 from kube_tower.processes import STARTED, process_name
-from kube_tower.tasks import CollectTask, QueueRunner, decode_task, encode_result, role_of
+from kube_tower.tasks import RETRY, TASK_GROUP, CollectTask, decode_task, encode_result, role_of, task_stream
 from kube_tower.worker import Worker
 
 if TYPE_CHECKING:
@@ -39,17 +41,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 PREFIX = "/internal/v1"
-WAIT = 20.0  # seconds a pull waits for a task before the worker asks again
-RETRY = (1, 2, 5, 10, 30)  # seconds before asking the controller again after an error (the last one repeats)
+WAIT = 20.0  # seconds a worker waits for a task before asking Valkey again
 CLUSTERS_TTL = 300  # seconds before a worker reads the cluster list again
 HEARTBEAT = 5.0  # seconds between two reports of a process to the controller
 REPORT_LINES = 500  # log lines sent at most per report
-
-
-class Pull(BaseModel):
-    roles: list[str]
-    wait: float = WAIT
-    source: str = ""  # the process asking (its pod name)
 
 
 class StateRequest(BaseModel):
@@ -58,12 +53,6 @@ class StateRequest(BaseModel):
 
 class LogsRequest(BaseModel):
     after: int = 0  # the sequence number of the last line the UI process has
-
-
-class Answer(BaseModel):
-    result: dict[str, Any] | None = None
-    error: str | None = None
-    source: str = ""  # the process that ran the task (its pod name)
 
 
 class Heartbeat(BaseModel):
@@ -77,7 +66,7 @@ class Heartbeat(BaseModel):
     logs: list[dict[str, Any]] = []
 
 
-def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend | None = None) -> FastAPI:
+def create_internal_app(token: str, backend: LocalBackend | None = None) -> FastAPI:
     def authorized(request: Request) -> None:
         sent = request.headers.get("Authorization", "")
         if not hmac.compare_digest(sent.encode(), f"Bearer {token}".encode()):
@@ -88,27 +77,6 @@ def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend |
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"status": "ok"}
-
-    @app.post(f"{PREFIX}/tasks/next", dependencies=[Depends(authorized)])
-    async def next_task(pull: Pull) -> Any:
-        task = await runner.next(set(pull.roles), min(max(pull.wait, 0), 60))
-        if task is not None and backend is not None:
-            backend.process_registry.task(pull.source, task["kind"])
-        return task if task is not None else Response(status_code=204)
-
-    @app.post(f"{PREFIX}/tasks/{{task_id}}/result", status_code=204, dependencies=[Depends(authorized)])
-    async def task_result(task_id: str, request: Request) -> None:
-        # Parsed in a thread: a result can weigh megabytes (the vulnerabilities of a batch of images).
-        raw = await request.body()
-        answer = await asyncio.to_thread(lambda: Answer.model_validate_json(raw))
-        if backend is not None:
-            backend.process_registry.task(answer.source)
-        if answer.error is not None:
-            done = runner.fail(task_id, answer.error)
-        else:
-            done = runner.complete(task_id, answer.result or {})
-        if not done:  # given to another process meanwhile, or the scan is over
-            raise HTTPException(404, f"task {task_id} is not waiting for a result")
 
     if backend is not None:
 
@@ -140,64 +108,64 @@ def create_internal_app(runner: QueueRunner, token: str, backend: LocalBackend |
 
 
 class TaskPuller:
-    """A worker or trivy process: runs the tasks of its roles, pulled from the controller one at a time."""
+    """A worker or trivy process: runs the tasks of its roles, read one at a time from Valkey (ADR 0003)."""
 
-    def __init__(self, settings: Settings, worker: Worker, roles: list[str], registry: ClusterRegistry | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        worker: Worker,
+        roles: list[str],
+        bus: Bus,
+        registry: ClusterRegistry | None = None,
+    ):
         self.settings = settings
         self.worker = worker
         self.roles = [r for r in roles if r in ("worker", "trivy")]
+        self.bus = bus
         self.registry = registry or ClusterRegistry(settings.clusters)
-        self.url = settings.internal.controller_url.rstrip("/")
-        self.headers = {"Authorization": f"Bearer {internal_token(settings)}", "User-Agent": "kube-tower"}
         self._clusters_read = 0.0
-        self._errors = 0  # requests to the controller that failed in a row
+        self._errors = 0  # reads from Valkey that failed in a row
         self._generations: dict[str, int] | None = None  # of the Trivy actions, see apply_generations
         self.source = process_name()
 
     async def run_forever(self) -> None:
-        log.info("pulling %s tasks from the controller at %s", " and ".join(self.roles), self.url)
-        async with httpx.AsyncClient(headers=self.headers, timeout=WAIT + 30) as http:
-            while True:
-                await self.pull(http)
+        log.info("reading %s tasks from Valkey", " and ".join(self.roles))
+        while True:
+            await self.pull()
 
-    async def pull(self, http: httpx.AsyncClient, wait: float = WAIT) -> bool:
-        """Ask the controller for a task and run it. Whether one was run."""
+    async def pull(self, wait: float = WAIT) -> bool:
+        """Wait for a task of the roles of this process and run it. Whether one was run."""
+        streams = [task_stream(role) for role in self.roles]
         try:
-            pull = {"roles": self.roles, "wait": wait, "source": self.source}
-            pulled = await http.post(f"{self.url}{PREFIX}/tasks/next", json=pull)
-            pulled.raise_for_status()
-        except httpx.HTTPError as exc:
+            messages = await self.bus.receive(streams, TASK_GROUP, self.source, block=wait)
+        except RedisError as exc:
             delay = RETRY[min(self._errors, len(RETRY) - 1)]
             self._errors += 1
-            log.warning("cannot reach the controller at %s (%s): trying again in %ss", self.url, exc, delay)
+            log.warning("cannot read the tasks from Valkey (%s): trying again in %ss", exc, delay)
             await asyncio.sleep(delay)
             return False
         self._errors = 0
-        if pulled.status_code != 200:  # no task meanwhile
-            return False
-        await self.answer(http, pulled.json())
-        return True
+        for message in messages:
+            await self.answer(message)
+        return bool(messages)
 
-    async def answer(self, http: httpx.AsyncClient, data: dict[str, Any]) -> None:
-        task_id = data["id"]
+    async def answer(self, message: Message) -> None:
+        task_id = message.fields.get("id", message.id)
         try:
+            data = await asyncio.to_thread(unpack, message.data)
             result = await self.execute(data)
             answer: dict[str, Any] = {"result": await asyncio.to_thread(encode_result, result)}
         except Exception as exc:  # noqa: BLE001 - reported to the controller, the loop goes on
             log.exception("task %s failed", task_id)
             answer = {"error": f"{type(exc).__name__}: {exc}"}
-        answer["source"] = self.source
-        body = await asyncio.to_thread(lambda: json.dumps(answer).encode())
-        headers = {"Content-Type": "application/json"}
+        payload = await asyncio.to_thread(pack, answer)
+        fields = {"id": task_id, "epoch": message.fields.get("epoch", ""), "source": self.source}
         for delay in (*RETRY, None):
             try:
-                sent = await http.post(f"{self.url}{PREFIX}/tasks/{task_id}/result", content=body, headers=headers)
-                if sent.status_code == 404:
-                    log.warning("result of task %s not needed anymore (given to another process, or the scan is over)", task_id)
-                else:
-                    sent.raise_for_status()
+                await self.bus.send("results", payload, **fields)
+                await self.bus.done(message.stream, TASK_GROUP, message.id)
                 return
-            except httpx.HTTPError as exc:
+            except RedisError as exc:
                 if delay is None:
                     log.error("result of task %s lost: %s (the controller gives the task to another process)", task_id, exc)
                     return

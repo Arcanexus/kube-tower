@@ -52,6 +52,7 @@ src/kube_tower/
   store.py             where the snapshot is kept (memory, or memory + Redis / Valkey)
   election.py          controller election with a Kubernetes Lease, active controller pod label
   processes.py         the processes (pods) known to the controller and their state (Administration page)
+  bus.py               Valkey keys through which the processes of the distributed mode talk (ADR 0003)
   internal.py          internal API of the controller, and the task puller of worker and trivy processes
   administration.py    Administration page actions (Trivy database, connectivity tests, unused node images)
   backend.py           Backend interface: all the web layer may use of the scans and the administration

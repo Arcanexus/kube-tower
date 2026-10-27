@@ -6,7 +6,7 @@ import pytest
 from redis.exceptions import ResponseError
 
 from kube_tower import bus as bus_module
-from kube_tower.bus import Bus, connect
+from kube_tower.bus import Bus, connect, pack, unpack
 from kube_tower.config import Settings
 
 
@@ -165,3 +165,18 @@ def test_connect_without_password(monkeypatch):
     settings.redis.url = "redis://valkey:6379/0"
     monkeypatch.delenv(settings.redis.password_env, raising=False)
     assert connect(settings).redis.connection_pool.connection_kwargs.get("password") is None
+
+
+async def test_one_consumer_reads_several_streams(bus):
+    for stream in ("tasks:worker", "tasks:trivy"):
+        await bus.ensure_group(stream, "processes")
+    await bus.send("tasks:trivy", b"scan")
+    [message] = await bus.receive(["tasks:worker", "tasks:trivy"], "processes", "pod-a", block=0.05)
+    assert (message.stream, message.data) == ("tasks:trivy", b"scan")
+    await bus.done(message.stream, "processes", message.id)
+    assert await bus.length("tasks:trivy") == 0
+
+
+def test_payloads_are_compressed_json():
+    payload = pack({"images": ["nginx"] * 1000})
+    assert len(payload) < 200 and unpack(payload) == {"images": ["nginx"] * 1000}

@@ -98,8 +98,9 @@ distributed:
     # ...or the token itself (e.g. openssl rand -hex 32), the chart then creates the Secret.
     token: ""
 
-# Optional Redis / Valkey where the controller keeps a copy of the inventory: a restarted controller
-# (or a standby taking over) shows it at once instead of scanning first. Both modes.
+# Redis / Valkey. Required by mode distributed: the pods talk through it (ADR 0003). In both modes the
+# controller keeps a copy of the inventory there: a restarted controller (or a standby taking over) shows
+# it at once instead of scanning first.
 redis:
   # A Valkey deployed by the chart (one pod, data in memory)...
   valkey:
@@ -122,6 +123,9 @@ redis:
   passwordKey: password
   # ...or the password itself, the chart then creates the Secret.
   password: ""
+  # Prefix of the keys of the distributed mode (empty: the release name), for several installations sharing
+  # one Redis.
+  keyPrefix: ""
 
 serviceAccount:
   create: true

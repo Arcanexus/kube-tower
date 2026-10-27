@@ -235,6 +235,7 @@ def test_standby_is_not_ready(monkeypatch, roles):
     monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", "secret")
     settings = Settings(roles=roles)
     settings.internal.leader_election = True
+    settings.redis.url = "redis://kube-tower-valkey:6379/0"
     election = FixedElection(leader=False)
     scanner = FakeScanner()
     scanner.worker = Worker(settings)
@@ -300,6 +301,7 @@ def test_processes_that_report_to_the_controller(monkeypatch):
     monkeypatch.setenv("KUBE_TOWER_INTERNAL_TOKEN", "secret")
     settings = Settings(roles=["worker"])
     settings.internal.controller_url = "http://kube-tower-internal:8081"
+    settings.redis.url = "redis://kube-tower-valkey:6379/0"
     create_app(settings, background=False)
     assert [(roles, state()) for roles, state in reporters] == [(["worker"], "ok")]
     create_app(Settings(roles=["all"]), scanner=FakeScanner(), background=False)  # one process: nothing to report
@@ -309,6 +311,7 @@ def test_processes_that_report_to_the_controller(monkeypatch):
     settings = Settings(roles=["controller"])
     settings.internal.leader_election = True
     settings.internal.controller_url = "http://kube-tower-internal:8081"
+    settings.redis.url = "redis://kube-tower-valkey:6379/0"
     election = FixedElection(leader=False)
     scanner = FakeScanner()
     scanner.worker = Worker(settings)

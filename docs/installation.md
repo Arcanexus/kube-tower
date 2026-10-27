@@ -310,10 +310,11 @@ To follow the development version, point `source` at the git repository instead:
 | `distributed.groups.<name>.nodeSelector` / `.tolerations` / `.affinity` | top-level values | Scheduling of a group |
 | `distributed.internal.existingSecret` / `.secretKey` / `.token` | `""` / `token` / `""` | Token of the internal API between the pods (required in distributed mode) |
 | `distributed.internal.port` | `8081` | Internal API of the controller (`<release>-internal` Service) |
-| `redis.valkey.enabled` | `false` | A Valkey Deployment keeping a copy of the inventory, see [scaling](scaling.md#keeping-the-inventory-across-restarts-redis--valkey) |
+| `redis.valkey.enabled` | `false` | A Valkey Deployment through which the pods of the distributed mode talk, also keeping a copy of the inventory, see [scaling](scaling.md#redis--valkey). Distributed mode: this or `redis.url` is required |
 | `redis.valkey.image` / `.port` / `.resources` | `docker.io/valkey/valkey:8.1.1` / `6379` / 20m CPU, 64Mi | Valkey settings |
 | `redis.url` | `""` | An existing Redis / Valkey instead (`redis://` or `rediss://`) |
 | `redis.existingSecret` / `.passwordKey` / `.password` | `""` / `password` / `""` | Optional Redis password, also set on the chart's Valkey |
+| `redis.keyPrefix` | `""` | Prefix of the keys of the distributed mode (empty: the release name) |
 | `config` | see [configuration](configuration.md) | Application settings, rendered into a ConfigMap |
 | `clusters` | `[]` | Remote clusters: Secrets created by the chart or `existingSecret`, see [clusters](clusters.md#registering-clusters-with-the-helm-chart) |
 | `registries.credentials` | `[]` | Per registry credentials, existing Secret, inline password or cloud `provider` (`aws`, `gcp`, `azure`), see [registries](registries.md) |

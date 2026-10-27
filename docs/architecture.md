@@ -60,8 +60,9 @@ flowchart LR
 ## Distributed mode
 
 With `mode: distributed`, the chart renders one Deployment per group of roles (by default one per
-role). The pods talk over the **internal API** of the controller (`:8081`, a shared token in
-`Authorization: Bearer`), reached through the `<release>-internal` Service.
+role). The tasks of the scans go through **Valkey** (required, [ADR 0003](adr/0003-valkey-bus.md)); the ui
+pods and the reports still use the **internal API** of the controller (`:8081`, a shared token in
+`Authorization: Bearer`), reached through the `<release>-internal` Service, until they move to Valkey too.
 
 ```mermaid
 flowchart TB
@@ -80,12 +81,12 @@ flowchart TB
 
     ui1 & ui2 -->|"state (every 2 s), actions, logs"| isvc
     standby -.->|"report (every 5 s)"| isvc
-    w1[worker pod] & w2[worker pod] -->|"pull tasks, send results"| isvc
-    tr[trivy pod ×1] -->|"pull tasks, send results"| isvc
+    active <-->|"queue tasks, read results,<br/>snapshot copy"| valkey[(Valkey<br/>chart or existing Redis)]
+    w1[worker pod] & w2[worker pod] <-->|"read tasks, send results"| valkey
+    tr[trivy pod ×1] <-->|"read tasks, send results"| valkey
 
     active <-->|"renew every 5 s"| lease[(Lease<br/>kube-tower-controller)]
     standby -.->|"tries every 5 s"| lease
-    active -->|snapshot copy| valkey[(Valkey<br/>chart or existing Redis)]
 
     w1 & w2 --> ext[(Clusters · registries ·<br/>Helm repositories · git)]
     tr --> regs[(Registries ·<br/>Trivy databases)]
@@ -98,8 +99,10 @@ flowchart TB
   `kube-tower.arcanexus.com/active-controller=true`: the internal Service routes to it only. A standby
   takes the Lease about 15 s after the active one stopped renewing it; an active controller that
   cannot renew it in time stops itself, so two controllers never hand out tasks together.
-- **worker** pods ask the controller for a task (a pull waits up to 20 s), run it and send the
-  result back. A task not answered within `internal.taskTimeout` is given to another pod.
+- **worker** pods read their tasks from the Valkey stream of their role (one pod gets each task), run
+  them and send the results back to Valkey, where the controller reads them. A task not answered
+  within `internal.taskTimeout` is given to another pod, three times at most. A controller taking
+  over empties the queues of the previous one.
 - **trivy**: one pod, so the Trivy databases are downloaded once and the results cache is shared by
   every cluster.
 - **Reports**: every pod but the active controller (standbys included) reports to the controller
@@ -107,9 +110,9 @@ flowchart TB
   **Administration** page (state of each role and pod, task each one runs) and the **Logs** page (lines
   of every pod, filtered by role). A pod not heard of for 30 seconds is shown as lost; a pod that stops
   says so and leaves the list.
-- **Valkey / Redis** (optional, also in single mode): the active controller writes the snapshot
-  there after each change, and reads it when it becomes active. Only the inventory is kept: a scan in
-  progress and the task queue stay in the controller's memory.
+- **Valkey / Redis** (required in distributed mode, optional in single mode): the task queues and
+  results, and a copy of the snapshot that the active controller writes after each change and reads
+  when it becomes active. A scan in progress is not kept: a new controller starts a new one.
 
 ## A scan, step by step
 
@@ -143,20 +146,21 @@ image or chart, and the retry of failed items, are the same tasks on a few items
 | Port | Served by | Paths |
 | --- | --- | --- |
 | `8080` (`http`) | every pod | pages, `/api/...`, `/metrics` (controller), `/healthz`, `/readyz`, `/leaderz` |
-| `8081` (`internal`) | controller (distributed mode) | `/internal/v1/tasks/next`, `/internal/v1/tasks/{id}/result`, `/internal/v1/state`, `/internal/v1/logs`, `/internal/v1/actions/{name}`, `/internal/v1/heartbeat` |
-| `6379` | Valkey (optional) | Redis protocol, controller only |
+| `8081` (`internal`) | controller (distributed mode) | `/internal/v1/state`, `/internal/v1/logs`, `/internal/v1/actions/{name}`, `/internal/v1/heartbeat` |
+| `6379` | Valkey | Redis protocol: every pod in distributed mode, the controller only in single mode |
 
-The internal API carries registry credentials in the tasks: never expose it. With
-`networkPolicy.enabled`, only the kube-tower pods reach it.
+The tasks carry registry credentials (image pull secrets) through Valkey: set a Valkey password. With
+`networkPolicy.enabled`, only the kube-tower pods reach Valkey and the internal API.
 
 ## Code
 
 | Module | Part |
 | --- | --- |
 | `main.py`, `config.py` | app factory, roles, settings |
-| `scanner.py`, `tasks.py` | controller: scans split in tasks, results merged in the snapshot |
+| `scanner.py`, `tasks.py` | controller: scans split in tasks queued in Valkey, results merged in the snapshot |
 | `worker.py`, `collectors/`, `registry/`, `checkers.py`, `trivy.py` | what the worker and trivy roles run |
-| `internal.py` | internal API, task queue, task puller of the worker and trivy processes, reports of the processes |
+| `bus.py` | the Valkey keys through which the processes talk: task streams, results, state, replies, presence, logs |
+| `internal.py` | internal API, task puller of the worker and trivy processes, reports of the processes |
 | `processes.py`, `logbuffer.py` | the pods known to the controller and their state, the log lines of every pod |
 | `backend.py` | what the web layer uses: `LocalBackend` (same process) or `RemoteBackend` (ui pods) |
 | `election.py` | controller election with a Kubernetes `Lease`, active pod label |

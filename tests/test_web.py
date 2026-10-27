@@ -1050,6 +1050,7 @@ def test_logs_of_every_pod_filtered_by_role():
     from kube_tower.worker import Worker
 
     settings = Settings(roles=["ui", "controller"])
+    settings.redis.url = "redis://kube-tower-valkey:6379/0"
     scanner = FakeScanner()
     scanner.worker = Worker(settings)
     client = TestClient(create_app(settings, scanner, background=False))
