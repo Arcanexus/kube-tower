@@ -140,6 +140,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Chart, distributed mode: sizing from measures on a real inventory. `ui`: 1 replica, 100m CPU and 192Mi
+  requested (was 2 replicas, 20m, 128Mi: with such a low request, the autoscaling target was reached at
+  every page load and the HPA kept adding and removing pods); `worker`: 100m CPU and 256Mi requested.
+  Autoscaling from 1 to 4 pods, damped by a default `autoscaling.behavior` (one pod more per minute at
+  most, after 2 minutes above the target). [Scaling](docs/scaling.md#sizing) gives the CPU cost of each
+  page: one ui pod serves about 10 users.
 - UI: the Synthesis, Clusters, Images and Vulnerabilities pages count only the **running** images (used by
   a pod) by default: images only cached on nodes or declared by workloads without pods (scaled to zero,
   CronJob between two runs) no longer inflate the totals. A **Running images only** switch on each page

@@ -288,5 +288,9 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ $g.autoscaling.targetCPUUtilizationPercentage | default 80 }}
+  {{- with $g.autoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
 {{- end }}

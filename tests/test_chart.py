@@ -441,7 +441,7 @@ def test_distributed_mode(tmp_path):
     ]
     roles = {g: env(deployment(docs, g))["KUBE_TOWER_ROLES"] for g in ("controller", "ui", "worker", "trivy")}
     assert roles == {"controller": "controller", "ui": "ui", "worker": "worker", "trivy": "trivy"}
-    assert {g: deployment(docs, g)["replicas"] for g in roles} == {"controller": 2, "ui": 2, "worker": 2, "trivy": 1}
+    assert {g: deployment(docs, g)["replicas"] for g in roles} == {"controller": 2, "ui": 1, "worker": 2, "trivy": 1}
     assert docs[("Secret", "kt-kube-tower-internal")]["stringData"] == {"token": "t0ken"}
     for group in roles:
         spec = deployment(docs, group)
@@ -514,7 +514,13 @@ def test_distributed_groups(tmp_path):
     assert deployment(docs, "trivy")["replicas"] == 1
     assert "replicas" not in deployment(docs, "worker")
     hpa = docs[("HorizontalPodAutoscaler", "kt-kube-tower-worker")]["spec"]
-    assert hpa["scaleTargetRef"]["name"] == "kt-kube-tower-worker" and hpa["maxReplicas"] == 6 and hpa["minReplicas"] == 2
+    assert hpa["scaleTargetRef"]["name"] == "kt-kube-tower-worker" and hpa["maxReplicas"] == 6 and hpa["minReplicas"] == 1
+    # Damped: a page load or a pod start does not add pods, one pod more per minute at most
+    assert hpa["behavior"]["scaleUp"] == {
+        "stabilizationWindowSeconds": 120,
+        "policies": [{"type": "Pods", "value": 1, "periodSeconds": 60}],
+    }
+    assert hpa["behavior"]["scaleDown"] == {"stabilizationWindowSeconds": 300}
     assert [k for k in docs if k[0] == "HorizontalPodAutoscaler"] == [("HorizontalPodAutoscaler", "kt-kube-tower-worker")]
 
 

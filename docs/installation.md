@@ -306,7 +306,7 @@ To follow the development version, point `source` at the git repository instead:
 | `image.tag` / `image.pullPolicy` | chart `appVersion` / `IfNotPresent` | Image tag (also the version shown by the UI) |
 | `mode` | `single` | `single`: one pod with every role; `distributed`: one Deployment per group of roles, see [scaling](scaling.md) |
 | `replicaCount` | `1` | Single mode: keep 1, the inventory lives in memory |
-| `distributed.groups.<name>.roles` / `.replicas` / `.resources` / `.autoscaling` | controller ×2, ui ×2, worker ×2, trivy ×1 | Distributed mode: the Deployments and their roles; the trivy group always has 1 replica, see [scaling](scaling.md) |
+| `distributed.groups.<name>.roles` / `.replicas` / `.resources` / `.autoscaling` | controller ×2, ui ×1, worker ×2, trivy ×1 | Distributed mode: the Deployments and their roles; the trivy group always has 1 replica; `autoscaling` (ui, worker) from 1 to 4 pods with a damped `behavior`, see [scaling](scaling.md#sizing) |
 | `distributed.groups.<name>.nodeSelector` / `.tolerations` / `.affinity` | top-level values | Scheduling of a group |
 | `distributed.internal.existingSecret` / `.secretKey` / `.token` | `""` / `token` / `""` | Token of the internal API between the pods (required in distributed mode) |
 | `distributed.internal.port` | `8081` | Internal API of the controller (`<release>-internal` Service) |

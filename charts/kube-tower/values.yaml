@@ -29,32 +29,57 @@ distributed:
           memory: 512Mi
     ui:
       roles: [ui]
-      replicas: 2
+      # One pod serves about 10 users at a few millicores each: a page costs 5 to 25 ms of CPU with
+      # 150 images and 50 charts (the CPU request is what the autoscaling target is a share of).
+      replicas: 1
       resources:
         requests:
-          cpu: 20m
-          memory: 128Mi
+          cpu: 100m
+          memory: 192Mi
         limits:
           memory: 512Mi
       autoscaling:
         enabled: false
-        minReplicas: 2
-        maxReplicas: 5
+        minReplicas: 1
+        maxReplicas: 4
         targetCPUUtilizationPercentage: 80
+        # Scale up by one pod at most every minute, after 2 minutes above the target (a page load or a
+        # pod start does not add pods); scale down after 5 minutes below it.
+        behavior:
+          scaleUp:
+            stabilizationWindowSeconds: 120
+            policies:
+              - type: Pods
+                value: 1
+                periodSeconds: 60
+          scaleDown:
+            stabilizationWindowSeconds: 300
     worker:
       roles: [worker]
+      # Mostly waiting for the registries: the batches of a scan are shared by the workers.
       replicas: 2
       resources:
         requests:
-          cpu: 50m
-          memory: 192Mi
+          cpu: 100m
+          memory: 256Mi
         limits:
           memory: 768Mi
       autoscaling:
         enabled: false
-        minReplicas: 2
-        maxReplicas: 5
+        minReplicas: 1
+        maxReplicas: 4
         targetCPUUtilizationPercentage: 80
+        # Scale up by one pod at most every minute, after 2 minutes above the target (a page load or a
+        # pod start does not add pods); scale down after 5 minutes below it.
+        behavior:
+          scaleUp:
+            stabilizationWindowSeconds: 120
+            policies:
+              - type: Pods
+                value: 1
+                periodSeconds: 60
+          scaleDown:
+            stabilizationWindowSeconds: 300
     trivy:
       roles: [trivy]
       # Always one replica (it keeps the Trivy databases and results), never autoscaled
