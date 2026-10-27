@@ -233,6 +233,7 @@ Administration actions, run in the background (the page follows them and reloads
 | Scans | **Scan now** (same as the button of the scan status). A scan checks the versions first, then scans the vulnerabilities with Trivy: during this Trivy phase a new scan, *Retry what failed* and the rescans can already start (a new scan waits for the Trivy phase to end before its own one). **Retry what failed**: checks again only the image version checks, vulnerability scans and charts (or subcharts) in error in the last scan, e.g. after fixing credentials or a rate limit. One image or chart is rescanned from its detail panel (see above) |
 | Trivy | Trivy version and vulnerability database (version, build date, next update, download date). **Update the database** downloads it when a newer one is published (standalone mode; with `trivy.server.enabled` the Trivy server updates its own). Scans wait for the update. **Clear** forgets the cached scan results (kept `vulnerabilities.trivy.rescanInterval`), so the next scan scans every image again; **Clear and scan now** also starts it |
 | Connectivity | **Test the connectivity** of every cluster (Kubernetes API `/version`, cluster Secrets read again), every container registry of the last scan and every registry with credentials (`/v2/`, and a pull token for one of its repositories), every HTTP Helm repository (`index.yaml`) and the Trivy server (`/healthz`), with kube-tower's credentials. Failures say why (proxy, DNS, TLS, 401/403…) |
+| Registry credentials | The registry credentials loaded (Secrets, image pull secrets, cloud providers): registry, where they come from, username and whether they could be read; secret values are never displayed. **Authentication** tells whether the registry accepted them at the last request that sent them (a scan, a rescan or the connectivity test): **accepted**, **refused** (with the registry's answer, e.g. `HTTP 401 Unauthorized`) or **not tried yet** (no request with these credentials since the controller started). In the distributed mode the worker pods send what the registries answered them with each result. For a pattern (`*.dkr.ecr.*.amazonaws.com`), a refusal by any matching registry is shown first, with its host |
 | API | Links to the API documentation (`api/docs`), the last scan as JSON (`api/snapshot`) and the Prometheus metrics (`metrics`) |
 | Unused node images | Images cached on nodes that no workload of their cluster uses, per cluster, with the `crictl rmi` command to run on the node. kube-tower stays read-only and does not remove them: the kubelet garbage collects unused images when a node's disk goes over `imageGCHighThresholdPercent` (85 % by default). Needs `images.includeNodeImages` |
 
@@ -242,15 +243,9 @@ Administration actions, run in the background (the page follows them and reloads
 
 The effective configuration, one table per section (with the same camelCase keys as `config.yaml`;
 durations in a readable form with their value in seconds; values changed from the defaults
-highlighted and counted; the whole configuration as YAML at the bottom), and the registry
-credentials that were loaded. Secret values are never displayed: only the registry, where the
-credentials come from, the username and whether they could be read.
-
-The **Authentication** column tells whether the registry accepted the credentials, at the last
-request that sent them (a scan, a rescan or the connectivity test of the Administration page):
-**accepted**, **refused** (with the registry's answer, e.g. `HTTP 401 Unauthorized`) or **not tried
-yet** (no request with these credentials since kube-tower started). For a pattern
-(`*.dkr.ecr.*.amazonaws.com`), a refusal by any matching registry is shown first, with its host.
+highlighted and counted; the whole configuration as YAML at the bottom). Secrets are only
+referenced (Secret name, file, environment variable), never displayed. The registry credentials
+and their status are on the [Administration](#administration) page.
 
 ## Statuses
 

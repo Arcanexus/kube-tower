@@ -71,6 +71,16 @@ class AuthResults:
             log.warning("%s refused the credentials: %s", host, message)
         self._results[host.lower()] = AuthResult(host.lower(), ok, datetime.now(UTC), message)
 
+    def all(self) -> list[AuthResult]:
+        return list(self._results.values())
+
+    def merge(self, results: list[AuthResult]) -> None:
+        """Results seen by another process (a worker pod): the latest of each host wins."""
+        for result in results:
+            known = self._results.get(result.host)
+            if known is None or known.at < result.at:
+                self._results[result.host] = result
+
     def get(self, registry: str) -> AuthResult | None:
         """The result for a configured registry; for a pattern, the latest refusal of a matching host,
         else its latest success."""

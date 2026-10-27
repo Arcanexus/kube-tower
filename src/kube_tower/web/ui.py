@@ -633,16 +633,7 @@ def mount(app: FastAPI) -> None:
         # Settings only hold references to secrets (paths, env var names), never their values.
         settings = request.app.state.settings
         rendered = yaml.safe_dump(_camel(dataclasses.asdict(settings)), sort_keys=False)
-        credentials, auth = request.app.state.backend.registry_credentials(settings)
-        return render(
-            request,
-            "settings",
-            tab="settings",
-            settings_yaml=rendered,
-            sections=settings_sections(settings),
-            credentials=credentials,
-            auth=auth,
-        )
+        return render(request, "settings", tab="settings", settings_yaml=rendered, sections=settings_sections(settings))
 
     def render_administration(request: Request, notice: str = "", error: str = "", full: bool = False) -> HTMLResponse:
         """The Administration page, or only its actions (`#administration`) for htmx. While an action runs the
@@ -652,6 +643,7 @@ def mount(app: FastAPI) -> None:
         images, vulnerabilities, charts = backend.failed_items()
         busy = bool(backend.locked or backend.rescanning or backend.admin_running)
         processes = backend.processes()
+        credentials, auth = backend.registry_credentials(request.app.state.settings)
         response = templates.TemplateResponse(
             request,
             "administration.html" if full else "_administration.html",
@@ -671,6 +663,8 @@ def mount(app: FastAPI) -> None:
                 "error": error,
                 "processes": processes,
                 "roles_status": roles_status(processes),
+                "credentials": credentials,
+                "auth": auth,
             },
         )
         if request.query_params.get("polling") and not busy:

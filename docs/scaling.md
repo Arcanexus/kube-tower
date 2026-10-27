@@ -61,9 +61,9 @@ distributed:
     ui:
       autoscaling:
         enabled: true
-        minReplicas: 2
-        maxReplicas: 5
-        targetCPUUtilizationPercentage: 80
+        minReplicas: 1
+        maxReplicas: 4
+        targetCPUUtilizationPercentage: 80   # of the CPU request (100m by default)
     worker:
       replicas: 4
       resources:
@@ -99,6 +99,30 @@ to another pod, e.g. when a worker was stopped in the middle of it.
 
 With `networkPolicy.enabled`, the kube-tower pods also accept the internal port from each other only,
 and reach it and Valkey. The internal API carries registry credentials: never expose it.
+
+### Sizing
+
+Measured with an inventory of 141 images (about 400 vulnerabilities each) and 51 charts, one CPU core:
+
+| Request | CPU per request |
+| --- | --- |
+| Synthesis | about 22 ms |
+| Clusters, Vulnerabilities | 14 to 18 ms |
+| Images, Helm charts, Administration, detail panels | 4 to 7 ms |
+| `/api/snapshot` (whole inventory as JSON, built in a thread) | about 530 ms |
+
+A user navigating loads a page every few seconds: **one ui pod serves about 10 users** with a few
+tens of millicores. An idle ui pod uses about 5m of CPU and 150Mi of memory (it reads the state of
+the controller every 2 seconds and decodes the inventory again when it changed); an idle worker
+about 3m. The defaults follow: `ui` 1 replica, 100m CPU and 192Mi requested; `worker` 2 replicas,
+100m CPU and 256Mi requested.
+
+The autoscaling target is a share of the CPU **request**: with a request far below what a pod uses
+when it starts or serves a page, the HorizontalPodAutoscaler adds pods at every page load and removes
+them minutes later. The default `autoscaling.behavior` damps it: one pod more per minute at most,
+after 2 minutes above the target; pods removed after 5 minutes below it. Workers mostly wait for the
+registries, so their CPU says little about the work queued: a fixed number of workers is usually the
+better choice, autoscaling them helps with many clusters scanned often.
 
 ## Keeping the inventory across restarts (Redis / Valkey)
 

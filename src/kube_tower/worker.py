@@ -201,12 +201,12 @@ class Worker:
         async with self.clients() as (oci, _, credentials):
             log.info("registry credentials loaded for: %s", ", ".join(credentials.describe()) or "none (anonymous access)")
             await ImageChecker(oci, self.settings.images, self.settings.registries.concurrency).check_all(task.images)
-        return CheckImagesResult(task.images)
+        return CheckImagesResult(task.images, self.registry_auth.all())
 
     async def _check_charts(self, task: CheckChartsTask) -> CheckChartsResult:
         async with self.clients() as (_, helm, _):
             await ChartChecker(helm, self.settings.helm, self.settings.registries.concurrency).check_all(task.charts)
-        return CheckChartsResult(task.charts)
+        return CheckChartsResult(task.charts, self.registry_auth.all())
 
     async def _scan_vulnerabilities(self, task: ScanVulnerabilitiesTask) -> ScanVulnerabilitiesResult:
         """Each image gets its report as soon as it is scanned (the UI shows them as they come)."""
