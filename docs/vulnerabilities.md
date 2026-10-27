@@ -18,7 +18,10 @@ from two sources, for each image:
 The vulnerability scan runs after the version checks of each scan: versions show up first, and
 the Vulnerabilities page says when the vulnerability scan is still in progress. Trivy results
 are kept in memory and reused until `rescanInterval` (24h by default), so a scan every 6h does not
-download every image again; images whose scan failed are retried at the next scan. To scan an
+download every image again. A scan that fails on a transient error (an image layer read cut short,
+`unexpected EOF`, a connection reset or timeout, a registry answering 429 or 5xx) is tried again at
+once, after 10 then 30 seconds; the other failures, and the ones still failing after 3 attempts, are
+retried at the next scan. To scan an
 image again right away (e.g. after a rebuild), use **Scan again** in its vulnerability panel: it scans
 every tag of the image, including the new ones found on the clusters (see [Rescan one image or chart](usage.md#rescan-one-image-or-chart)).
 
