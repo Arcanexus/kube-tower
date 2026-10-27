@@ -148,6 +148,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Trivy scans failing on a transient error (an image layer read cut short with `unexpected EOF`, a
+  connection reset or timeout, a registry answering 429 or 5xx) are tried again after 10 then 30
+  seconds, up to 3 attempts, instead of waiting for the next scan. The retries are logged at INFO, the
+  final failure as a warning.
 - Distributed mode: the controller (and the pages of a controller with the ui role) blocked for several
   seconds at each batch of Trivy results (`the web server was blocked for 3.1s`). The results of the
   worker and trivy pods are now parsed and decoded in a thread, about 10 times faster; the ui pods get

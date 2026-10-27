@@ -31,6 +31,13 @@ log = logging.getLogger(__name__)
 # The databases downloaded for a batch of scans serve the next batches for this long (seconds).
 PREPARED_FOR = 600
 SCANS_FAILED = re.compile(r"trivy: (\d+) image scan\(s\) failed")
+# Errors of a scan that may pass when tried again: a download cut short, a network or registry hiccup.
+TRANSIENT = re.compile(
+    r"unexpected EOF|connection reset|broken pipe|i/o timeout|TLS handshake timeout|connection refused"
+    r"|TOOMANYREQUESTS|too many requests|\b(429|500|502|503|504)\b|bad gateway|service unavailable|gateway timeout",
+    re.IGNORECASE,
+)
+RETRY_DELAYS = (10, 30)  # seconds before each new attempt of a scan that failed on a transient error
 
 
 def scans_failed(count: int) -> str:
@@ -265,11 +272,23 @@ class TrivyScanner:
         except RegistryError as exc:
             log.warning("trivy scan of %s skipped: %s", target, exc)
             return VulnerabilityReport("trivy", datetime.now(UTC), digest, message=str(exc))
-        code, stdout, stderr = await self._run([*args, *self.settings.extra_args, "--", target], env)
-        if code != 0:
+        for attempt, delay in enumerate((*RETRY_DELAYS, None), start=1):
+            code, stdout, stderr = await self._run([*args, *self.settings.extra_args, "--", target], env)
+            if code == 0:
+                break
             message = _error_message(stderr)
-            log.warning("trivy scan of %s failed: %s", target, message)
-            return VulnerabilityReport("trivy", datetime.now(UTC), digest, message=message)
+            if delay is None or not TRANSIENT.search(message):
+                log.warning("trivy scan of %s failed: %s", target, message)
+                return VulnerabilityReport("trivy", datetime.now(UTC), digest, message=message)
+            log.info(
+                "trivy scan of %s failed on a transient error (attempt %d of %d), trying again in %ss: %s",
+                target,
+                attempt,
+                len(RETRY_DELAYS) + 1,
+                delay,
+                message,
+            )
+            await asyncio.sleep(delay)
         try:
             return parse_trivy_output(json.loads(stdout or b"{}"), digest)
         except (ValueError, AttributeError) as exc:

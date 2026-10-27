@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import stat
 import threading
 from datetime import UTC, datetime, timedelta
@@ -176,6 +177,10 @@ def fake_trivy(tmp_path):
         "target = sys.argv[-1]\n"
         "if 'broken' in target or ('--download-db-only' in sys.argv and os.environ.get('FAIL_DB')):\n"
         "    print('2026-10-23T00:00:00Z\\tFATAL\\tFatal error\\tboom', file=sys.stderr); sys.exit(1)\n"
+        "seen = os.path.join(os.path.dirname(sys.argv[0]), target.replace('/', '_'))  # 'flaky' fails once\n"
+        "if 'eof' in target or ('flaky' in target and not os.path.exists(seen)):\n"
+        "    open(seen, 'w').close()\n"
+        "    print('FATAL\\tfailed to analyze layer: unable to read the file: unexpected EOF', file=sys.stderr); sys.exit(1)\n"
         "if 'garbage' in target:\n"
         "    print('not json'); sys.exit(0)\n"
         f"if '--download' not in ' '.join(sys.argv): print(open({str(output)!r}).read())\n"
@@ -379,3 +384,25 @@ async def test_trivy_insecure_ca_and_cloud_credentials(fake_trivy):
     assert by_target["docker.io/library/alpine:3.18"]["ssl"] == "/tmp/bundle.pem"
     assert f"{ecr}/team/app:1" not in by_target  # not scanned: no token
     assert private.vulnerabilities.message == "no AWS identity for provider aws"
+
+
+async def test_trivy_scans_failing_on_a_transient_error_are_tried_again(fake_trivy, monkeypatch, caplog):
+    """A layer read cut short (unexpected EOF) or a registry hiccup: tried again after a delay, up to 3 attempts."""
+    from kube_tower import trivy
+
+    monkeypatch.setattr(trivy, "RETRY_DELAYS", (0, 0))
+    binary, calls = fake_trivy
+    scanner = TrivyScanner(TrivySettings(binary=binary, cache_dir="/c"), {})
+    flaky = ImageReport(ImageRef("quay.io", "ansible/flaky", "24"))
+    eof = ImageReport(ImageRef("quay.io", "ansible/eof", "24"))
+    broken = ImageReport(ImageRef("ghcr.io", "org/broken", "1"))
+    with caplog.at_level(logging.INFO, logger="kube_tower.trivy"):
+        errors = await scanner.scan_all([flaky, eof, broken])
+    assert flaky.vulnerabilities.message is None and flaky.vulnerabilities.counts()[Severity.HIGH] == 1
+    assert "unexpected EOF" in eof.vulnerabilities.message and broken.vulnerabilities.message == "boom"
+    assert errors == ["trivy: 2 image scan(s) failed, see the Vulnerabilities page"]
+    scans = [c["args"][-1] for c in calls() if c["args"][-2] == "--"]
+    # flaky: failed once then passed; eof: 3 attempts; broken (not transient): 1
+    assert sorted(scans) == sorted(["quay.io/ansible/flaky:24"] * 2 + ["quay.io/ansible/eof:24"] * 3 + ["ghcr.io/org/broken:1"])
+    assert "transient error (attempt 1 of 3), trying again in 0s" in caplog.text
+    assert caplog.text.count("trivy scan of quay.io/ansible/eof:24 failed: ") == 1  # one warning, at the end
