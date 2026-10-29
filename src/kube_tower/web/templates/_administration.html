@@ -7,7 +7,7 @@
 {% macro date(value) -%}{{ value.strftime("%Y-%m-%d %H:%M UTC") if value else "" }}{%- endmacro %}
 {% set locked = checking_versions or backend.busy %}
 <div id="administration" class="administration"
-     {% if busy %}hx-get="administration?polling=1" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML"{% endif %}>
+     {% if busy %}hx-get="administration?polling=1" hx-trigger="every 3s [document.visibilityState=='visible']" hx-target="this" hx-swap="outerHTML"{% endif %}>
   {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
   {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
 

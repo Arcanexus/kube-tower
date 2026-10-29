@@ -28,7 +28,8 @@ subtitle explains the page. Status columns sort what needs attention first (`out
 On the Images, Helm charts and Vulnerabilities pages, the counters at the top are buttons: clicking one shows only
 that status (click it again to show everything). Filters are kept in the URL, so a filtered view
 can be bookmarked or shared. Clicking a line opens a detail panel on the right; close it with its
-button, a click outside or `Esc`. The panel starts with what was found (status, current → latest
+button, a click outside (which also does what it was meant to: one click on another line opens its
+details, one click on a filter uses it) or `Esc`. The panel starts with what was found (status, current → latest
 version) and ends with the buttons that check the item again. Drag its left edge, marked by a
 grip (⋮) in its middle, to resize it (or focus the edge and use the arrow keys; a double click
 restores the default width), or open it full screen, as a large window centred over the page, with

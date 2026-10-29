@@ -13,19 +13,20 @@
     // Theme chosen with the sidebar button (light, dark, or auto = follow the system).
     try { const theme = localStorage.getItem("kt-theme"); if (theme) document.documentElement.dataset.theme = theme; } catch (e) {}
   </script>
+  <meta name="htmx-config" content='{"historyCacheSize": 0}'>
   <title>kube-tower · {{ tab | default("") }}</title>
-  <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
-  <link rel="stylesheet" href="static/pico.min.css">
-  <link rel="stylesheet" href="static/kube-tower.css">
-  <script src="static/htmx.min.js" defer></script>
-  <script src="static/kube-tower.js" defer></script>
+  <link rel="icon" type="image/svg+xml" href="{{ asset("favicon.svg") }}">
+  <link rel="stylesheet" href="{{ asset("pico.min.css") }}">
+  <link rel="stylesheet" href="{{ asset("kube-tower.css") }}">
+  <script src="{{ asset("htmx.min.js") }}" defer></script>
+  <script src="{{ asset("kube-tower.js") }}" defer></script>
 </head>
-<body>
+<body hx-boost="true">
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="layout">
     <aside class="sidebar">
       <a class="brand" href="./">
-        <img src="static/logo.svg" alt="" width="36" height="36">
+        <img src="{{ asset("logo.svg") }}" alt="" width="36" height="36">
         <span>kube-tower</span>
       </a>
       <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-label="Menu">

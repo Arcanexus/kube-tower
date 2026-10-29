@@ -24,10 +24,12 @@
     box.scrollTop = box.scrollHeight;
     let follow = true;
     box.addEventListener("scroll", () => { follow = box.scrollHeight - box.scrollTop - box.clientHeight < 40; });
-    document.body.addEventListener("htmx:afterSettle", () => {
+    const settle = () => {
+      if (!box.isConnected) return document.body.removeEventListener("htmx:afterSettle", settle);  // left the page
       while (box.children.length > 2000) box.firstElementChild.remove();
       if (follow) box.scrollTop = box.scrollHeight;
-    });
+    };
+    document.body.addEventListener("htmx:afterSettle", settle);
   })();
 </script>
 {% endblock %}

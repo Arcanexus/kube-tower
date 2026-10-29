@@ -2,9 +2,12 @@
 {# Scan status, top right of every page: state, age of the last scan, problems (errors of the last scan and
    problems of kube-tower itself, like a missing Trivy) and the scan button. #}
 {% set problems = (warnings or []) + snapshot.errors %}
-<div id="scan-status" class="scan-status {{ 'has-errors' if problems }}"
-     {% if scanning %}hx-get="status?polling=1" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
-  <a class="scan-state" href="administration#scans" title="Scans in progress (Administration page)">
+<div id="scan-status" class="scan-status {{ 'has-errors' if problems }}">
+  {# While a scan runs only its state is polled: the menu of problems and the button are not replaced under
+     the pointer. The poll that sees the scan over reloads the page content (kt-scan-done, kube-tower.js). #}
+  {% if scanning %}<span hidden hx-get="status?polling=1" hx-trigger="every 3s [document.visibilityState=='visible']"
+        hx-select="#scan-state" hx-target="#scan-state" hx-swap="outerHTML"></span>{% endif %}
+  <a id="scan-state" class="scan-state" href="administration#scans" title="Scans in progress (Administration page)">
     {% if scanning %}
       <span class="dot dot-busy" aria-hidden="true"></span><span>{{ "Scan in progress…" if checking_versions else "Vulnerability scan in progress…" }}</span>
     {% elif snapshot.finished_at %}

@@ -1,5 +1,5 @@
 {% macro icon(name, cls="") -%}
-<svg class="icon {{ cls }}" aria-hidden="true"><use href="static/icons.svg#i-{{ name }}"></use></svg>
+<svg class="icon {{ cls }}" aria-hidden="true"><use href="{{ asset('icons.svg') }}#i-{{ name }}"></use></svg>
 {%- endmacro %}
 
 {% macro badge(status) -%}
@@ -62,7 +62,7 @@
 
 {% macro drawer(title, subtitle="") -%}
 {# Detail panel, loaded by htmx into #detail (see base.html). #}
-<div class="drawer-backdrop" onclick="ktCloseDetail()"></div>
+<div class="drawer-backdrop"></div>
 <article class="drawer-panel" role="dialog" aria-label="{{ title }}">
   {# Drag (or arrow keys) to resize, or open full screen: until the panel is closed (the next one opens at the default size). #}
   <div class="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize the panel" title="Drag to resize"
@@ -171,7 +171,7 @@
 <p class="rescan">
 {% if busy %}
   <small aria-busy="true">Rescanning…</small>
-  <span hidden hx-get="{{ detail_url }}&amp;polling=1" hx-trigger="every 3s" hx-target="#detail"></span>
+  <span hidden hx-get="{{ detail_url }}&amp;polling=1" hx-trigger="every 3s [document.visibilityState=='visible']" hx-target="#detail"></span>
 {% else %}
   {% for label, api in buttons %}
   <button type="button" class="outline secondary small" hx-post="{{ api }}" hx-swap="none"
