@@ -1,11 +1,7 @@
-{% extends "base.html" %}
-{% from "_macros.html" import badge, icon, page_title, running_switch %}
-{% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("clusters", "Clusters", "Local cluster and clusters registered through Secrets.", "Clusters come from Secrets in the ArgoCD format (or with a kubeconfig key) and the cluster kube-tower runs in. The numbers link to the filtered lists.") }}{% endblock %}
-{% block content %}
+{% from "_macros.html" import badge, icon %}
+<p><small>The local cluster and the clusters registered through Secrets (ArgoCD format, or with a <code>kubeconfig</code> key).
+  The numbers follow the Running only filter and link to the lists of this cluster.</small></p>
 {% set unknown %}<small class="muted-text">unknown</small>{% endset %}
-{% set run = "&running=" ~ (1 if running else 0) %}
-{{ running_switch(running) }}
 <div class="overflow-auto table-wrap">
 <table class="striped stack-sm">
   <thead><tr><th data-sort>Name</th><th data-sort>Status</th><th data-sort>Version</th>
@@ -22,11 +18,11 @@
         <br><small class="muted-text cluster-origin"><code>{{ c.server }}</code> · {{ c.source }}</small></td>
       <td data-sort="{{ 1 if c.reachable else 0 }}" class="cell-status">{% if c.reachable %}<span class="badge badge-up-to-date">{{ icon("ok") }}reachable</span>{% else %}<span class="badge badge-error">{{ icon("error") }}unreachable</span><br><small>{{ c.message }}</small>{% endif %}</td>
       <td>{{ c.version or unknown }}</td>
-      <td data-sort="{{ ni }}"><a href="images?cluster={{ q }}{{ run }}">{{ ni }}</a>
-        {%- if s and s.images["outdated"] %}<br><small><a href="images?cluster={{ q }}&amp;status=outdated{{ run }}">{{ s.images["outdated"] }} outdated</a></small>{% endif %}</td>
+      <td data-sort="{{ ni }}"><a href="images?cluster={{ q }}">{{ ni }}</a>
+        {%- if s and s.images["outdated"] %}<br><small><a href="images?cluster={{ q }}&amp;status=outdated">{{ s.images["outdated"] }} outdated</a></small>{% endif %}</td>
       <td data-sort="{{ nc }}"><a href="charts?cluster={{ q }}">{{ nc }}</a>
         {%- if s and s.charts["outdated"] %}<br><small><a href="charts?cluster={{ q }}&amp;status=outdated">{{ s.charts["outdated"] }} outdated</a></small>{% endif %}</td>
-      <td data-sort="{{ s.critical_images if s else 0 }}">{% if s and s.critical_images %}<a class="danger" href="vulnerabilities?status=critical&amp;cluster={{ q }}{{ run }}">{{ s.critical_images | plural("image") }}</a>{% else %}0{% endif %}</td>
+      <td data-sort="{{ s.critical_images if s else 0 }}">{% if s and s.critical_images %}<a class="danger" href="images?severity=critical&amp;cluster={{ q }}">{{ s.critical_images | plural("image") }}</a>{% else %}0{% endif %}</td>
     </tr>
   {% else %}
     <tr><td colspan="6">No cluster discovered yet.</td></tr>
@@ -34,4 +30,3 @@
   </tbody>
 </table>
 </div>
-{% endblock %}

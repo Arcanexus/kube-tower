@@ -11,8 +11,6 @@
   {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
   {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
 
-  {% include "_processes.html" %}
-
   <article id="scans">
     <header>{{ icon("clock") }}In progress</header>
     {% set activities = backend.activities() %}
@@ -65,8 +63,8 @@
     <div class="administration-row">
       <div>
         <strong>One image or chart</strong>
-        <p><small>Open it on the <a href="images">Images</a>, <a href="charts">Helm charts</a> or <a href="vulnerabilities">Vulnerabilities</a>
-          page and use the rescan buttons of its detail panel.</small></p>
+        <p><small>Open it on the <a href="images">Images</a> or <a href="charts">Helm charts</a> page and use the rescan
+          buttons of its detail panel.</small></p>
       </div>
     </div>
   </article>
@@ -149,65 +147,4 @@
     {% endif %}
   </article>
 
-  <article id="registries">
-  <header>{{ icon("key") }}Registry credentials</header>
-  <p><small>Loaded from the Secrets, the image pull secrets and the cloud providers; the authentication is the last answer of the registry to a request with these credentials (scans, rescans, connectivity test).</small></p>
-  <div class="overflow-auto">
-  <table class="striped">
-    <thead><tr><th>Registry</th><th>Source</th><th>Username</th><th>Status</th><th>Authentication</th></tr></thead>
-    <tbody>
-    {% for c in credentials %}
-      <tr>
-        <td><code>{{ c.registry }}</code></td><td>{{ c.source }}</td><td>{{ c.username }}</td>
-        <td>{% if c.ok %}<span class="badge badge-up-to-date">{{ icon("ok") }}loaded</span>{% else %}<span class="badge badge-error">{{ icon("error") }}invalid</span>{% endif %}{% if c.message %}<br><small>{{ c.message }}</small>{% endif %}</td>
-        {% set a = auth[c.registry] %}
-        <td>{% if a is none %}<span class="badge badge-unknown" title="No request with these credentials yet: run a scan or the connectivity test">{{ icon("unknown") }}not tried yet</span>
-          {%- else %}<span class="badge {{ 'badge-up-to-date' if a.ok else 'badge-error' }}" title="{{ a.host }}">{{ icon("ok" if a.ok else "error") }}{{ "accepted" if a.ok else "refused" }}</span>
-          <br><small><time datetime="{{ a.at.isoformat() }}" class="ago">{{ a.at.strftime("%Y-%m-%d %H:%M UTC") }}</time>{% if a.host != c.registry %} ({{ a.host }}){% endif %}</small>
-          {%- if a.message %}<br><small>{{ a.message }}</small>{% endif %}{% endif %}</td>
-      </tr>
-    {% else %}
-      <tr><td colspan="5">No credentials: registries are queried anonymously (Docker Hub rate limits apply).</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  </article>
-
-  <article>
-    <header>{{ icon("trash") }}Unused node images</header>
-    <p><small>Images cached on nodes that no workload of their cluster uses (Pods, Deployments, StatefulSets, DaemonSets, CronJobs),
-      from the last scan. kube-tower does not remove them: the kubelet deletes unused images by itself when the disk of a node goes over
-      <code>imageGCHighThresholdPercent</code> (85 % by default). To remove one now, run on the node: <code>crictl rmi &lt;image&gt;</code>,
-      or <code>crictl rmi --prune</code> to remove every image not used by a container of this node.</small></p>
-    {% if not unused %}
-    <p><small>{% if snapshot.finished_at %}No unused image found (images.includeNodeImages must be enabled).{% else %}No scan yet.{% endif %}</small></p>
-    {% else %}
-    {% for cluster, rows in unused | groupby("cluster") %}
-    <details>
-      <summary>{{ icon("clusters", "muted") }}{{ cluster }}: {{ rows | length | plural("unused image") }}</summary>
-      <table class="striped">
-        <thead><tr><th>Image</th><th>Nodes</th><th>Command</th></tr></thead>
-        <tbody>
-        {% for u in rows %}
-          <tr><td><code>{{ u.image }}</code></td><td><small>{{ u.nodes | join(", ") }}</small></td><td><code>crictl rmi {{ u.image }}</code></td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </details>
-    {% endfor %}
-    {% endif %}
-  </article>
-
-  <article id="api">
-    <header>{{ icon("box") }}API</header>
-    <div class="administration-row">
-      <p><small>The data of the UI as JSON (read-only, except the scan and rescan endpoints), and Prometheus metrics.</small></p>
-      <p class="actions">
-        <a href="api/docs" target="_blank" rel="noopener" role="button" class="outline small">{{ icon("external-link") }}API documentation</a>
-        <a href="api/snapshot" target="_blank" rel="noopener" role="button" class="outline secondary small">{{ icon("external-link") }}Last scan (JSON)</a>
-        <a href="metrics" target="_blank" rel="noopener" role="button" class="outline secondary small">{{ icon("external-link") }}Metrics</a>
-      </p>
-    </div>
-  </article>
 </div>

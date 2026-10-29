@@ -1877,7 +1877,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Images whose vulnerability scan failed (see the kube-tower logs or the Vulnerabilities page)",
+      "description": "Images whose vulnerability scan failed (see the kube-tower logs or the Images page)",
       "gridPos": {
         "h": 4,
         "w": 4,

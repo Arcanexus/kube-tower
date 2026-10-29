@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **About** page (link at the bottom of the sidebar, and on the version): version, latest release
+  (asked to GitHub by the browser, never by kube-tower), links to the repository, the documentation,
+  the changelog and to report a problem, what the instance runs (mode, roles, uptime, clusters, scan
+  interval, configuration file) and the versions of its components.
 - Groundwork for horizontal scaling ([ADR 0002](docs/adr/0002-horizontal-scaling.md)): `roles`
   setting (`KUBE_TOWER_ROLES`) and `Snapshot.from_dict`, the inverse of the JSON
   encoding of `/api/snapshot`. The UI, the API and the metrics go through a `Backend` interface
@@ -150,6 +154,16 @@ All notable changes to this project are documented here. The format follows
   swapped, styles and scripts stay loaded), pages and static files are gzip compressed (the static files
   go from 187 KB to 41 KB), and the static files are cached by browsers until the next release. Pages
   in a hidden browser tab stop polling.
+- UI reorganized in four pages, simpler to follow: **Overview** (four tiles and a **To do** list, most
+  urgent first: unreachable clusters, critical CVEs with a fix, failed checks, major updates, floating
+  tags pushed again, end of life OS), **Images** (versions and vulnerabilities together: one search for
+  images, tags, registries and CVE IDs, chips for the version status, critical / high CVEs and CVEs with
+  a fix, an Update column with the kind of update; one detail panel with the versions, vulnerabilities,
+  usages and digests), **Helm charts** (one line per chart, the chart and its subcharts as one tree in
+  the Status column, Application ArgoCD column) and **Administration** with tabs (Scans and Trivy,
+  Clusters, Pods, Credentials and settings, API, Logs). The **Cluster** and **Running only** filters
+  are in the top bar of every page and remembered by the browser. The former URLs (`synthesis`,
+  `vulnerabilities`, `clusters`, `settings`, `logs`) redirect to the new pages.
 
 - Distributed mode: every exchange between the pods goes through Valkey, and only the active controller
   orchestrates ([ADR 0003](docs/adr/0003-valkey-bus.md)). The controller queues the tasks in a Valkey
@@ -177,6 +191,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Removed
 
+- UI: the list of unused node images of the Administration page (the grey icon of the Images page tells
+  which images no pod runs; `api/administration/unused-images` still lists them).
 - The internal API of the controller (port 8081, `/internal/v1/...`), its token
   (`$KUBE_TOWER_INTERNAL_TOKEN`) and the settings `internal.port`, `internal.controllerUrl`
   (`$KUBE_TOWER_CONTROLLER_URL`) and `internal.tokenEnv`. Chart: `distributed.internal.*` (ignored, the

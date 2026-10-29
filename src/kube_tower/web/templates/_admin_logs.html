@@ -1,9 +1,8 @@
-{% extends "base.html" %}
-{% from "_macros.html" import icon, page_title %}
-{% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("logs", "Logs", "Last logs of kube-tower, kept in memory.", "Application and scanner logs, of every pod in the distributed mode (filter them by role). The lowest level kept is set by logs.level in the configuration.") }}{% endblock %}
-{% block content %}
-<form class="filters log-filters{% if distributed %} log-filters-roles{% endif %}" action="logs" method="get">
+{% from "_macros.html" import icon %}
+<p><small>Last logs of kube-tower, kept in memory: application and scanner logs, of every pod in the distributed mode
+  (filter them by role). The lowest level kept is set by <code>logs.level</code> in the configuration.</small></p>
+<form class="filters log-filters{% if distributed %} log-filters-roles{% endif %}" action="administration" method="get">
+  <input type="hidden" name="tab" value="logs">
   <input type="search" name="q" value="{{ q }}" placeholder="Filter…" aria-label="Filter" onchange="this.form.submit()">
   <select name="level" aria-label="Minimum level" onchange="this.form.submit()">
     {% for l in levels %}<option {% if l == level %}selected{% endif %}>{{ l }}</option>{% endfor %}
@@ -32,4 +31,3 @@
     document.body.addEventListener("htmx:afterSettle", settle);
   })();
 </script>
-{% endblock %}

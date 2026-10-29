@@ -146,7 +146,8 @@ config:
 - When several Secrets hold credentials for the same registry, the first one read is used.
 - Images pulled by the kubelet with node credentials (kubelet credential providers, e.g. ECR on EKS
   nodes) have no pull secret: use a `provider` above.
-- The Settings page lists the registries found in pull secrets (source `image-pull-secret`).
+- The Credentials and settings tab of the Administration page lists the registries found in pull secrets
+  (source `image-pull-secret`).
 
 ## TLS: private CAs and insecure registries
 

@@ -1,6 +1,18 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_title %}
-{% block heading %}{{ page_title("administration", "Administration", "Scans, Trivy, connectivity tests, unused node images and API.") }}{% endblock %}
+{% from "_macros.html" import badge, icon, page_title %}
+{% block layout %}{% if admin_tab in ("clusters", "logs") %}list-page{% endif %}{% endblock %}
+{% block heading %}{{ page_title("administration", "Administration", "Scans, Trivy, clusters, pods, credentials, settings, API and logs.") }}{% endblock %}
 {% block content %}
-{% include "_administration.html" %}
+<nav class="tabs" aria-label="Administration">
+  {% for key, (label, ico) in admin_tabs.items() %}
+  <a href="administration?tab={{ key }}" {% if key == admin_tab %}aria-current="page"{% endif %}>{{ icon(ico) }}{{ label }}</a>
+  {% endfor %}
+</nav>
+{% if admin_tab == "scans" %}{% include "_administration.html" %}
+{% elif admin_tab == "clusters" %}{% include "_admin_clusters.html" %}
+{% elif admin_tab == "pods" %}{% include "_processes.html" %}
+{% elif admin_tab == "settings" %}{% include "_admin_settings.html" %}
+{% elif admin_tab == "api" %}{% include "_admin_api.html" %}
+{% elif admin_tab == "logs" %}{% include "_admin_logs.html" %}
+{% endif %}
 {% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, icon, page_title %}
+
+{% macro pct(n, total) -%}{{ ((n / total * 100) | round | int) if total else 0 }}%{%- endmacro %}
+
+{% block heading %}{{ page_title("synthesis", "Overview", "What to act on, most urgent first.", "The tiles and the lists follow the Cluster and Running only filters of the top bar. Click a line for its details.") }}{% endblock %}
+{% block content %}
+{% set s = summary %}
+{% set v = s.vulnerabilities %}
+{% set reachable = snapshot.clusters | selectattr("reachable") | list %}
+{% set unreachable = snapshot.clusters | rejectattr("reachable") | list %}
+<div class="tiles">
+  <a class="tile" href="images">
+    <span>{{ icon("images") }}Images up to date</span><strong>{{ s.images["up-to-date"] }}<small> / {{ s.images_total }}</small></strong>
+    <small>{{ s.images["outdated"] }} outdated · {{ s.images["unknown"] + s.images["error"] }} to check</small>
+  </a>
+  <a class="tile" href="charts">
+    <span>{{ icon("charts") }}Helm charts up to date</span><strong>{{ s.charts["up-to-date"] }}<small> / {{ s.charts_total }}</small></strong>
+    <small>{{ s.charts["outdated"] }} outdated{% if s.charts_subchart_outdated %}, {{ s.charts_subchart_outdated }} by a subchart{% endif %}</small>
+  </a>
+  <a class="tile" href="images?severity=critical&amp;fixable=1">
+    <span>{{ icon("shield") }}Critical CVEs with a fix</span><strong class="{{ 'danger' if v.fixable_critical }}">{{ v.fixable_critical }}</strong>
+    <small>on {{ v.fixable_critical_images | plural("image") }}{% if scanning and not snapshot.vulnerabilities_finished_at %} · scan in progress{% endif %}</small>
+  </a>
+  <a class="tile" href="administration?tab=clusters">
+    <span>{{ icon("clusters") }}Clusters reachable</span><strong>{{ reachable | length }}<small> / {{ snapshot.clusters | length }}</small></strong>
+    <small>{% if unreachable %}<span class="danger">{{ unreachable[0].name }}: {{ unreachable[0].message or "unreachable" }}</span>{% elif snapshot.clusters %}all reachable{% else %}no scan yet{% endif %}</small>
+  </a>
+</div>
+
+<div class="overview">
+  <article class="todo">
+    <header>{{ icon("warning") }}To do <small>· most urgent first</small></header>
+    {% if todo %}
+    <ul class="todo-list">
+      {% for t in todo %}
+      <li>{% if t.detail_url %}<a href="#" hx-get="{{ t.detail_url }}" hx-target="#detail">{% else %}<a href="{{ t.href }}">{% endif %}
+        <span class="todo-tag todo-{{ t.level }}">{{ t.tag }}</span>
+        <span class="todo-what">{% if t.code %}<code>{{ t.title }}</code>{% else %}<strong>{{ t.title }}</strong>{% endif %}<small>{{ t.detail }}</small></span>
+        {% if t.hint %}<small class="todo-hint">{{ t.hint }}</small>{% endif %}</a></li>
+      {% endfor %}
+    </ul>
+    {% if todo_total > todo | length %}<p class="todo-more"><small>{{ todo_total - todo | length }} more:</small> <a href="images">images, most urgent first</a> · <a href="charts?status=outdated">outdated charts</a></p>{% endif %}
+    {% else %}
+    <p><small>{% if snapshot.finished_at %}Nothing urgent: no fixable critical CVE, no failed check, no major update.{% else %}No scan yet.{% endif %}</small></p>
+    {% endif %}
+  </article>
+
+  <div class="overview-side">
+    <article>
+      <header>{{ icon("images") }}Images by status</header>
+      {% if s.images_total %}
+      <div class="status-bar" role="img" aria-label="{% for st in Status %}{{ st.value }} {{ s.images[st.value] }}{{ ', ' if not loop.last }}{% endfor %}">
+        {% for st in Status %}{% if s.images[st.value] %}
+        <a class="segment segment-{{ st.value }}" style="flex-grow: {{ s.images[st.value] }}" href="images?status={{ st.value }}"
+           title="{{ st.value }}: {{ s.images[st.value] }} ({{ pct(s.images[st.value], s.images_total) }})"></a>
+        {% endif %}{% endfor %}
+      </div>
+      <ul class="legend">
+        {% for st in Status %}<li><a href="images?status={{ st.value }}">{{ badge(st) }}</a><strong>{{ s.images[st.value] }}</strong></li>{% endfor %}
+      </ul>
+      {% else %}<p><small>Nothing found.</small></p>{% endif %}
+    </article>
+    <article>
+      <header>{{ icon("outdated") }}Pending image updates</header>
+      {% set top = s.updates | map(attribute=1) | max if s.updates else 0 %}
+      {% if top %}
+      <table class="bars">
+        {% for kind, n in s.updates %}
+        <tr title="{{ kind }}: {{ n | plural('image') }}">
+          <th scope="row"><a href="images?update={{ kind }}" title="Show these images">{{ kind }}</a></th>
+          <td><div class="bar" style="width: {{ (n / top * 100) | round(1) }}%"></div></td>
+          <td class="bar-value">{{ n }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<p><small>None.</small></p>{% endif %}
+    </article>
+  </div>
+</div>
+{% endblock %}

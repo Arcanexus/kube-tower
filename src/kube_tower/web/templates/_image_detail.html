@@ -1,4 +1,5 @@
-{% from "_macros.html" import badge, digest, drawer, icon, links, rescan, severity_counts, tag, version_cell %}
+{% from "_macros.html" import badge, digest, drawer, icon, links, rescan, severity_counts, tag, update_badge, version_cell %}
+{% set v = r.vulnerabilities %}
 {% set ref = r.image | string | urlencode %}
 {% macro usage_item(n) -%}
 {# A line of the "Used by" tree (see ui.usage_tree); clusters and namespaces fold. #}
@@ -26,7 +27,7 @@
 {%- endmacro %}
 
 {% call drawer(r.image.name, r.image.registry) %}
-<p>{{ badge(r.status) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
+<p>{{ update_badge(r) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
 {% set current, latest = image_versions(r) %}
 <p class="drawer-summary" aria-label="Current and latest version">{{ version_cell(current[0], current[1]) }}<span class="arrow" aria-hidden="true">→</span>
   {%- if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False) }}{% else %}<small class="muted-text">latest unknown</small>{% endif %}</p>
@@ -45,10 +46,34 @@
   {% endif %}
 </table>
 {{ links(registry_links(r.image)) }}
-{% if r.vulnerabilities and not r.vulnerabilities.message %}
-<p>{{ icon("shield") }}{{ severity_counts(r.vulnerabilities) }}
-  <a href="#" hx-get="vulnerabilities/detail?ref={{ ref }}" hx-target="#detail"><small>vulnerabilities</small></a></p>
+
+<h4>Vulnerabilities</h4>
+{% if v is none %}
+<p><small>{{ "Not scanned yet (scan in progress)." if scanning else "Not scanned." }}</small></p>
+{% elif v.message %}
+<p><span class="badge badge-error">{{ icon("error") }}scan failed</span> <small>{{ v.message }}</small></p>
+{% else %}
+<p>{{ severity_counts(v) }}{% if v.vulnerabilities %} <small>· {{ v.fixable }} / {{ v.vulnerabilities | length }} with a fix, listed below</small>{% endif %}</p>
+{% if v.os_eosl %}
+<p class="tag-latest">{{ icon("warning") }}The OS of this image ({{ v.os }}) is end of life: it gets no more security fixes. Use a newer base image.</p>
 {% endif %}
+{% endif %}
+{% if v %}
+<table>
+  <tr><th scope="row">Source</th><td>{{ "Trivy Operator report" if v.source == "trivy-operator" else "Trivy scan by kube-tower" }}</td></tr>
+  {% if v.scanned_at %}<tr><th scope="row">Scanned at</th><td>{{ v.scanned_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endif %}
+  {% if v.digest %}<tr><th scope="row">Scanned digest</th><td>{{ digest(v.digest) }}</td></tr>{% endif %}
+  {% if v.os %}<tr><th scope="row">OS</th><td>{{ v.os }}</td></tr>{% endif %}
+</table>
+{% endif %}
+
+<h4>Used by</h4>
+{% set tree = usage_tree(r.usages) %}
+{% if tree %}
+<ul class="tree-list" aria-label="Where the image is used">
+  {% for c in tree %}{{ usage_item(c) }}{% endfor %}
+</ul>
+{% else %}<p><small>Not found on the clusters any more.</small></p>{% endif %}
 
 <h4>Digests</h4>
 {% set published = r.latest_digest if not r.latest_tag else r.tag_digest %}
@@ -75,14 +100,29 @@
 {% set tags = "" if same_name < 2 else " (" ~ same_name ~ " tags)" %}
 {% set buttons = [("Check version" ~ ("s" if tags) ~ tags, "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false")] %}
 {% if can_rescan_vulnerabilities %}{% set buttons = buttons + [("Scan vulnerabilities" ~ tags, "api/rescan/image?ref=" ~ ref ~ "&versions=false")] %}{% endif %}
-{{ rescan(buttons, "images/detail?ref=" ~ ref, rescanning, checking_versions) }}
+{{ rescan(buttons, "images/detail?ref=" ~ ref ~ ("&cve=" ~ (cve | urlencode) if cve else ""), rescanning, checking_versions) }}
 {% if not rescanning %}<p><small>Rescans cover every tag of <code>{{ r.image.name }}</code>, used or not, and the new ones found on the clusters.</small></p>{% endif %}
 
-<h4>Used by</h4>
-{% set tree = usage_tree(r.usages) %}
-{% if tree %}
-<ul class="tree-list" aria-label="Where the image is used">
-  {% for c in tree %}{{ usage_item(c) }}{% endfor %}
-</ul>
-{% else %}<p><small>Not found on the clusters any more.</small></p>{% endif %}
+
+{% if v and v.vulnerabilities %}
+<h4>All vulnerabilities ({{ v.vulnerabilities | length }})</h4>
+{% if highlighted %}<p><small>{{ v.vulnerabilities | selectattr("id", "in", highlighted) | list | length }} matching <code>{{ cve }}</code> ({{ highlighted | sort | join(", ") }}), listed first and highlighted.</small></p>{% endif %}
+<div class="overflow-auto">
+<table class="striped cve-table">
+  <thead><tr><th>ID</th><th>Severity</th><th>Package</th><th>Installed</th><th>Fixed in</th></tr></thead>
+  <tbody>
+  {% for x in (v.vulnerabilities | selectattr("id", "in", highlighted) | list) + (v.vulnerabilities | rejectattr("id", "in", highlighted) | list) %}
+    <tr {% if x.id in highlighted %}class="cve-match"{% endif %}>
+      <td>{% if x.url %}<a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.id }}</a>{% else %}{{ x.id }}{% endif %}
+        {% if x.title %}<br><small>{{ x.title }}</small>{% endif %}</td>
+      <td><span class="sev sev-{{ x.severity.value }}">{{ x.severity.value }}</span>{% if x.score %}<br><small>{{ x.score }}</small>{% endif %}</td>
+      <td><code>{{ x.package }}</code></td>
+      <td><small>{{ x.installed_version }}</small></td>
+      <td><small>{{ x.fixed_version or "no fix" }}</small></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
 {% endcall %}

@@ -54,11 +54,11 @@ src/kube_tower/
   processes.py         the processes (pods) known to the controller and their state (Administration page)
   bus.py               Valkey keys through which the processes of the distributed mode talk (ADR 0003)
   internal.py          exchanges of the distributed mode: task puller, publisher of the controller, reporter
-  administration.py    Administration page actions (Trivy database, connectivity tests, unused node images)
+  administration.py    Administration actions (Trivy database, connectivity tests, unused node images for the API)
   backend.py           Backend interface: all the web layer may use of the scans and the administration
   errors.py            explicit error messages (what failed, status, what to do)
-  logger.py            log formats; logbuffer.py keeps the last lines for the Logs page (of every pod on a controller)
-  web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Synthesis figures), api.py,
+  logger.py            log formats; logbuffer.py keeps the last lines for the Logs tab (of every pod on a controller)
+  web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Overview figures and To do list), api.py,
                        metrics.py, static/ (Pico CSS, htmx, kube-tower.css/.js, icons; cached with asset())
 charts/kube-tower/     Helm chart
 deploy/                manifests for remote clusters

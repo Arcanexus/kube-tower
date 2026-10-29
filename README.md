@@ -25,7 +25,7 @@ registry. Think [watchtower](https://containrrr.dev/watchtower/), [Renovate](htt
 or [version-checker](https://github.com/jetstack/version-checker), as a **read-only dashboard**: kube-tower
 never updates anything, you stay in control of your GitOps workflow.
 
-![Synthesis dashboard](docs/images/synthesis.png)
+![Overview](docs/images/overview.png)
 
 ## Features
 
@@ -38,19 +38,19 @@ never updates anything, you stay in control of your GitOps workflow.
 | ⎈ **Helm charts and subcharts** | Charts deployed by ArgoCD Applications, from Helm repositories, OCI registries or git paths, with every dependency checked. |
 | 🌐 **Multi-cluster** | Register clusters ArgoCD-style with a Secret, or reuse the cluster Secrets ArgoCD already has. |
 | 🛡️ **Vulnerabilities (CVE)** | Read from Trivy Operator reports when the cluster has them, else scanned with Trivy (copied into the pod by the chart, standalone or client/server). Find the images affected by a CVE in one search. |
-| 🖥️ **A UI made for triage** | Synthesis home page, filters kept in the URL (a *Running only* switch, on by default, leaves out the images no pod runs from the lists and counts), sortable columns with fixed headers, lists loaded 30 rows at a time as you scroll, resizable or full screen detail panels (digests, registry links, a cluster › namespace › workload › pod tree of where each image is used, subchart tree, CVE list), per item rescan, live logs, light and dark themes. |
+| 🖥️ **A UI made for triage** | Four pages: an Overview with a *To do* list (most urgent first), Images with their versions and vulnerabilities in one list (one search for names, tags and CVE IDs), Helm charts with their subchart tree, Administration. *Cluster* and *Running only* filters common to every page (on by default, *Running only* leaves out the images no pod runs), filters kept in the URL, sortable columns with fixed headers, lists loaded 30 rows at a time as you scroll, resizable or full screen detail panels (digests, registry links, a cluster › namespace › workload › pod tree of where each image is used, subchart tree, CVE list), per item rescan, live logs, light and dark themes. |
 | 🔐 **Registry authentication** | Per registry credentials, cloud identities (IRSA / EKS Pod Identity, GKE and AKS Workload Identity), reuse of the clusters' image pull secrets, private CAs. |
-| 🧰 **Administration** | State of every role and pod (distributed mode), rescan one item or what failed, update the Trivy database, test the connectivity to clusters and registries, see whether each registry accepts the credentials, list unused node images. Read-only: nothing is ever changed in the clusters. |
+| 🧰 **Administration** | State of every role and pod (distributed mode), rescan one item or what failed, update the Trivy database, test the connectivity to clusters and registries, see whether each registry accepts the credentials, follow the logs of every pod. Read-only: nothing is ever changed in the clusters. |
 | 🪶 **Stateless** | No database. One small pod, rebuilt inventory every few hours or on demand. |
 | 📈 **Observable** | JSON API and Prometheus metrics, ready for Grafana dashboards and alerts. |
 
 | Images | Helm charts |
 | --- | --- |
 | ![Images](docs/images/images.png) | ![Helm charts](docs/images/charts.png) |
-| **Vulnerabilities** | **Image details** |
-| ![Vulnerabilities](docs/images/vulnerabilities.png) | ![Image details](docs/images/image-detail.png) |
-| **Clusters** | **Dark theme** |
-| ![Clusters](docs/images/clusters.png) | ![Dark theme](docs/images/dark.png) |
+| **Image details** | **Administration** |
+| ![Image details](docs/images/image-detail.png) | ![Administration](docs/images/administration.png) |
+| **About** | **Dark theme** |
+| ![About](docs/images/about.png) | ![Dark theme](docs/images/dark.png) |
 
 ## Quick start
 

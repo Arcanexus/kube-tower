@@ -1,0 +1,13 @@
+{# Cluster and "Running only" filters of the top bar, common to every page. The browser keeps them in cookies and
+   reloads the page content when they change (ktGlobalFilters, kube-tower.js); a link with ?cluster= or ?running=
+   sets them too (ui.global_filters). #}
+<form class="global-filters" onchange="ktGlobalFilters(this)" onsubmit="return false">
+  <select name="cluster" aria-label="Cluster" title="Show only this cluster, on every page">
+    <option value="">All clusters</option>
+    {% for c in snapshot.clusters %}<option {% if c.name == cluster %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    {% if cluster and cluster not in snapshot.clusters | map(attribute="name") %}<option selected>{{ cluster }}</option>{% endif %}
+  </select>
+  <label class="filter-switch" title="Only the images that a pod runs (not the ones only declared by workloads without pods or cached on nodes)">
+    <input type="checkbox" role="switch" name="running" value="1" {% if running %}checked{% endif %}>Running only
+  </label>
+</form>

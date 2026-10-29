@@ -135,6 +135,7 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 .rescan button.small { padding: .2rem .6rem; font-size: .8rem; margin: 0; width: auto; }
 
 .filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: .5rem; }
+.filters-search { grid-template-columns: 1fr; }
 @media (max-width: 600px) { .filters { grid-template-columns: 1fr; } }
 .filters-4 { grid-template-columns: 2fr 1.5fr 1fr 1fr; }
 .filters-5 { grid-template-columns: 2fr 1.5fr 1fr 1fr auto; }
@@ -151,18 +152,19 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 .filter-switch input { margin: 0; }
 .running-switch { display: flex; justify-content: flex-end; }
 
-/* Status counters */
-.counters { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: 1rem; }
-@media (max-width: 600px) { .counters { grid-template-columns: repeat(2, 1fr); } }
+/* Filter chips above a list (status, severity, with a fix), with the number of items of each */
+.chip-rows { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin-bottom: .75rem; }
+.counters { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.counters-label { color: var(--pico-muted-color); font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .counter {
-  display: flex; justify-content: space-between; align-items: center; margin: 0; padding: .6rem 1rem; width: 100%;
+  display: flex; align-items: center; gap: .5rem; margin: 0; padding: .25rem .4rem .25rem .3rem; width: auto; border-radius: 2rem !important; font-size: .85rem;
   background: var(--pico-card-background-color); color: var(--pico-h2-color);  /* not --pico-color: Pico sets it on buttons */
   border: 2px solid transparent; border-radius: var(--pico-border-radius); box-shadow: var(--pico-card-box-shadow);
   cursor: pointer;
 }
 .counter:hover { border-color: var(--pico-muted-border-color); }
 .counter[aria-pressed="true"] { border-color: var(--kt-sidebar-active); }
-.counter strong { font-size: 1.4rem; }
+.counter strong { font-size: .95rem; padding-right: .3rem; }
 
 /* Status badges */
 .badge { display: inline-flex; align-items: center; padding: .1rem .5rem; border-radius: 1rem; font-size: .75rem; font-weight: 600; white-space: nowrap; }
@@ -199,13 +201,9 @@ td details summary { font-size: .85rem; }
 /* Clickable rows open the detail panel */
 .clickable { cursor: pointer; }
 tr.clickable:hover > td, tbody.clickable:hover td { background: var(--pico-table-row-stripped-background-color); }
-.chart-table tbody { border-top: 1px solid var(--pico-muted-border-color); }
-.chart-table tbody td { border-bottom: 0; }
-.chart-table tr.subchart td { padding-top: .2rem; padding-bottom: .2rem; font-size: .9em; }
 /* Subchart tree of the Helm charts list: one segment per depth, its lines drawn in CSS and stretched
    over the whole row (the cell padding is moved to the label) */
 .tree-cell { display: flex; align-items: stretch; margin: calc(var(--pico-spacing) * -.5) 0; }
-.chart-table tr.subchart .tree-cell { margin: -.2rem 0; }
 .tree-label { padding: .2rem 0; align-self: center; }
 .tree-seg { position: relative; flex: 0 0 1.1rem; }
 .tree-pipe::before, .tree-tee::before, .tree-elbow::before { content: ""; position: absolute; left: .45rem; top: 0; bottom: 0; border-left: 1px solid var(--kt-tree); }
@@ -287,7 +285,7 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--pico-table
 /* Synthesis */
 .danger { color: var(--kt-danger); }
 .icon.ok { color: #2e7d32; }
-.tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; margin-bottom: var(--pico-spacing); }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: var(--pico-spacing); }
 @media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
 .tile {
   display: flex; flex-direction: column; gap: .15rem; padding: .9rem 1.1rem; text-decoration: none; color: var(--pico-color);
@@ -372,13 +370,13 @@ th[data-sort]:focus-visible { outline: 2px solid var(--kt-sidebar-active); outli
 .image-cell .run-state { display: inline-flex; flex-shrink: 0; }
 .run-state .icon { width: 1.15em; height: 1.15em; }
 .run-state .icon.muted { opacity: .7; }
-.image-name { display: block; min-width: 0; max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.image-name { display: block; min-width: 0; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .image-name .registry { color: var(--pico-muted-color); }
-td.cell-name { max-width: 30rem; }
+td.cell-name { max-width: 21rem; }
 
 /* Versions: the tag, its short digest below; a digest that differs from the current one is highlighted */
 .version-cell { display: inline-flex; flex-direction: column; line-height: 1.25; min-width: 0; }
-.version-tag { display: inline-block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.version-tag { display: inline-block; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .digest-short { font-family: var(--pico-font-family-monospace); font-size: .72rem; color: var(--pico-muted-color); }
 .digest-differs { color: #b85000; font-weight: 600; }
 [data-theme="dark"] .digest-differs { color: #ffb74d; }
@@ -400,8 +398,6 @@ td.cell-name { max-width: 30rem; }
   table.stack-sm td { border: 0; padding: .1rem 0; background: transparent !important; }
   table.stack-sm td.cell-name { flex-basis: 100%; max-width: 100%; }
   table.stack-sm td[colspan] { flex-basis: 100%; }
-  table.stack-sm tr.subchart { padding: .2rem 0 .2rem 1rem; border-bottom: 0; }
-  table.stack-sm tr.subchart td:empty { display: none; }
   .image-name { max-width: calc(100vw - 4rem); }
   .scan-status { max-width: 100%; }
   .scan-state small { display: none; }
@@ -469,3 +465,67 @@ td.cell-name { max-width: 30rem; }
 .administration table.processes code { white-space: nowrap; font-size: .8rem; }
 .administration table.processes td { vertical-align: middle; }
 .process-task { white-space: nowrap; }
+
+/* Cluster and "Running only" filters of the top bar, common to every page */
+.global-filters { display: flex; align-items: center; gap: .75rem; margin: 0 0 0 auto; }
+.global-filters select { margin: 0; width: auto; min-width: 10rem; padding-top: .35rem; padding-bottom: .35rem; height: auto; font-size: .9rem; }
+.global-filters .filter-switch { margin: 0; font-size: .9rem; }
+.global-filters + .scan-status { margin-left: 0; }
+@media (max-width: 768px) { .global-filters { margin-left: 0; width: 100%; } .global-filters select { flex: 1; } }
+
+/* Secondary links of the sidebar (About), below the pages */
+.sidebar nav ul.nav-secondary { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, .1); }
+
+/* Tabs of the Administration page */
+.tabs { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: .25rem; margin-bottom: var(--pico-spacing); border-bottom: 1px solid var(--pico-muted-border-color); }
+.tabs a { display: inline-flex; align-items: center; gap: .4rem; padding: .5rem .8rem; color: var(--pico-muted-color); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs a:hover { color: var(--pico-color); }
+.tabs a[aria-current="page"] { color: var(--kt-sidebar-active); border-bottom-color: var(--kt-sidebar-active); font-weight: 600; }
+.tabs .icon { width: 1rem; height: 1rem; margin: 0; }
+
+/* Overview: the "To do" list beside two small charts */
+.overview { display: grid; grid-template-columns: 2fr 1fr; gap: 0 var(--pico-spacing); align-items: start; }
+@media (max-width: 1100px) { .overview { grid-template-columns: 1fr; } }
+.todo-list { list-style: none; margin: calc(var(--pico-block-spacing-vertical) * -1) calc(var(--pico-block-spacing-horizontal) * -1) 0; padding: 0; }
+.todo-list li { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--pico-muted-border-color); }
+.todo-list li:last-child { border-bottom: 0; }
+.todo-list a { display: flex; align-items: center; gap: .75rem; padding: .6rem var(--pico-block-spacing-horizontal); color: var(--pico-color); text-decoration: none; }
+.todo-list a:hover { background: var(--pico-table-row-stripped-background-color); }
+.todo-what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.todo-what code { background: none; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-what small, .todo-hint { color: var(--pico-muted-color); }
+.todo-hint { white-space: nowrap; }
+.todo-tag { flex: none; min-width: 5.5rem; padding: .1rem .5rem; border-radius: .4rem; font-size: .75rem; font-weight: 600; text-align: center; white-space: nowrap; }
+.todo-crit, .todo-err { background: #c62828; color: #fff; }
+.todo-warn { background: #b85000; color: #fff; }
+.todo-more { margin: .75rem 0 0; text-align: center; }
+@media (max-width: 600px) { .todo-hint { display: none; } }
+
+/* Helm charts: the chart and its subcharts as a tree in the Status column */
+.status-tree { list-style: none; margin: 0; padding: 0; }
+.status-tree li { list-style: none; margin: 0; padding: 0; }
+.status-tree .tree-cell { margin: 0; align-items: center; flex-wrap: wrap; gap: 0 .25rem; min-height: 1.7rem; }
+.status-tree li.subchart .tree-cell { align-items: stretch; flex-wrap: nowrap; }
+.status-tree li.subchart .tree-cell > :not(.tree-seg) { align-self: center; }
+.status-tree li > small { display: block; margin-left: 1.1rem; color: var(--pico-muted-color); }
+.status-tree code { background: none; padding: 0; }
+.status-tree .tree-versions { font-size: .9em; color: var(--pico-muted-color); white-space: nowrap; }
+.status-tree .tree-versions strong { color: #b85000; }
+.subchart-hint { color: #b85000; font-weight: 600; margin-left: .25rem; }
+.chart-table td { vertical-align: top; }
+
+/* About */
+.about-hero { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pico-spacing); }
+.about-hero > div { flex: 1 1 22rem; }
+.about-hero h3 { display: flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
+.about-hero p { margin-bottom: .25rem; }
+.about-hero .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; }
+.badge-version { background: var(--kt-sidebar-active); color: #fff; }
+.vulnerability-cell { white-space: nowrap; }
+.vulnerability-cell .cve-hits { white-space: normal; }
+.chart-table td.cell-name { white-space: nowrap; }
+.chart-table td.status-cell { min-width: 22rem; }
+.chart-table td small { overflow-wrap: anywhere; }
+.todo-what strong { color: var(--pico-color); }
+.table-wrap th, .table-wrap td { padding-left: .5rem; padding-right: .5rem; }
+.vulnerability-cell .sev { min-width: 0; padding: .1rem .35rem; }

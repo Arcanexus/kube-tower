@@ -13,36 +13,38 @@ from two sources, for each image:
    Trivy pulls the image layers from the registry itself (no container runtime needed), with the
    [registry credentials](configuration.md#registry-authentication) of kube-tower.
 
-![Vulnerabilities](images/vulnerabilities.png)
+![Images and their vulnerabilities](images/images.png)
 
 The vulnerability scan runs after the version checks of each scan: versions show up first, and
-the Vulnerabilities page says when the vulnerability scan is still in progress. Trivy results
+the Images page says when the vulnerability scan is still in progress. Trivy results
 are kept in memory and reused until `rescanInterval` (24h by default), so a scan every 6h does not
 download every image again. A scan that fails on a transient error (an image layer read cut short,
 `unexpected EOF`, a connection reset or timeout, a registry answering 429 or 5xx) is tried again at
 once, after 10 then 30 seconds; the other failures, and the ones still failing after 3 attempts, are
 retried at the next scan. To scan an
-image again right away (e.g. after a rebuild), use **Scan again** in its vulnerability panel: it scans
+image again right away (e.g. after a rebuild), use **Scan vulnerabilities** in its detail panel: it scans
 every tag of the image, including the new ones found on the clusters (see [Rescan one image or chart](usage.md#rescan-one-image-or-chart)).
 
-## The page
+## On the Images page
 
-One line per image, the most vulnerable first: counts per severity (`C`ritical, `H`igh,
-`M`edium, `L`ow, `U`nknown), how many vulnerabilities have a fix in a newer package version, and
-where the result comes from. The counters at the top give the number of images with at least one
-vulnerability of each severity; click one to show only those images. An image whose OS release is
-**end of life** (no more security fixes, e.g. `alpine 3.18`) is flagged in red. Click a column
-header to sort on it.
+The vulnerabilities are shown with the versions, on the [Images](usage.md#images) page: one line per
+image, with its counts per severity (`C`ritical, `H`igh, `M`edium, `L`ow, `U`nknown). The list starts
+with the images that have critical vulnerabilities with a fix in a newer package version. The **CVE**
+chips show only the images with critical or high vulnerabilities, or with vulnerabilities that have a
+fix; their numbers are images. An image whose OS release is **end of life** (no more security fixes,
+e.g. `alpine 3.18`) is flagged in red. Click the Vulnerabilities header to sort the most vulnerable
+first.
 
-To find the images affected by a given vulnerability, type all or part of its ID in the **CVE**
-filter, e.g. `CVE-2025-68121` (or `2025-68121`, `GHSA-`; several IDs separated by spaces or
-commas): only the images with a matching vulnerability are listed, with the matching IDs, and the
-counters only count them. The filter is kept in the URL (`vulnerabilities?cve=CVE-2025-68121`), so
-the result can be shared.
+To find the images affected by a given vulnerability, type all or part of its ID in the search box,
+e.g. `CVE-2025-68121` (or `2025-68121`, `GHSA-`; several IDs separated by spaces or commas, with
+words of the image if needed): only the images with a matching vulnerability are listed, with the
+matching IDs, and the chips only count them. The search is kept in the URL
+(`images?q=CVE-2025-68121`), so the result can be shared.
 
-Clicking an image opens the list of its vulnerabilities: ID (linked to its advisory), severity and
-CVSS score, package, installed version and the version that fixes it. With a CVE filter, the
-matching vulnerabilities are listed first and highlighted.
+Clicking an image opens its detail panel: the counts, the source and date of the scan, the OS, then the
+list of its vulnerabilities at the end: ID (linked to its advisory), severity and CVSS score, package,
+installed version and the version that fixes it. With a CVE in the search, the matching vulnerabilities
+are listed first and highlighted.
 
 ## Where the Trivy CLI comes from
 
@@ -111,11 +113,11 @@ vulnerabilities:
     - registry.k8s.io/pause*
 ```
 
-## Synthesis and Grafana
+## Overview and Grafana
 
-The **Synthesis** page shows the images with critical vulnerabilities (tile and per cluster column),
-the images by worst severity (with the failed and not yet scanned ones) and the five most
-vulnerable images. The [Grafana dashboard](metrics.md#grafana-dashboard) has a **Vulnerabilities**
+The **Overview** page counts the critical vulnerabilities that have a fix (tile) and lists the images
+with such vulnerabilities first in its **To do** list; the Clusters tab of the Administration page has
+the images with critical vulnerabilities per cluster. The [Grafana dashboard](metrics.md#grafana-dashboard) has a **Vulnerabilities**
 row with the same figures, their evolution and the workloads running an image with critical
 vulnerabilities, filtered by cluster.
 
