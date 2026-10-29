@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import chip, icon, list_shown, load_more, more_hint, page_title, severity_counts, sort_th %}
+{% block layout %}list-page{% endblock %}
+{% block heading %}{{ page_title("security", "Security", "Reports of Trivy Operator: configuration, exposed secrets, RBAC, infrastructure and compliance.", "kube-tower reads the reports that Trivy Operator writes in each cluster where it is installed (the vulnerabilities of the images are on the Images page). One line per resource with failed checks, most severe first. The chips filter by type of report and by severity. Click a line for the failed checks and how to fix them, or a compliance tile for its failed controls.") }}{% endblock %}
+{% block content %}
+<form class="filters filters-search" hx-get="security" hx-target="#results" hx-push-url="true"
+      hx-trigger="input changed delay:300ms from:input[name=q], change">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search a resource, a namespace or a check (KSV014, privileged…)" aria-label="Search">
+  {# Set by the chips above the results (ktToggleFilter) #}
+  <input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="severity" value="{{ severity }}">
+  <input type="hidden" name="all" value="{{ '1' if clean }}">
+  <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
+</form>
+<div id="results">{{ self.results() }}</div>
+{% endblock %}
+{% block results %}
+{% if not snapshot.trivy_operator %}
+<p class="notice">{{ icon("info") }}{% if snapshot.finished_at %}Trivy Operator was not found on the scanned clusters: this page shows its reports once it is installed (see the documentation, <code>docs/security.md</code>).{% else %}No scan yet.{% endif %}</p>
+{% endif %}
+{% if snapshot.security %}
+<div class="security-tiles">
+  {% for b in breakdown %}
+  <button type="button" class="tile" aria-pressed="{{ 'true' if kind == b.kind.value else 'false' }}" onclick="ktToggleFilter('kind', '{{ b.kind.value }}')"
+          title="Show only the {{ b.kind.label }} reports">
+    <span>{{ icon(b.kind.icon) }}{{ b.kind.label }}</span>
+    {% if b.pass_rate is none %}<strong><small>no report</small></strong>
+    {% else %}<strong class="{{ 'danger' if b.pass_rate < 50 }}">{{ b.pass_rate }}%<small> passing</small></strong>{% endif %}
+    {% if b.pass_rate is not none %}<span class="pass-bar" aria-hidden="true"><span style="width: {{ b.pass_rate }}%"></span></span>{% endif %}
+    <small>{{ b.failing }} of {{ b.total | plural("resource") }} with findings</small>
+  </button>
+  {% endfor %}
+</div>
+{% endif %}
+{% if compliance %}
+<div class="compliance-tiles">
+  {% for c in compliance %}
+  <a class="tile" href="#" hx-get="security/compliance?cluster={{ c.cluster | urlencode }}&id={{ c.id | urlencode }}" hx-target="#detail" title="{{ c.description }}">
+    <span>{{ icon("security") }}{{ c.title }}</span>
+    {% if c.score is none %}<strong><small>not evaluated yet</small></strong>
+    {% else %}<strong class="{{ 'danger' if c.score < 50 }}">{{ c.score }}%<small> passed</small></strong>{% endif %}
+    <small>{{ c.cluster }} · {{ c.failed | plural("control") }} failed / {{ c.passed + c.failed }}</small>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+<div class="chip-rows">
+  <div class="counters">
+    <small class="counters-label">Severity</small>
+    {% for s in Severity if s.value != "unknown" %}
+    {{ chip("severity", s.value, severity == s.value, by_severity[s], '<span class="sev sev-' ~ s.value ~ '">' ~ s.value ~ '</span>', "Show only the resources with " ~ s.value ~ " findings") }}
+    {% endfor %}
+  </div>
+  <div class="counters">
+    {{ chip("all", "1", clean, passing, "passing too", "Also list the resources that pass every check") }}
+  </div>
+</div>
+<p><small>{{ listing.total | plural("resource") }}{{ " with findings" if not clean }}{{ list_shown(listing) }}{% if not listing.sort %}, most severe first{% endif %}{% if passing and not clean %} · {{ passing | plural("resource") }} passing every check{% endif %}</small></p>
+<div class="overflow-auto table-wrap">
+<table class="striped stack-sm">
+  <thead><tr>{{ sort_th(listing, 0, "Resource") }}{{ sort_th(listing, 1, "Namespace") }}{{ sort_th(listing, 2, "Type") }}{{ sort_th(listing, 3, "Findings", True) }}{{ sort_th(listing, 4, "Cluster", False, "hide-sm") }}{{ sort_th(listing, 5, "Scanned", True, "hide-sm") }}</tr></thead>
+  <tbody>{{ self.rows() }}</tbody>
+</table>
+{{ more_hint(listing) }}
+</div>
+{% endblock %}
+{% block rows %}
+  {% for r in rows %}
+    <tr class="clickable" tabindex="0" hx-target="#detail" hx-trigger="click, keyup[key=='Enter']"
+        hx-get="security/detail?cluster={{ r.cluster | urlencode }}&kind={{ r.kind.value }}&namespace={{ (r.namespace or '') | urlencode }}&rkind={{ r.resource_kind | urlencode }}&name={{ r.resource_name | urlencode }}&container={{ (r.container or '') | urlencode }}">
+      <td class="cell-name"><small class="muted-text">{{ r.resource_kind }}</small> <strong>{{ r.resource_name }}</strong>
+        {%- if r.container %} <small class="muted-text">· {{ r.container }}</small>{% endif %}</td>
+      <td>{% if r.namespace %}<code>{{ r.namespace }}</code>{% else %}<small class="muted-text">cluster</small>{% endif %}</td>
+      <td><small>{{ icon(r.kind.icon, "muted") }}{{ r.kind.label }}</small></td>
+      <td class="vulnerability-cell">{{ severity_counts(r) }}</td>
+      <td class="hide-sm"><small>{{ r.cluster }}</small></td>
+      <td class="hide-sm"><small>{{ r.scanned_at.strftime("%Y-%m-%d %H:%M") if r.scanned_at else "—" }}</small></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6">{{ "No finding." if snapshot.trivy_operator else "No report." }}</td></tr>
+  {% endfor %}
+  {{ load_more(listing, 6) }}
+{% endblock %}

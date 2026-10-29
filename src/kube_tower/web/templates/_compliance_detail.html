@@ -1,0 +1,32 @@
+{% from "_macros.html" import drawer, icon %}
+{% call drawer(c.title, "Compliance · " ~ c.cluster) %}
+{% if c.score is none %}
+<p><small>Not evaluated yet: Trivy Operator fills this report on its compliance schedule (<code>compliance.cron</code>).</small></p>
+{% else %}
+<p><strong class="{{ 'danger' if c.score < 50 }}">{{ c.score }}%</strong> <small>of the controls passed · {{ c.passed }} passed, {{ c.failed }} failed</small></p>
+{% endif %}
+{% if c.description %}<p><small>{{ c.description }}</small></p>{% endif %}
+<table>
+  <tr><th scope="row">Framework</th><td><code>{{ c.id }}</code></td></tr>
+  <tr><th scope="row">Cluster</th><td>{{ c.cluster }}</td></tr>
+  {% if c.scanned_at %}<tr><th scope="row">Evaluated at</th><td>{{ c.scanned_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endif %}
+</table>
+{% if c.controls %}
+<h4>Failed controls ({{ c.controls | length }})</h4>
+<div class="overflow-auto">
+<table class="striped cve-table">
+  <thead><tr><th>Control</th><th>Severity</th><th>Failed checks</th></tr></thead>
+  <tbody>
+  {% for x in c.controls %}
+    <tr>
+      <td><small class="muted-text">{{ x.id }}</small> {{ x.name }}</td>
+      <td><span class="sev sev-{{ x.severity.value }}">{{ x.severity.value }}</span></td>
+      <td>{{ x.failed }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p><small>The failed checks behind each control are the Config audit, RBAC and Infrastructure findings of the Security page.</small></p>
+{% endif %}
+{% endcall %}

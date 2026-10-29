@@ -23,9 +23,10 @@ from kube_tower.checkers import ChartChecker, ImageChecker
 from kube_tower.clusters import Cluster
 from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
+from kube_tower.collectors.security import collect_security_reports
 from kube_tower.collectors.vulnerabilities import collect_operator_reports
 from kube_tower.config import Settings
-from kube_tower.models import VulnerabilityReport
+from kube_tower.models import SecurityKind, VulnerabilityReport
 from kube_tower.registry.auth import AuthResults, Credentials, TokenCache, resolve_credentials
 from kube_tower.registry.helm import HelmClient, IndexCache
 from kube_tower.registry.oci import OCIClient
@@ -190,6 +191,12 @@ class Worker:
                 reports, operator_errors = collect_operator_reports(cluster)
                 result.operator_reports = [OperatorReport(str(ref), report) for ref, report in reports]
                 result.errors += operator_errors
+            if settings.security.enabled and task.security:
+                found = collect_security_reports(cluster)
+                if not settings.security.exposed_secrets:
+                    found.reports = [r for r in found.reports if r.kind != SecurityKind.EXPOSED_SECRET]
+                result.security, result.compliance, result.trivy_operator = found.reports, found.compliance, found.installed
+                result.errors += found.errors
             result.images = [r for r in inventory.reports.values() if task.image_name in (None, r.image.name)]
             result.pull_secrets = inventory.pull_secrets
             return result

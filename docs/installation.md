@@ -340,6 +340,7 @@ To follow the development version, point `source` at the git repository instead:
 | `trivy.server.resources` | 100m CPU / 256Mi requests, 1Gi memory limit | Trivy server resources |
 | `trivy.server.nodeSelector` / `.tolerations` / `.affinity` | | Trivy server scheduling |
 | `config.vulnerabilities.*` | see [configuration](configuration.md#vulnerabilities-trivy) | Trivy Operator reports, scan settings, ignored images |
+| `config.security.*` | `enabled: true`, `exposedSecrets: true` | Trivy Operator security reports of the [Security](security.md) page |
 | `startupProbe` / `livenessProbe` / `readinessProbe` | 5 min to start, then every 20s / 10s | Probes on `/healthz` (the chart sets `httpGet`); `null` disables one |
 | `resources` | 50m CPU / 256Mi requests, 1536Mi memory limit | kube-tower pod resources (Trivy scans in standalone mode need the memory) |
 | `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `podLabels`, `imagePullSecrets` | | Usual pod settings |
@@ -387,7 +388,9 @@ networkPolicy:
 
 On the cluster it runs in, kube-tower gets a ClusterRole with `get`/`list` on pods, nodes,
 deployments, statefulsets, daemonsets, cronjobs, `applications.argoproj.io` and
-`vulnerabilityreports.aquasecurity.github.io` (Trivy Operator), plus `get` on the cluster Secrets
+the Trivy Operator reports (`vulnerabilityreports`, `configauditreports`, `exposedsecretreports`,
+`rbacassessmentreports`, `infraassessmentreports`, their cluster-scoped variants and
+`clustercompliancereports`, all `aquasecurity.github.io`), plus `get` on the cluster Secrets
 of its namespace named in `clusters[]` and `config.clusters.secretNames`, and on nothing else.
 Install it in a namespace of its own.
 

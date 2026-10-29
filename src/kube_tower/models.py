@@ -193,6 +193,121 @@ class ChartReport:
         return _worst({self.status, *(d.status for _, d in self.walk())})
 
 
+class SecurityKind(StrEnum):
+    """Kinds of Trivy Operator reports shown on the Security page (VulnerabilityReports go to the images)."""
+
+    CONFIG_AUDIT = "config-audit"  # ConfigAuditReport, ClusterConfigAuditReport
+    EXPOSED_SECRET = "exposed-secret"  # ExposedSecretReport
+    RBAC = "rbac"  # RbacAssessmentReport, ClusterRbacAssessmentReport
+    INFRA = "infra"  # InfraAssessmentReport, ClusterInfraAssessmentReport
+
+    @property
+    def label(self) -> str:
+        return {
+            "config-audit": "Config audit",
+            "exposed-secret": "Exposed secrets",
+            "rbac": "RBAC",
+            "infra": "Infrastructure",
+        }[self.value]
+
+    @property
+    def icon(self) -> str:
+        """Icon of the UI (static/icons.svg)."""
+        return {"config-audit": "clipboard-check", "exposed-secret": "key", "rbac": "users", "infra": "cpu"}[self.value]
+
+
+@dataclass
+class SecurityCheck:
+    """A failed check of a security report, or a secret found in an image."""
+
+    id: str  # KSV014, KCV0001... or the rule of an exposed secret (aws-access-key-id)
+    title: str
+    severity: Severity
+    category: str = ""
+    description: str = ""
+    messages: list[str] = field(default_factory=list)
+    remediation: str = ""
+    target: str = ""  # exposed secrets: file of the image holding the secret
+    match: str = ""  # exposed secrets: the line found, the secret masked by Trivy
+
+    @property
+    def url(self) -> str:
+        """Page of the check in the Aqua vulnerability database, when it has one."""
+        check = self.id.lower()
+        if check.startswith(("ksv", "kcv", "avd-")):
+            return f"https://avd.aquasec.com/misconfig/{check}"
+        return ""
+
+
+def _severity_counts(items) -> dict[Severity, int]:
+    out = dict.fromkeys(Severity, 0)
+    for item in items:
+        out[item.severity] += 1
+    return out
+
+
+@dataclass
+class SecurityReport:
+    """A Trivy Operator report about one Kubernetes resource (or one container, for exposed secrets)."""
+
+    cluster: str
+    kind: SecurityKind
+    resource_kind: str  # Deployment, Role, ClusterRole, Node...
+    resource_name: str
+    namespace: str | None = None  # None for cluster-scoped resources
+    container: str | None = None  # exposed secrets: the container whose image holds them
+    image: str | None = None  # exposed secrets: the image scanned
+    scanned_at: datetime | None = None
+    checks: list[SecurityCheck] = field(default_factory=list)  # failed checks only, most severe first
+    passed: int = 0  # checks that passed
+
+    @property
+    def key(self) -> tuple[str, str, str, str, str, str]:
+        """Identifies the report in a snapshot (detail panel)."""
+        return self.cluster, self.kind.value, self.namespace or "", self.resource_kind, self.resource_name, self.container or ""
+
+    def counts(self) -> dict[Severity, int]:
+        return _severity_counts(self.checks)
+
+    @property
+    def worst(self) -> Severity | None:
+        return min((c.severity for c in self.checks), key=list(Severity).index, default=None)
+
+
+@dataclass
+class ComplianceControl:
+    """A control of a compliance framework that failed, and how many checks failed."""
+
+    id: str  # 1.2.1, 5.1.3...
+    name: str
+    severity: Severity
+    failed: int = 0
+
+
+@dataclass
+class ComplianceReport:
+    """A ClusterComplianceReport of Trivy Operator (CIS Kubernetes Benchmark, NSA, Pod Security Standards...)."""
+
+    cluster: str
+    id: str  # k8s-cis-1.23, k8s-nsa-1.0...
+    title: str
+    description: str = ""
+    passed: int = 0
+    failed: int = 0
+    scanned_at: datetime | None = None
+    controls: list[ComplianceControl] = field(default_factory=list)  # failed controls, most severe first
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return self.cluster, self.id
+
+    @property
+    def score(self) -> int | None:
+        """Percentage of passed controls, None when not evaluated yet."""
+        total = self.passed + self.failed
+        return round(self.passed * 100 / total) if total else None
+
+
 @dataclass
 class ClusterStatus:
     name: str
@@ -213,6 +328,11 @@ class Snapshot:
     # End of the vulnerability scan, which runs after the version checks
     vulnerabilities_finished_at: datetime | None = None
     errors: list[str] = field(default_factory=list)
+    # Reports of Trivy Operator other than the VulnerabilityReports (Security page)
+    security: list[SecurityReport] = field(default_factory=list)
+    compliance: list[ComplianceReport] = field(default_factory=list)
+    # Clusters where Trivy Operator is installed: the Security page only shows when there is one
+    trivy_operator: list[str] = field(default_factory=list)
 
     def image(self, ref: str) -> ImageReport | None:
         return self._index("images", lambda r: str(r.image)).get(ref)
@@ -220,8 +340,14 @@ class Snapshot:
     def chart(self, cluster: str, namespace: str, application: str, chart: str) -> ChartReport | None:
         return self._index("charts", lambda c: c.key).get((cluster, namespace, application, chart))
 
+    def security_report(self, key: tuple) -> SecurityReport | None:
+        return self._index("security", lambda r: r.key).get(tuple(key))
+
+    def compliance_report(self, cluster: str, id: str) -> ComplianceReport | None:
+        return self._index("compliance", lambda r: r.key).get((cluster, id))
+
     def _index(self, name: str, key) -> dict:
-        """The reports of the `images` or `charts` list by key, for the detail panels and the API (opened
+        """The reports of the `images`, `charts`... list by key, for the detail panels and the API (opened
         and polled often). Built again when the list is replaced or grows (rescans add the new images).
         Not a dataclass field: left out of to_dict().
         """

@@ -183,6 +183,12 @@ config:
       javaDb: false
     # Images never scanned (fnmatch patterns on registry/repository)
     ignore: []
+  # Security page: the other reports of Trivy Operator (config audit, exposed secrets, RBAC, infrastructure,
+  # compliance), shown when it is installed in a cluster, see docs/security.md
+  security:
+    enabled: true
+    # Exposed secrets: the lines Trivy found, the secret masked; false to leave them out
+    exposedSecrets: true
   registries:
     # Also use the image pull secrets of the pods and workloads (read in their namespace): adds `get` on
     # secrets in EVERY namespace to the ClusterRole. Remote clusters need it in their own RBAC.

@@ -3,7 +3,8 @@
 ## The dashboards
 
 The left sidebar gives access to four pages: **Overview**, **Images**, **Helm charts** and
-**Administration**, then **About**. Its bottom button switches the theme between auto (follows the
+**Administration**, then **About**. A fifth page, **Security**, shows up between Helm charts and
+Administration when Trivy Operator is installed in a scanned cluster. Its bottom button switches the theme between auto (follows the
 system), light and dark; the choice is remembered by the browser. The version under it opens the
 About page, the GitHub icon the repository.
 
@@ -102,6 +103,8 @@ The home page: what to act on, following the Cluster and Running only filters of
 - The images by status (click a segment or a status to open the filtered list) and the pending image
   updates by type (major, minor, patch, newer, new digest): click a type to open the Images page
   filtered on it (`images?update=major`, shown as a chip above the results, removed with its ✕).
+- With Trivy Operator in a cluster, a **Security** card: the findings of its security reports per
+  severity, and the most exposed namespaces (see [Security](security.md)).
 
 ### Images
 
@@ -201,6 +204,17 @@ tree of the images.
 | `helm` (HTTP repository) | Application `targetRevision` | from the repository `index.yaml` |
 | `oci` | Application `targetRevision` | from the registry tags |
 | `git` (chart in a git path) | `version` of `Chart.yaml` at `targetRevision` | n/a: the chart follows git, only its subcharts are checked |
+
+### Security
+
+![Security](images/security.png)
+
+Only when Trivy Operator runs in a scanned cluster: its config audit, exposed secrets, RBAC,
+infrastructure and compliance reports, one tile per type (share of resources passing every check,
+click to filter), compliance tiles (share of controls passed) and one line per resource with failed
+checks, most severe first. Severity chips, a **passing too** chip and a search on resources and check
+IDs (`KSV017`). The detail panel lists the failed checks with their message, description, fix and a
+link to the Aqua vulnerability database. See [Security](security.md).
 
 ### Administration
 

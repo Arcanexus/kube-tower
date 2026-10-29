@@ -1,0 +1,48 @@
+{% from "_macros.html" import drawer, icon, severity_counts %}
+{% call drawer(r.resource_kind ~ " " ~ r.resource_name, r.kind.label ~ " · " ~ (r.namespace or "cluster-scoped") ~ " · " ~ r.cluster) %}
+<p>{{ severity_counts(r) }}{% if r.kind != SecurityKind.EXPOSED_SECRET %} <small>· {{ r.checks | length }} failed, {{ r.passed }} passed</small>{% endif %}</p>
+<table>
+  <tr><th scope="row">Resource</th><td>{{ r.resource_kind }} <code>{{ r.resource_name }}</code></td></tr>
+  <tr><th scope="row">Namespace</th><td>{% if r.namespace %}<code>{{ r.namespace }}</code>{% else %}cluster-scoped{% endif %}</td></tr>
+  <tr><th scope="row">Cluster</th><td>{{ r.cluster }}</td></tr>
+  {% if r.container %}<tr><th scope="row">Container</th><td>{{ r.container }}</td></tr>{% endif %}
+  {% if r.image %}<tr><th scope="row">Image</th><td><code>{{ r.image }}</code></td></tr>{% endif %}
+  <tr><th scope="row">Source</th><td>Trivy Operator report{% if r.scanned_at %}, {{ r.scanned_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</td></tr>
+</table>
+
+{% if r.kind == SecurityKind.EXPOSED_SECRET %}
+<h4>Secrets found ({{ r.checks | length }})</h4>
+<p><small>Trivy masks the secrets. Remove them from the image and rotate them: anyone who can pull the image can read them.</small></p>
+<div class="overflow-auto">
+<table class="striped cve-table">
+  <thead><tr><th>Rule</th><th>Severity</th><th>File</th></tr></thead>
+  <tbody>
+  {% for x in r.checks %}
+    <tr>
+      <td>{{ x.title or x.id }}<br><small class="muted-text">{{ x.id }}{% if x.category %} · {{ x.category }}{% endif %}</small></td>
+      <td><span class="sev sev-{{ x.severity.value }}">{{ x.severity.value }}</span></td>
+      <td><code>{{ x.target }}</code>{% if x.match %}<br><small><code class="secret-match">{{ x.match }}</code></small>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% elif r.checks %}
+<h4>Failed checks ({{ r.checks | length }})</h4>
+<ul class="check-list">
+  {% for x in r.checks %}
+  <li>
+    <details{% if loop.first %} open{% endif %}>
+      <summary><span class="sev sev-{{ x.severity.value }}">{{ x.severity.value }}</span> <strong>{{ x.title or x.id }}</strong> <small class="muted-text">{{ x.id }}</small></summary>
+      {% if x.description %}<p><small>{{ x.description }}</small></p>{% endif %}
+      {% if x.messages %}<ul class="check-messages">{% for m in x.messages %}<li><small>{{ m }}</small></li>{% endfor %}</ul>{% endif %}
+      {% if x.remediation %}<p><small><strong>Fix:</strong> {{ x.remediation }}</small></p>{% endif %}
+      {% if x.url %}<p class="links"><a href="{{ x.url }}" target="_blank" rel="noopener">{{ icon("external-link") }}{{ x.id }} in the Aqua vulnerability database</a></p>{% endif %}
+    </details>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p><small>Every check passed.</small></p>
+{% endif %}
+{% endcall %}

@@ -232,7 +232,11 @@ def test_vulnerabilities_standalone_by_default(tmp_path):
     assert {"name": "trivy-bin", "mountPath": "/opt/trivy/bin", "readOnly": True} in container(docs)["volumeMounts"]
     assert volumes(docs)["trivy-bin"] == {"name": "trivy-bin", "emptyDir": {}}
     rules = docs[("ClusterRole", "kt-kube-tower")]["rules"]
-    assert {"apiGroups": ["aquasecurity.github.io"], "resources": ["vulnerabilityreports"], "verbs": ["get", "list"]} in rules
+    (trivy_rule,) = [r for r in rules if r["apiGroups"] == ["aquasecurity.github.io"]]
+    assert trivy_rule["verbs"] == ["get", "list"]
+    assert {"vulnerabilityreports", "configauditreports", "exposedsecretreports", "clustercompliancereports"} <= set(
+        trivy_rule["resources"]
+    )
 
 
 def test_trivy_server(tmp_path):
