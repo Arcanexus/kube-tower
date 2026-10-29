@@ -58,7 +58,7 @@
         {% elif v.message %}<span class="badge badge-error" title="{{ v.message }}">{{ icon("error") }}scan failed</span>
         {% else %}{{ severity_counts(v) }}{% endif %}
         {% if hits %}<br><small class="cve-hits">{% for x in hits[:5] %}<span class="sev sev-{{ x.severity.value }}" title="{{ x.title }}">{{ x.id }}</span> {% endfor %}{% if hits | length > 5 %}+{{ hits | length - 5 }}{% endif %}</small>{% endif %}</td>
-      <td data-sort="{{ workloads(r) }}" class="hide-sm nowrap">{% set n = workloads(r) %}<small>{{ n | plural("workload") if n else "cached on nodes" }} · {{ r.clusters | join(", ") }}</small></td>
+      <td data-sort="{{ workloads(r) }}" class="hide-sm"><small><span class="nowrap">{% set n = workloads(r) %}{{ n | plural("workload") if n else "cached on nodes" }}</span><br><span class="muted-text">{{ r.clusters | join(", ") }}</span></small></td>
     </tr>
   {% else %}
     <tr><td colspan="6">No image.</td></tr>

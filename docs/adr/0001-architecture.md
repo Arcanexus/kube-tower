@@ -63,7 +63,7 @@ new registries types as a new client, without touching the rest.
 
 ### UI
 
-Jinja2 templates + [htmx](https://htmx.org) + [Pico CSS](https://picocss.com), served by FastAPI
+Jinja2 templates + [htmx](https://htmx.org) + one hand-written stylesheet (Pico CSS until v1.0.0), served by FastAPI
 and vendored in the image. No Node.js toolchain, no build step: a page is an HTML file with
 Jinja placeholders, which a Python developer can maintain. Pages: Overview, Images (versions and
 vulnerabilities), Helm charts, Administration (scans and Trivy, clusters, pods, credentials and settings,

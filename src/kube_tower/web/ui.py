@@ -415,7 +415,6 @@ ADMIN_TABS = {
 }
 # Versions of the vendored front-end libraries (static/), shown on the About page.
 HTMX_VERSION = (m := re.search(r'version:"([\d.]+)"', (HERE / "static" / "htmx.min.js").read_text())) and m[1] or ""
-PICO_VERSION = (m := re.search(r"Pico CSS \S+ v([\d.]+)", (HERE / "static" / "pico.min.css").read_text())) and m[1] or ""
 
 
 def matching_vulnerabilities(report: ImageReport, terms: list[str]) -> list:
@@ -620,7 +619,6 @@ def mount(app: FastAPI) -> None:
                 ("Python", platform.python_version()),
                 ("FastAPI", fastapi.__version__),
                 ("htmx", HTMX_VERSION),
-                ("Pico CSS", PICO_VERSION),
             ],
         )
 
