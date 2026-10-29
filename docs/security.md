@@ -1,9 +1,9 @@
 # Security (Trivy Operator reports)
 
-When [Trivy Operator](https://aquasecurity.github.io/trivy-operator/) runs in at least one scanned
-cluster, kube-tower adds a **Security** page to the navigation (between Helm charts and
-Administration). It shows the reports the operator writes besides the `VulnerabilityReports` (those
-are on the [Images](vulnerabilities.md) page), for every cluster at once:
+The **Security** page (between Helm charts and Administration) shows the reports that
+[Trivy Operator](https://aquasecurity.github.io/trivy-operator/) writes in the scanned clusters besides
+the `VulnerabilityReports` (those are on the [Images](vulnerabilities.md) page), for every cluster at
+once:
 
 | Type | Trivy Operator reports (`aquasecurity.github.io/v1alpha1`) | What it checks |
 | --- | --- | --- |
@@ -14,11 +14,16 @@ are on the [Images](vulnerabilities.md) page), for every cluster at once:
 | **Compliance** | `ClusterComplianceReport` | CIS Kubernetes Benchmark, NSA hardening guide, Pod Security Standards: passed and failed controls |
 
 kube-tower only reads these reports: it never runs the checks itself and never changes anything.
-Clusters without Trivy Operator are simply skipped (the CRDs are not found). Without Trivy Operator
-on any cluster, the page is not in the navigation (`security` still answers, and says why it is
-empty). The reports are read at each scan, like the rest of the inventory.
+Clusters without Trivy Operator are simply skipped (the CRDs are not found). The reports are read at
+each scan, like the rest of the inventory.
 
 ![Security](images/security.png)
+
+Without Trivy Operator on any cluster, the page says so, with the Helm command to install it and a link
+to its [installation guide](https://aquasecurity.github.io/trivy-operator/latest/getting-started/installation/).
+Its reports show up after the next scan.
+
+![Security page without Trivy Operator](images/security-empty.png)
 
 ## The page
 

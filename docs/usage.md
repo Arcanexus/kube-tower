@@ -2,9 +2,8 @@
 
 ## The dashboards
 
-The left sidebar gives access to four pages: **Overview**, **Images**, **Helm charts** and
-**Administration**, then **About**. A fifth page, **Security**, shows up between Helm charts and
-Administration when Trivy Operator is installed in a scanned cluster. Its bottom button switches the theme between auto (follows the
+The left sidebar gives access to five pages: **Overview**, **Images**, **Helm charts**, **Security**
+and **Administration**, then **About**. Its bottom button switches the theme between auto (follows the
 system), light and dark; the choice is remembered by the browser. The version under it opens the
 About page, the GitHub icon the repository.
 
@@ -55,7 +54,7 @@ the matching tab of the Administration page.
 
 ### Dark theme and phones
 
-The theme follows the system (or the sidebar button). On a phone, the four pages are in a tab bar at the
+The theme follows the system (or the sidebar button). On a phone, the five pages are in a tab bar at the
 bottom of the screen, the top bar keeps the About link and the theme button, and the lists show each line
 as a block: name first, then the versions and the status.
 
@@ -209,7 +208,7 @@ tree of the images.
 
 ![Security](images/security.png)
 
-Only when Trivy Operator runs in a scanned cluster: its config audit, exposed secrets, RBAC,
+The reports of Trivy Operator (without it, the page explains how to install it): its config audit, exposed secrets, RBAC,
 infrastructure and compliance reports, one tile per type (share of resources passing every check,
 click to filter), compliance tiles (share of controls passed) and one line per resource with failed
 checks, most severe first. Severity chips, a **passing too** chip and a search on resources and check

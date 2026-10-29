@@ -3,6 +3,7 @@
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("security", "Security", "Reports of Trivy Operator: configuration, exposed secrets, RBAC, infrastructure and compliance.", "kube-tower reads the reports that Trivy Operator writes in each cluster where it is installed (the vulnerabilities of the images are on the Images page). One line per resource with failed checks, most severe first. The chips filter by type of report and by severity. Click a line for the failed checks and how to fix them, or a compliance tile for its failed controls.") }}{% endblock %}
 {% block content %}
+{% if snapshot.trivy_operator %}
 <form class="filters filters-search" hx-get="security" hx-target="#results" hx-push-url="true"
       hx-trigger="input changed delay:300ms from:input[name=q], change">
   <input type="search" name="q" value="{{ q }}" placeholder="Search a resource, a namespace or a check (KSV014, privileged…)" aria-label="Search">
@@ -11,12 +12,29 @@
   <input type="hidden" name="all" value="{{ '1' if clean }}">
   <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
 </form>
+{% endif %}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
 {% if not snapshot.trivy_operator %}
-<p class="notice">{{ icon("info") }}{% if snapshot.finished_at %}Trivy Operator was not found on the scanned clusters: this page shows its reports once it is installed (see the documentation, <code>docs/security.md</code>).{% else %}No scan yet.{% endif %}</p>
-{% endif %}
+{% if snapshot.finished_at %}
+<article class="empty-state">
+  <header>{{ icon("security") }}Trivy Operator is not installed</header>
+  <p>This page shows the reports of <strong>Trivy Operator</strong>: misconfigurations of the workloads, secrets left in
+    images, risky RBAC roles, checks of the nodes and control plane, and compliance with the CIS, NSA and Pod Security
+    Standards benchmarks. It was not found on the scanned clusters.</p>
+  <p>Install it in the clusters to check, for example with Helm:</p>
+  <pre><code>helm repo add aqua https://aquasecurity.github.io/helm-charts/
+helm install trivy-operator aqua/trivy-operator --namespace trivy-system --create-namespace</code></pre>
+  <p>Its reports show up here after the next scan. kube-tower also reads its vulnerability reports instead of
+    scanning the images itself.</p>
+  <p class="links">
+    <a href="https://aquasecurity.github.io/trivy-operator/latest/getting-started/installation/" target="_blank" rel="noopener">{{ icon("external-link") }}Install Trivy Operator (official documentation)</a>
+    <a href="https://github.com/Arcanexus/kube-tower/blob/main/docs/security.md" target="_blank" rel="noopener">{{ icon("external-link") }}The Security page of kube-tower</a>
+  </p>
+</article>
+{% else %}<p class="notice">{{ icon("info") }}No scan yet.</p>{% endif %}
+{% else %}
 {% if snapshot.security %}
 <div class="security-tiles">
   {% for b in breakdown %}
@@ -62,6 +80,7 @@
 </table>
 {{ more_hint(listing) }}
 </div>
+{% endif %}
 {% endblock %}
 {% block rows %}
   {% for r in rows %}

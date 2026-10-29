@@ -252,15 +252,21 @@ def _client(with_operator=True):
     return TestClient(create_app(Settings(), scanner, background=False)), scanner
 
 
-def test_security_tab_only_with_trivy_operator():
-    client, _ = _client(with_operator=False)
-    assert 'href="security"' not in client.get("/").text
-    page = client.get("/security").text  # still reachable: says why it is empty
-    assert "Trivy Operator was not found" in page
+def test_security_page_without_trivy_operator():
+    client, scanner = _client(with_operator=False)
+    home = client.get("/").text
+    assert 'href="security"' in home  # always in the navigation
+    assert "Most exposed namespaces" not in home  # no Security card on the Overview
+    page = client.get("/security").text
+    assert "Trivy Operator is not installed" in page and "helm install trivy-operator" in page
+    assert 'href="https://aquasecurity.github.io/trivy-operator/latest/getting-started/installation/"' in page
+    assert 'name="q"' not in page and "<table" not in page  # no search, no list
+    scanner.snapshot.finished_at = None
+    page = client.get("/security").text
+    assert "No scan yet." in page and "not installed" not in page
     client, _ = _client()
     home = client.get("/").text
-    assert 'href="security"' in home
-    assert "Security" in home and "shop" in home  # Overview card: most exposed namespaces
+    assert "Most exposed namespaces" in home and "shop" in home  # Overview card
 
 
 def test_security_page_lists_resources_with_findings():

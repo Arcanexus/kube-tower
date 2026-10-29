@@ -8,7 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Security** page, shown when Trivy Operator is installed in a scanned cluster: its config audit,
+- **Security** page for the reports of Trivy Operator (without it, the page says how to install it, with
+  a link to its documentation): its config audit,
   exposed secrets, RBAC, infrastructure and compliance reports (CIS, NSA, Pod Security Standards) of
   every cluster. One tile per type of report with the share of resources passing every check (a
   filter), compliance tiles, one line per resource with findings (most severe first, severity chips,

@@ -722,3 +722,5 @@ td.cell-name { max-width: 21rem; }
 .check-list summary { cursor: pointer; }
 .check-messages { margin: .25rem 0 .5rem 1rem; }
 .secret-match { word-break: break-all; }
+.empty-state { max-width: 48rem; }
+.empty-state pre { overflow-x: auto; padding: .75rem; border-radius: var(--kt-radius); background: var(--kt-hover); font-size: .8rem; }

@@ -30,10 +30,7 @@
       </a>
       <nav>
         <ul>
-          {# Security: only when Trivy Operator is installed in a cluster (or its page is open) #}
-          {% set pages = [("overview", "./", "Overview", "synthesis"), ("images", "images", "Images", "images"), ("charts", "charts", "Helm charts", "charts")] %}
-          {% if snapshot.trivy_operator or tab == "security" %}{% set pages = pages + [("security", "security", "Security", "security")] %}{% endif %}
-          {% for key, href, label, ico in pages + [("administration", "administration", "Administration", "administration")] %}
+          {% for key, href, label, ico in [("overview", "./", "Overview", "synthesis"), ("images", "images", "Images", "images"), ("charts", "charts", "Helm charts", "charts"), ("security", "security", "Security", "security"), ("administration", "administration", "Administration", "administration")] %}
           <li><a href="{{ href }}" {% if tab == key %}aria-current="page"{% endif %}>{{ icon(ico) }}<span>{{ label }}</span></a></li>
           {% endfor %}
         </ul>
