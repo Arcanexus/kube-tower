@@ -52,6 +52,7 @@ class SnapshotCollector(Collector):
         snap: Snapshot = self.backend.snapshot
         yield from self._images(snap)
         yield from self._vulnerabilities(snap)
+        yield from self._security(snap)
         yield from self._charts(snap)
         yield from self._clusters(snap)
         yield from self._scan(snap)
@@ -119,6 +120,39 @@ class SnapshotCollector(Collector):
             if v.os:
                 eosl.add_metric([name, tag, v.os], v.os_eosl)
         return total, fixable, eosl, failed
+
+    def _security(self, snap: Snapshot):
+        findings = GaugeMetricFamily(
+            "kube_tower_security_findings",
+            "Failed checks (and exposed secrets) of the Trivy Operator security reports, by namespace, type and severity",
+            labels=["cluster", "namespace", "type", "severity"],
+        )
+        resources = GaugeMetricFamily(
+            "kube_tower_security_resources",
+            "Resources checked by Trivy Operator, by type, and whether they have findings",
+            labels=["cluster", "type", "result"],
+        )
+        compliance = GaugeMetricFamily(
+            "kube_tower_compliance_controls",
+            "Controls of a Trivy Operator compliance report (CIS, NSA, PSS...), passed or failed",
+            labels=["cluster", "compliance", "title", "result"],
+        )
+        totals: dict[tuple[str, str, str, str], int] = {}
+        checked: dict[tuple[str, str, str], int] = {}
+        for r in snap.security:
+            for s, n in r.counts().items():
+                key = (r.cluster, r.namespace or "", r.kind.value, s.value)
+                totals[key] = totals.get(key, 0) + n
+            key = (r.cluster, r.kind.value, "fail" if r.checks else "pass")
+            checked[key] = checked.get(key, 0) + 1
+        for labels, n in sorted(totals.items()):
+            findings.add_metric(list(labels), n)
+        for labels, n in sorted(checked.items()):
+            resources.add_metric(list(labels), n)
+        for c in snap.compliance:
+            compliance.add_metric([c.cluster, c.id, c.title, "pass"], c.passed)
+            compliance.add_metric([c.cluster, c.id, c.title, "fail"], c.failed)
+        return findings, resources, compliance
 
     def _charts(self, snap: Snapshot):
         chart = GaugeMetricFamily(

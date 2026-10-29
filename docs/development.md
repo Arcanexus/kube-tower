@@ -39,7 +39,8 @@ src/kube_tower/
   models.py            data exchanged between collectors, checkers, the snapshot and the UI
   clusters.py          cluster discovery (in-cluster, Secrets, ArgoCD Secrets)
   collectors/          inventory: images.py (workloads, nodes), helm.py (ArgoCD Applications),
-                       vulnerabilities.py (Trivy Operator VulnerabilityReports)
+                       vulnerabilities.py (Trivy Operator VulnerabilityReports), security.py
+                       (its config audit, exposed secrets, RBAC, infra and compliance reports)
   trivy.py             vulnerability scans with the Trivy CLI
   registry/            oci.py (OCI distribution API), helm.py (Helm repos, OCI charts, git), auth.py
                        (credentials), cloud.py (ECR / Artifact Registry / ACR tokens), transport.py

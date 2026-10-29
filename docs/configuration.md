@@ -36,6 +36,9 @@ helm:
   applicationNamespaces: [argocd]   # [] = all namespaces
   includePrerelease: false
   checkDependencies: true     # subcharts, and their own subcharts (3 levels)
+security:                      # Trivy Operator security reports, see security.md
+  enabled: true
+  exposedSecrets: true         # false: leave the exposed secrets out
 vulnerabilities:               # see "Vulnerabilities (Trivy)" below
   enabled: true
   trivyOperator: true          # read Trivy Operator VulnerabilityReports

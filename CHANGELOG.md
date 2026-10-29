@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Security** page for the reports of Trivy Operator (without it, the page says how to install it, with
+  a link to its documentation): its config audit,
+  exposed secrets, RBAC, infrastructure and compliance reports (CIS, NSA, Pod Security Standards) of
+  every cluster. One tile per type of report with the share of resources passing every check (a
+  filter), compliance tiles, one line per resource with findings (most severe first, severity chips,
+  search on check IDs), detail panel with the failed checks, how to fix them and a link to the Aqua
+  vulnerability database. Security card on the Overview (findings by severity, most exposed
+  namespaces). Settings `security.enabled` and `security.exposedSecrets`, metrics
+  `kube_tower_security_findings`, `kube_tower_security_resources`, `kube_tower_compliance_controls`.
+  The chart's ClusterRole and `deploy/remote-cluster-rbac.yaml` read the new report CRDs.
 - **About** page (link at the bottom of the sidebar, and on the version): version, latest release
   (asked to GitHub by the browser, never by kube-tower), links to the repository, the documentation,
   the changelog and to report a problem, what the instance runs (mode, roles, uptime, clusters, scan

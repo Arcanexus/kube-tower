@@ -2,8 +2,8 @@
 
 ## The dashboards
 
-The left sidebar gives access to four pages: **Overview**, **Images**, **Helm charts** and
-**Administration**, then **About**. Its bottom button switches the theme between auto (follows the
+The left sidebar gives access to five pages: **Overview**, **Images**, **Helm charts**, **Security**
+and **Administration**, then **About**. Its bottom button switches the theme between auto (follows the
 system), light and dark; the choice is remembered by the browser. The version under it opens the
 About page, the GitHub icon the repository.
 
@@ -54,7 +54,7 @@ the matching tab of the Administration page.
 
 ### Dark theme and phones
 
-The theme follows the system (or the sidebar button). On a phone, the four pages are in a tab bar at the
+The theme follows the system (or the sidebar button). On a phone, the five pages are in a tab bar at the
 bottom of the screen, the top bar keeps the About link and the theme button, and the lists show each line
 as a block: name first, then the versions and the status.
 
@@ -102,6 +102,8 @@ The home page: what to act on, following the Cluster and Running only filters of
 - The images by status (click a segment or a status to open the filtered list) and the pending image
   updates by type (major, minor, patch, newer, new digest): click a type to open the Images page
   filtered on it (`images?update=major`, shown as a chip above the results, removed with its ✕).
+- With Trivy Operator in a cluster, a **Security** card: the findings of its security reports per
+  severity, and the most exposed namespaces (see [Security](security.md)).
 
 ### Images
 
@@ -201,6 +203,17 @@ tree of the images.
 | `helm` (HTTP repository) | Application `targetRevision` | from the repository `index.yaml` |
 | `oci` | Application `targetRevision` | from the registry tags |
 | `git` (chart in a git path) | `version` of `Chart.yaml` at `targetRevision` | n/a: the chart follows git, only its subcharts are checked |
+
+### Security
+
+![Security](images/security.png)
+
+The reports of Trivy Operator (without it, the page explains how to install it): its config audit, exposed secrets, RBAC,
+infrastructure and compliance reports, one tile per type (share of resources passing every check,
+click to filter), compliance tiles (share of controls passed) and one line per resource with failed
+checks, most severe first. Severity chips, a **passing too** chip and a search on resources and check
+IDs (`KSV017`). The detail panel lists the failed checks with their message, description, fix and a
+link to the Aqua vulnerability database. See [Security](security.md).
 
 ### Administration
 

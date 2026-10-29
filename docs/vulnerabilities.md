@@ -15,6 +15,9 @@ from two sources, for each image:
 
 ![Images and their vulnerabilities](images/images.png)
 
+The other reports of Trivy Operator (misconfigurations, exposed secrets, RBAC, compliance) are on the
+[Security](security.md) page.
+
 The vulnerability scan runs after the version checks of each scan: versions show up first, and
 the Images page says when the vulnerability scan is still in progress. Trivy results
 are kept in memory and reused until `rescanInterval` (24h by default), so a scan every 6h does not

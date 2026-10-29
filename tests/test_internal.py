@@ -149,6 +149,7 @@ async def test_queue_runner(monkeypatch, caplog, bus):
             "images": True,
             "charts": True,
             "operator_reports": True,
+            "security": True,
             "image_name": None,
         }
         await runner.check_tasks()

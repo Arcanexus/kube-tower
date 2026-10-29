@@ -76,6 +76,22 @@
       </table>
       {% else %}<p><small>None.</small></p>{% endif %}
     </article>
+    {% if snapshot.trivy_operator %}
+    <article>
+      <header>{{ icon("security") }}Security <small>· Trivy Operator</small></header>
+      {% set f = security.findings %}
+      <p>{% for s in Severity if s.value != "unknown" %}<a href="security?severity={{ s.value }}" class="sev sev-{{ s.value }}" title="{{ f[s] }} {{ s.value }} findings">{{ f[s] }} {{ s.value }}</a> {% endfor %}</p>
+      {% if security.namespaces %}
+      <table class="bars">
+        {% for (ns_cluster, ns), counts in security.namespaces %}
+        <tr><th scope="row"><a href="security?q={{ ns | urlencode }}" title="{{ ns_cluster }}">{{ ns or "cluster-scoped" }}</a></th>
+          <td colspan="2">{% for s in Severity if counts[s] and s.value != "unknown" %}<span class="sev sev-{{ s.value }}">{{ counts[s] }} {{ s.value[0] | upper }}</span> {% endfor %}</td></tr>
+        {% endfor %}
+      </table>
+      <p><small><a href="security">Most exposed namespaces, see the Security page</a></small></p>
+      {% else %}<p><small>No finding.</small></p>{% endif %}
+    </article>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

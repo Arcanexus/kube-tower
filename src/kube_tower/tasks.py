@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from redis.exceptions import RedisError
 
 from kube_tower.bus import Bus, Message, pack, unpack
-from kube_tower.models import ChartReport, ImageReport, VulnerabilityReport, decode, encode
+from kube_tower.models import ChartReport, ComplianceReport, ImageReport, SecurityReport, VulnerabilityReport, decode, encode
 from kube_tower.registry.auth import AuthResult
 from kube_tower.trivy import TrivyStatus
 
@@ -42,13 +42,14 @@ RETRY = (1, 2, 5, 10, 30)  # seconds before asking Valkey again after an error (
 
 @dataclass
 class CollectTask:
-    """Read the images, the Helm charts and the Trivy Operator reports of one cluster (rescans read only
+    """Read the images, the Helm charts, the Trivy Operator reports and security reports of one cluster (rescans read only
     some of them: `image_name` keeps the images of this name, registry/repository)."""
 
     cluster: str
     images: bool = True
     charts: bool = True
     operator_reports: bool = True
+    security: bool = True
     image_name: str | None = None
 
 
@@ -100,6 +101,9 @@ class CollectResult:
     charts: list[ChartReport] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     operator_reports: list[OperatorReport] = field(default_factory=list)
+    security: list[SecurityReport] = field(default_factory=list)
+    compliance: list[ComplianceReport] = field(default_factory=list)
+    trivy_operator: bool = False  # Trivy Operator is installed (security reports read)
     # Registry credentials of the image pull secrets of the cluster (registries.useImagePullSecrets)
     pull_secrets: dict[str, tuple[str, str]] = field(default_factory=dict)
 

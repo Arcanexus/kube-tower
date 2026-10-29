@@ -218,7 +218,7 @@ main { flex: 1; padding: 1.25rem 1.5rem; }
   .sidebar nav { display: contents; }
   .sidebar nav > ul:not(.nav-secondary) {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
-    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0;
     height: calc(var(--kt-tabbar-height) + env(safe-area-inset-bottom)); padding: .25rem .25rem env(safe-area-inset-bottom);
     background: var(--kt-surface); border-top: 1px solid var(--kt-line); box-shadow: 0 -2px 8px rgba(16, 24, 40, .06);
   }
@@ -707,3 +707,20 @@ td.cell-name { max-width: 21rem; }
 .todo-what strong { color: var(--kt-text); }
 .table-wrap th, .table-wrap td { padding-left: .5rem; padding-right: .5rem; }
 .vulnerability-cell .sev { min-width: 0; padding: .1rem .35rem; }
+
+/* Security page: one tile per kind of report (a filter), compliance tiles, failed checks of the detail panel */
+.security-tiles, .compliance-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-bottom: .75rem; }
+.compliance-tiles { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+@media (max-width: 900px) { .security-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .security-tiles .tile > strong { font-size: 1.35rem; } .compliance-tiles .tile > span { font-size: .75rem; } }
+.security-tiles .tile { font: inherit; text-align: left; align-items: stretch; cursor: pointer; width: 100%; min-width: 0; white-space: normal; }
+.security-tiles .tile[aria-pressed="true"] { border-color: var(--kt-accent); box-shadow: 0 0 0 1px var(--kt-accent); }
+.pass-bar { display: block; height: .3rem; margin: .2rem 0; border-radius: 1rem; background: var(--kt-danger); overflow: hidden; }
+.pass-bar > span { display: block; height: 100%; background: var(--kt-ok); }
+.check-list { list-style: none; padding: 0; }
+.check-list > li { padding: .5rem 0; border-bottom: 1px solid var(--kt-line); }
+.check-list summary { cursor: pointer; }
+.check-messages { margin: .25rem 0 .5rem 1rem; }
+.secret-match { word-break: break-all; }
+.empty-state { max-width: 48rem; }
+.empty-state pre { overflow-x: auto; padding: .75rem; border-radius: var(--kt-radius); background: var(--kt-hover); font-size: .8rem; }

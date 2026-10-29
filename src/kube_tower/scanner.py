@@ -247,11 +247,14 @@ class Scanner:
         for result in results:
             snap.charts += result.charts
             snap.errors += result.errors
+            snap.security += result.security
+            snap.compliance += result.compliance
             for found in result.operator_reports:
                 operator_reports.setdefault(found.image, []).append(found.report)
             for host, pair in result.pull_secrets.items():
                 pull_secrets.setdefault(host, pair)  # the first Secret found for a host wins
         snap.images = merge_images(r.images for r in results)
+        snap.trivy_operator = sorted(c.name for c, r in zip(clusters, results, strict=True) if r.trivy_operator)
         if self.settings.registries.use_image_pull_secrets:
             self.pull_secrets = pull_secrets
         log.info("collection done: %d distinct image(s), %d Helm chart(s)", len(snap.images), len(snap.charts))
@@ -511,7 +514,7 @@ class Scanner:
         if not self.settings.images.enabled or not self._clusters:
             return []
         clusters = sorted(self._clusters)
-        tasks = (CollectTask(c, charts=False, operator_reports=False, image_name=name) for c in clusters)
+        tasks = (CollectTask(c, charts=False, operator_reports=False, security=False, image_name=name) for c in clusters)
         results = await asyncio.gather(*(self.runner.run(t) for t in tasks), return_exceptions=True)
         collected: list[list[ImageReport]] = []
         for cluster, result in zip(clusters, results, strict=True):
@@ -545,7 +548,7 @@ class Scanner:
         todo = reports
         if settings.trivy_operator:
             clusters = sorted({c for r in reports for c in r.clusters} & set(self._clusters))
-            tasks = (CollectTask(c, images=False, charts=False) for c in clusters)
+            tasks = (CollectTask(c, images=False, charts=False, security=False) for c in clusters)
             results = await asyncio.gather(*(self.runner.run(t) for t in tasks), return_exceptions=True)
             found: dict[str, list[VulnerabilityReport]] = {}
             for cluster, result in zip(clusters, results, strict=True):

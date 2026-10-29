@@ -71,6 +71,11 @@ See [vulnerabilities](vulnerabilities.md#metrics): `kube_tower_image_vulnerabili
 `kube_tower_image_vulnerabilities_fixable`, `kube_tower_image_os_eosl`,
 `kube_tower_image_vulnerability_scan_failed` and `kube_tower_last_vulnerability_scan_timestamp_seconds`.
 
+### Security (Trivy Operator)
+
+See [security](security.md#metrics): `kube_tower_security_findings` (failed checks by cluster,
+namespace, type and severity), `kube_tower_security_resources` and `kube_tower_compliance_controls`.
+
 ### Clusters and scans
 
 | Metric | Labels | Value |

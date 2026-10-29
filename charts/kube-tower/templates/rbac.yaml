@@ -19,9 +19,18 @@ rules:
   - apiGroups: ["argoproj.io"]
     resources: ["applications"]
     verbs: ["get", "list"]
-  # Trivy Operator reports, when it is installed
+  # Trivy Operator reports, when it is installed (vulnerabilities of the images, and the Security page)
   - apiGroups: ["aquasecurity.github.io"]
-    resources: ["vulnerabilityreports"]
+    resources:
+      - vulnerabilityreports
+      - configauditreports
+      - clusterconfigauditreports
+      - exposedsecretreports
+      - rbacassessmentreports
+      - clusterrbacassessmentreports
+      - infraassessmentreports
+      - clusterinfraassessmentreports
+      - clustercompliancereports
     verbs: ["get", "list"]
   {{- if (.Values.config.registries | default dict).useImagePullSecrets }}
   # Image pull secrets of the workloads (config.registries.useImagePullSecrets): `get` cannot be limited

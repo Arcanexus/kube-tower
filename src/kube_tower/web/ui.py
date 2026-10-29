@@ -21,7 +21,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from kube_tower import __version__
 from kube_tower.config import DEFAULT_CONFIG_PATH, ROLES, Settings
-from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status, Usage
+from kube_tower.models import ChartDependency, ImageRef, ImageReport, SecurityKind, SecurityReport, Severity, Status, Usage
 from kube_tower.processes import roles_status
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
@@ -33,6 +33,7 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["version"] = __version__
 templates.env.globals["Status"] = Status
 templates.env.globals["Severity"] = Severity
+templates.env.globals["SecurityKind"] = SecurityKind
 # Static files are cached by browsers for a year: their URLs change with their content (see asset()).
 STATIC_VERSION = hashlib.sha256(b"".join(f.read_bytes() for f in sorted((HERE / "static").iterdir()) if f.is_file())).hexdigest()[
     :12
@@ -255,6 +256,62 @@ CHART_COLUMNS = [
 ]
 
 
+def severity_score(counts: dict[Severity, int]) -> int:
+    """Sort value of severity counts: by count of the most severe first."""
+    return sum(counts[s] * 1000 ** (len(Severity) - i) for i, s in enumerate(Severity))
+
+
+SECURITY_COLUMNS = [
+    Column(lambda r: (r.resource_kind, natural(r.resource_name))),
+    Column(lambda r: r.namespace or ""),
+    Column(lambda r: r.kind.label),
+    Column(lambda r: severity_score(r.counts()), descending=True),
+    Column(lambda r: r.cluster),
+    Column(lambda r: r.scanned_at.timestamp() if r.scanned_at else None, descending=True),
+]
+
+
+@dataclasses.dataclass
+class SecurityBreakdown:
+    """A tile of the Security page: the resources checked by one kind of report, and those with findings."""
+
+    kind: SecurityKind
+    total: int
+    failing: int
+
+    @property
+    def pass_rate(self) -> int | None:
+        return round((self.total - self.failing) * 100 / self.total) if self.total else None
+
+
+def security_summary(reports: list[SecurityReport], cluster: str = "", top: int = 5) -> dict:
+    """The Security card of the Overview: findings by severity, and the namespaces with the most severe ones."""
+    findings = dict.fromkeys(Severity, 0)
+    namespaces: dict[tuple[str, str], dict[Severity, int]] = {}
+    for r in reports:
+        if cluster and r.cluster != cluster:
+            continue
+        counts = r.counts()
+        ns = namespaces.setdefault((r.cluster, r.namespace or ""), dict.fromkeys(Severity, 0))
+        for s, n in counts.items():
+            findings[s] += n
+            ns[s] += n
+    ranked = sorted(((k, v) for k, v in namespaces.items() if any(v.values())), key=lambda kv: (-severity_score(kv[1]), kv[0]))
+    return {"findings": findings, "namespaces": ranked[:top]}
+
+
+def security_urgency(report: SecurityReport) -> tuple:
+    """Default order of the Security page: the most severe findings first."""
+    return (-severity_score(report.counts()), report.cluster, report.namespace or "", report.resource_kind, report.resource_name)
+
+
+def security_text(report: SecurityReport) -> str:
+    """What the search of the Security page looks in: the resource, and the IDs and titles of its findings."""
+    checks = " ".join(f"{c.id} {c.title}" for c in report.checks)
+    resource = " ".join(filter(None, [report.namespace, report.container, report.image]))
+    return f"{report.resource_kind}/{report.resource_name} {resource} {checks}"
+
+
 def urgency(report: ImageReport) -> tuple:
     """Default order of the Images page: critical CVEs with a fix first, then outdated images (major first), then
     failed checks, then the most vulnerable, then by name."""
@@ -427,8 +484,7 @@ def vulnerability_score(report: ImageReport) -> int:
     """Sort value of the Vulnerabilities column: by count of the most severe first."""
     if report.vulnerabilities is None or report.vulnerabilities.message:
         return -1
-    counts = report.vulnerabilities.counts()
-    return sum(counts[s] * 1000 ** (len(Severity) - i) for i, s in enumerate(Severity))
+    return severity_score(report.vulnerabilities.counts())
 
 
 templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score, workloads=workloads)
@@ -484,7 +540,14 @@ def mount(app: FastAPI) -> None:
         summary = summarize(snapshot, running=running, cluster=cluster)
         items, total = todo(snapshot, running=running, cluster=cluster)
         return render(
-            request, "overview", tab="overview", summary=summary, todo=items, todo_total=total, update_kinds=UPDATE_KINDS
+            request,
+            "overview",
+            tab="overview",
+            summary=summary,
+            todo=items,
+            todo_total=total,
+            update_kinds=UPDATE_KINDS,
+            security=security_summary(snapshot.security, cluster),
         )
 
     @app.get("/images", response_class=HTMLResponse, include_in_schema=False)
@@ -600,6 +663,65 @@ def mount(app: FastAPI) -> None:
         if (report := request.app.state.backend.snapshot.chart(cluster, namespace, app, chart)) is None:
             return Response(status_code=404)
         return render_detail(request, "_chart_detail", chart_key(report), c=report)
+
+    @app.get("/security", response_class=HTMLResponse, include_in_schema=False)
+    async def security(request: Request):
+        p = request.query_params
+        q, kind, severity = p.get("q", ""), p.get("kind", ""), p.get("severity", "")
+        clean = p.get("all", "") == "1"  # also list the resources that pass every check
+        cluster, _ = global_filters(request)
+        snapshot = request.app.state.backend.snapshot
+        matching = [r for r in snapshot.security if (not cluster or r.cluster == cluster) and _matches(security_text(r), q)]
+        # The tiles and counters ignore the filter they set: they are the buttons that set it.
+        level = Severity.parse(severity) if severity in Severity._value2member_map_ else None
+        breakdown = [
+            SecurityBreakdown(k, sum(1 for r in matching if r.kind == k), sum(1 for r in matching if r.kind == k and r.checks))
+            for k in SecurityKind
+        ]
+        of_kind = [r for r in matching if not kind or r.kind.value == kind]
+        by_severity = {s: sum(1 for r in of_kind if r.counts()[s]) for s in Severity}
+        passing = sum(1 for r in of_kind if not r.checks)
+        rows = [r for r in sorted(of_kind, key=security_urgency) if (clean or r.checks) and (level is None or r.counts()[level])]
+        listing = list_page(request, "security", rows, SECURITY_COLUMNS)
+        compliance = sorted(
+            (c for c in snapshot.compliance if not cluster or c.cluster == cluster), key=lambda c: (c.title, c.cluster)
+        )
+        return render(
+            request,
+            "security",
+            tab="security",
+            listing=listing,
+            rows=listing.items,
+            q=q,
+            kind=kind,
+            severity=severity,
+            clean=clean,
+            breakdown=breakdown,
+            by_severity=by_severity,
+            passing=passing,
+            compliance=compliance,
+        )
+
+    @app.get("/security/detail", response_class=HTMLResponse, include_in_schema=False)
+    async def security_detail(
+        request: Request,
+        cluster: str = "",
+        kind: str = "",
+        namespace: str = "",
+        rkind: str = "",
+        name: str = "",
+        container: str = "",
+    ):
+        snapshot = request.app.state.backend.snapshot
+        if (report := snapshot.security_report((cluster, kind, namespace, rkind, name, container))) is None:
+            return Response(status_code=404)
+        return render(request, "_security_detail", r=report)
+
+    @app.get("/security/compliance", response_class=HTMLResponse, include_in_schema=False)
+    async def compliance_detail(request: Request, cluster: str = "", id: str = ""):
+        if (report := request.app.state.backend.snapshot.compliance_report(cluster, id)) is None:
+            return Response(status_code=404)
+        return render(request, "_compliance_detail", c=report)
 
     @app.get("/about", response_class=HTMLResponse, include_in_schema=False)
     async def about(request: Request):

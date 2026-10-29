@@ -115,6 +115,15 @@ class VulnerabilitiesSettings:
 
 
 @dataclass
+class SecuritySettings:
+    # Read the other reports of Trivy Operator (config audit, exposed secrets, RBAC, infrastructure,
+    # compliance) for the Security page, shown when Trivy Operator is installed in a cluster.
+    enabled: bool = True
+    # Exposed secrets: the lines Trivy found are shown with the secret masked; off to leave them out.
+    exposed_secrets: bool = True
+
+
+@dataclass
 class RegistryCredential:
     """Credentials for one registry host (container registry or Helm repository).
 
@@ -219,6 +228,7 @@ class Settings:
     images: ImagesSettings = field(default_factory=ImagesSettings)
     helm: HelmSettings = field(default_factory=HelmSettings)
     vulnerabilities: VulnerabilitiesSettings = field(default_factory=VulnerabilitiesSettings)
+    security: SecuritySettings = field(default_factory=SecuritySettings)
     registries: RegistriesSettings = field(default_factory=RegistriesSettings)
     git: GitSettings = field(default_factory=GitSettings)
     internal: InternalSettings = field(default_factory=InternalSettings)
