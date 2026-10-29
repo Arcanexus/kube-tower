@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <script>
     // Links are relative so the UI works however it is exposed (http, https, port-forward, sub-path).
     // Under a sub-path without trailing slash (/kube-tower), add it so relative links resolve.
@@ -16,7 +16,6 @@
   <meta name="htmx-config" content='{"historyCacheSize": 0}'>
   <title>kube-tower · {{ tab | default("") }}</title>
   <link rel="icon" type="image/svg+xml" href="{{ asset("favicon.svg") }}">
-  <link rel="stylesheet" href="{{ asset("pico.min.css") }}">
   <link rel="stylesheet" href="{{ asset("kube-tower.css") }}">
   <script src="{{ asset("htmx.min.js") }}" defer></script>
   <script src="{{ asset("kube-tower.js") }}" defer></script>
@@ -29,8 +28,6 @@
         <img src="{{ asset("logo.svg") }}" alt="" width="36" height="36">
         <span>kube-tower</span>
       </a>
-      <input type="checkbox" id="menu-toggle" class="menu-toggle" aria-label="Menu">
-      <label for="menu-toggle" class="menu-button">{{ icon("menu") }}</label>
       <nav>
         <ul>
           {% for key, href, label, ico in [("overview", "./", "Overview", "synthesis"), ("images", "images", "Images", "images"), ("charts", "charts", "Helm charts", "charts"), ("administration", "administration", "Administration", "administration")] %}
@@ -38,7 +35,7 @@
           {% endfor %}
         </ul>
         <ul class="nav-secondary">
-          <li><a href="about" {% if tab == "about" %}aria-current="page"{% endif %}>{{ icon("info") }}<span>About</span></a></li>
+          <li><a href="about" {% if tab == "about" %}aria-current="page"{% endif %} title="About kube-tower">{{ icon("info") }}<span>About</span></a></li>
         </ul>
       </nav>
       <footer>

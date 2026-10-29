@@ -59,7 +59,7 @@ src/kube_tower/
   errors.py            explicit error messages (what failed, status, what to do)
   logger.py            log formats; logbuffer.py keeps the last lines for the Logs tab (of every pod on a controller)
   web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Overview figures and To do list), api.py,
-                       metrics.py, static/ (Pico CSS, htmx, kube-tower.css/.js, icons; cached with asset())
+                       metrics.py, static/ (htmx, kube-tower.css/.js, icons; cached with asset())
 charts/kube-tower/     Helm chart
 deploy/                manifests for remote clusters
 docs/                  documentation and ADRs
@@ -93,6 +93,11 @@ docs/                  documentation and ADRs
 - Static files: reference them with `asset("name")` (e.g. `{{ asset("kube-tower.css") }}`), which adds
   `?v=<hash of the static files>`: versioned URLs are cached by browsers for a year, the content hash
   changes them on every release. Responses are gzip compressed.
+- Styles: one stylesheet, `kube-tower.css`, no CSS framework. Colours are tokens (`--kt-*` on `:root`),
+  redefined for the dark theme in `[data-theme="dark"]` and in the `prefers-color-scheme: dark` block (keep
+  both in sync); use them instead of fixed colours so both themes follow. Buttons take `.outline`,
+  `.secondary` and `.small`, cards are `<article>` (with an optional `<header>`), switches are
+  `<input type="checkbox" role="switch">`. Phones (`max-width: 768px`) get the bottom tab bar.
 - Polling (while a scan, a rescan or an action runs): add `polling=1` to the URL and
   `[document.visibilityState=='visible']` to `every Ns` so hidden tabs do not poll. A poll swaps only when
   its response changed (`kube-tower.js`), and should target the smallest element that changes, never the

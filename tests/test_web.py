@@ -404,7 +404,7 @@ def test_links_are_relative():
         assert "http://" not in page, path
         assert not re.search(r'(href|src|hx-get|hx-post)="/', page), path
     page = client.get("/").text
-    assert 'href="static/pico.min.css?v=' in page and 'src="static/htmx.min.js?v=' in page
+    assert 'href="static/kube-tower.css?v=' in page and 'src="static/htmx.min.js?v=' in page
 
 
 def test_counters_toggle_the_status_filter():

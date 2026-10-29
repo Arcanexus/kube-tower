@@ -54,8 +54,9 @@ the matching tab of the Administration page.
 
 ### Dark theme and phones
 
-The theme follows the system (or the sidebar button). On a phone, the sidebar becomes a menu and the
-lists show each line as a block: name first, then the versions and the status.
+The theme follows the system (or the sidebar button). On a phone, the four pages are in a tab bar at the
+bottom of the screen, the top bar keeps the About link and the theme button, and the lists show each line
+as a block: name first, then the versions and the status.
 
 | Dark theme | Phone |
 | --- | --- |
@@ -292,7 +293,7 @@ The version of kube-tower, and the latest release published on GitHub (asked by 
 itself makes no call to GitHub), links to the repository, the documentation, the changelog and to
 report a problem; what this instance runs (one pod or the distributed mode, its roles, since when, the
 clusters, the interval of the automatic scan, the configuration file), and the versions of its
-components (Trivy and its database, Python, FastAPI, htmx, Pico CSS) and its license.
+components (Trivy and its database, Python, FastAPI, htmx) and its license.
 
 ## Statuses
 

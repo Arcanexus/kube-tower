@@ -154,6 +154,9 @@ All notable changes to this project are documented here. The format follows
   swapped, styles and scripts stay loaded), pages and static files are gzip compressed (the static files
   go from 187 KB to 41 KB), and the static files are cached by browsers until the next release. Pages
   in a hidden browser tab stop polling.
+- New look, without Pico CSS: one stylesheet of 45 KB (10 KB compressed) instead of 117 KB, lighter
+  cards, tinted status badges and pill-shaped filter chips, in light and dark themes. On a phone, the
+  pages are in a tab bar at the bottom of the screen and the About link and theme button in the top bar.
 - UI reorganized in four pages, simpler to follow: **Overview** (four tiles and a **To do** list, most
   urgent first: unreachable clusters, critical CVEs with a fix, failed checks, major updates, floating
   tags pushed again, end of life OS), **Images** (versions and vulnerabilities together: one search for
