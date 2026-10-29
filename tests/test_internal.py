@@ -443,6 +443,7 @@ async def test_ui_process_actions(monkeypatch, fakes, bus):  # noqa: F811 - fixt
         assert (await remote.refresh_trivy_status()).message == "trivy binary 'trivy' not found"
         assert "binary 'trivy' is not found" in await remote.update_trivy_db() and await remote.test_connectivity() is None
         assert await remote.trigger() is True
+        assert remote.checking_versions  # the page shows the scan at once: no second click on "Scan now"
         await scanner._task
         # gone from the controller meanwhile
         gone = ChartReport("b", "app", "argocd", "gone", "https://charts.example.com", "1.0.0", "helm")

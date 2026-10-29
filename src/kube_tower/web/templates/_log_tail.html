@@ -1,3 +1,3 @@
 <div id="log-tail" hx-get="logs/tail?after={{ after }}&level={{ level | urlencode }}&q={{ q | urlencode }}{{ role_query }}"
-     hx-trigger="every 2s [!document.getElementById('log-pause').checked]" hx-swap="outerHTML"></div>
+     hx-trigger="every 2s [document.visibilityState=='visible' && !document.getElementById('log-pause').checked]" hx-swap="outerHTML"></div>
 {% if lines %}<div hx-swap-oob="beforeend:#log-lines">{% include "_log_lines.html" %}</div>{% endif %}

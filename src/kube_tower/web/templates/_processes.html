@@ -2,7 +2,7 @@
 {# State of the roles and of the processes (pods), read again every 5 seconds. #}
 {% set role_icons = {"ui": "monitor", "controller": "network", "worker": "cpu", "trivy": "shield"} %}
 {% set states = {"active": ("ok", "Active controller: holds the Lease, runs the scans"), "standby": ("standby", "Standby controller: takes over if the active one stops"), "ok": ("ok", "Reported in the last 30 seconds"), "lost": ("error", "No report for more than 30 seconds: stopped, restarting, or cannot reach the controller")} %}
-<article id="processes" hx-get="administration/processes" hx-trigger="every 5s" hx-swap="outerHTML">
+<article id="processes" hx-get="administration/processes?polling=1" hx-trigger="every 5s [document.visibilityState=='visible']" hx-swap="outerHTML">
   <header>{{ icon("server") }}Roles and pods</header>
   <div class="role-tiles">
     {% for r in roles_status %}

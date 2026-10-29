@@ -1,4 +1,7 @@
 // Small helpers for the server-rendered UI (no build step).
+// The links of the pages are boosted by htmx (hx-boost in base.html): a click swaps the body of the page
+// instead of loading it again, so styles and scripts stay loaded. Code run at page load must also run
+// after these swaps (htmx:afterSettle).
 
 // Counters above the results toggle the status filter of the filter form.
 function ktFilterStatus(status) {
@@ -41,7 +44,7 @@ document.addEventListener("htmx:beforeRequest", (e) => {
   if (panel) {
     panel.setAttribute("aria-busy", "true");
   } else {
-    detail.innerHTML = '<div class="drawer-backdrop" onclick="ktCloseDetail()"></div>'
+    detail.innerHTML = '<div class="drawer-backdrop"></div>'
       + '<article class="drawer-panel drawer-loading" aria-busy="true">Loading…</article>';
   }
 });
@@ -60,13 +63,14 @@ document.addEventListener("htmx:afterRequest", (e) => {
     panel.removeAttribute("aria-busy");
   }
 });
-// A click beside the panel lands on its backdrop, which closes the panel: pass the click on to what is
-// below, so another row opens its details at once instead of needing a second click.
+// A click beside the panel closes it and still does what it was meant to (focus a filter, open another row,
+// follow a link): the backdrop only dims the page and lets clicks through (pointer-events: none), so one
+// click is enough. A click that loads another detail panel (hx-target="#detail") keeps the panel to fill.
 document.addEventListener("click", (e) => {
-  if (!e.target.classList || !e.target.classList.contains("drawer-backdrop")) return;
+  const detail = document.getElementById("detail");
+  if (!detail || !detail.querySelector(".drawer-panel") || !e.target.closest) return;
+  if (e.target.closest(".drawer-panel") || e.target.closest('[hx-target="#detail"]')) return;
   ktCloseDetail();
-  const below = document.elementFromPoint(e.clientX, e.clientY);
-  if (below) below.click();
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") ktCloseDetail();
@@ -125,6 +129,26 @@ function ktSyncFullButton() {
 }
 document.addEventListener("htmx:afterSettle", (e) => {
   if (e.target.id === "detail") ktSyncFullButton();
+});
+
+// Polls (every few seconds while something runs) swap their element only when its content changed: a swap
+// replaces the buttons and menus under the pointer, and the click in progress is lost.
+const ktPolled = {};
+document.addEventListener("htmx:beforeSwap", (e) => {
+  const path = (e.detail.pathInfo && e.detail.pathInfo.requestPath) || "";
+  if (!path.includes("polling=1") || !e.detail.xhr) return;
+  const key = e.detail.target.id || path;
+  if (ktPolled[key] === e.detail.xhr.responseText) e.detail.shouldSwap = false;
+  ktPolled[key] = e.detail.xhr.responseText;
+});
+
+// The scan the page was waiting for is over: show its results without reloading the page, so a detail panel
+// or a filter being typed stays as it is. Lists reload their results, the other pages their content.
+document.addEventListener("kt-scan-done", () => {
+  htmx.ajax("GET", "status", { target: "#scan-status", swap: "outerHTML" });
+  const form = document.querySelector("form.filters");
+  if (form) htmx.trigger(form, "change");
+  else htmx.ajax("GET", location.pathname + location.search, { target: "#main", select: "#main", swap: "outerHTML" });
 });
 
 // A rescan from a detail panel is over: reload the results of the page (same filters) to update its row.
@@ -226,3 +250,4 @@ function ktCycleTheme() {
   ktShowTheme();
 }
 document.addEventListener("DOMContentLoaded", ktShowTheme);
+document.addEventListener("htmx:afterSettle", ktShowTheme);  // pages are swapped in by hx-boost (base.html)

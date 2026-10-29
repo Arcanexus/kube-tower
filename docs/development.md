@@ -59,7 +59,7 @@ src/kube_tower/
   errors.py            explicit error messages (what failed, status, what to do)
   logger.py            log formats; logbuffer.py keeps the last lines for the Logs page (of every pod on a controller)
   web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Synthesis figures), api.py,
-                       metrics.py, static/ (Pico CSS, htmx, kube-tower.css/.js, icons)
+                       metrics.py, static/ (Pico CSS, htmx, kube-tower.css/.js, icons; cached with asset())
 charts/kube-tower/     Helm chart
 deploy/                manifests for remote clusters
 docs/                  documentation and ADRs
@@ -87,6 +87,16 @@ docs/                  documentation and ADRs
   `<div class="overflow-auto table-wrap">`: only the table scrolls, its header stays. Add
   `data-sort` to the sortable `<th>` (`data-sort="desc"` to sort descending first) and, when the
   text of a cell does not sort well, a `data-sort` value on the `<td>` (`kube-tower.js` sorts).
+- Navigation: the links of the pages are boosted by htmx (`hx-boost` on `<body>`): a click swaps the
+  body instead of loading the page again, so code run at page load in `kube-tower.js` must also run on
+  `htmx:afterSettle`, and an inline `<script>` of a page must not leave listeners behind (see `logs.html`).
+- Static files: reference them with `asset("name")` (e.g. `{{ asset("kube-tower.css") }}`), which adds
+  `?v=<hash of the static files>`: versioned URLs are cached by browsers for a year, the content hash
+  changes them on every release. Responses are gzip compressed.
+- Polling (while a scan, a rescan or an action runs): add `polling=1` to the URL and
+  `[document.visibilityState=='visible']` to `every Ns` so hidden tabs do not poll. A poll swaps only when
+  its response changed (`kube-tower.js`), and should target the smallest element that changes, never the
+  buttons the user may be clicking.
 
 ## CI
 

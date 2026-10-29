@@ -362,10 +362,10 @@ def test_status_reloads_page_when_scan_ends():
     client, scanner = _client()
     scanner.running = scanner.checking_versions = True
     resp = client.get("/status?polling=1")
-    assert "Scan in progress" in resp.text and "HX-Refresh" not in resp.headers
+    assert "Scan in progress" in resp.text and "HX-Trigger" not in resp.headers
     scanner.running = scanner.checking_versions = False
-    assert client.get("/status?polling=1").headers["HX-Refresh"] == "true"
-    assert "HX-Refresh" not in client.get("/status").headers
+    assert client.get("/status?polling=1").headers["HX-Trigger"] == "kt-scan-done"  # the page reloads its content
+    assert "HX-Trigger" not in client.get("/status").headers
 
 
 def test_links_are_relative():
@@ -390,7 +390,7 @@ def test_links_are_relative():
         assert "http://" not in page, path
         assert not re.search(r'(href|src|hx-get|hx-post)="/', page), path
     page = client.get("/").text
-    assert 'href="static/pico.min.css"' in page and 'src="static/htmx.min.js"' in page
+    assert 'href="static/pico.min.css?v=' in page and 'src="static/htmx.min.js?v=' in page
 
 
 def test_counters_toggle_the_status_filter():
@@ -415,10 +415,12 @@ def test_image_detail():
     assert "<html" not in detail and 'role="dialog"' in detail
     assert 'class="drawer-resize" role="separator"' in detail and 'onclick="ktToggleFull()"' in detail
     sprite = (Path(__file__).parents[1] / "src/kube_tower/web/static/icons.svg").read_text()
-    assert all(f'id="i-{name}"' in sprite for name in re.findall(r"icons\.svg#i-([\w-]+)", detail))
-    # a click on the backdrop (on another row) is passed on, so one click opens that row
-    assert 'class="drawer-backdrop" onclick="ktCloseDetail()"' in detail
-    assert 'contains("drawer-backdrop")' in client.get("/static/kube-tower.js").text
+    assert all(f'id="i-{name}"' in sprite for name in re.findall(r"icons\.svg\?v=\w+#i-([\w-]+)", detail))
+    assert re.findall(r"icons\.svg\?v=\w+#i-([\w-]+)", detail)
+    # the backdrop lets clicks through: one click beside the panel closes it and does what it was meant to
+    assert '<div class="drawer-backdrop"></div>' in detail
+    css = client.get("/static/kube-tower.css").text
+    assert "z-index: 10; pointer-events: none; }" in css[css.index(".drawer-backdrop {") :]
     assert "https://hub.docker.com/_/redis/tags" in detail
     assert "sha256:new" in detail and "Pin a version" in detail and "Versioning" not in detail
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
@@ -612,7 +614,7 @@ def test_rescan_buttons_and_polling():
     # while rescanned, the panel polls itself; the poll that sees the end reloads the results
     scanner.rescanning = {("image", "docker.io/library/nginx:1.25")}
     resp = client.get("/images/detail", params={**ref, "polling": "1"})
-    assert "Rescanning" in resp.text and 'hx-trigger="every 3s"' in resp.text and "Check version" not in resp.text
+    assert "Rescanning" in resp.text and 'hx-trigger="every 3s [document' in resp.text and "Check version" not in resp.text
     assert "HX-Trigger" not in resp.headers
     assert "Rescanning" in client.get("/vulnerabilities/detail", params=ref).text
     scanner.rescanning = set()
@@ -816,7 +818,7 @@ def test_github_link_next_to_version():
     page = client.get("/settings").text
     footer = page[page.index('class="version"') :]
     assert footer.index("<small>") < footer.index('href="https://github.com/Arcanexus/kube-tower"')
-    assert 'href="static/icons.svg#i-github"' in footer
+    assert "icons.svg?v=" in footer and '#i-github"' in footer
 
 
 def test_check_version_button_counts_the_tags():
@@ -1013,7 +1015,7 @@ def test_roles_and_pods_on_the_administration_page():
     assert page.index('id="processes"') < page.index('id="scans"')
     assert page.count('class="role-tile role-ok"') == 4 and "One pod runs every role" in page
     fragment = client.get("/administration/processes").text
-    assert "<html" not in fragment and 'hx-get="administration/processes"' in fragment
+    assert "<html" not in fragment and 'hx-get="administration/processes?polling=1"' in fragment
     # distributed: the controller and the pods that report to it
     registry = client.app.state.backend.process_registry
     registry.roles = ["controller"]
@@ -1100,3 +1102,22 @@ def test_synthesis_counts_the_running_images_by_default():
     page = client.get("/?running=0").text
     assert re.search(r"Images</span><strong>3</strong>", page) and "with a fix, all images" in page
     assert 'href="images?running=0"' in page
+
+
+def test_static_files_cached_and_compressed():
+    client, _ = _client()
+    page = client.get("/images", headers={"Accept-Encoding": "gzip"})
+    assert page.headers["content-encoding"] == "gzip"
+    assert '<body hx-boost="true">' in page.text  # links swap the page body, styles and scripts stay loaded
+    css = re.search(r'href="(static/kube-tower\.css\?v=[0-9a-f]{12})"', page.text).group(1)
+    assert re.search(r'href="static/icons\.svg\?v=[0-9a-f]{12}#i-images"', page.text)
+    resp = client.get("/" + css, headers={"Accept-Encoding": "gzip"})
+    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert resp.headers["content-encoding"] == "gzip"
+    assert client.get("/static/kube-tower.css").headers["cache-control"] == "no-cache"
+
+
+def test_polling_pauses_in_hidden_tabs():
+    client, scanner = _client()
+    scanner.running = True
+    assert "every 3s [document.visibilityState=='visible']" in client.get("/status").text

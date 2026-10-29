@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import re
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -13,6 +14,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.gzip import GZipMiddleware
 
 from kube_tower import __version__
 from kube_tower.administration import unused_node_images
@@ -29,6 +31,22 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["version"] = __version__
 templates.env.globals["Status"] = Status
 templates.env.globals["Severity"] = Severity
+# Static files are cached by browsers for a year: their URLs change with their content (see asset()).
+STATIC_VERSION = hashlib.sha256(b"".join(f.read_bytes() for f in sorted((HERE / "static").iterdir()) if f.is_file())).hexdigest()[
+    :12
+]
+templates.env.globals["asset"] = lambda name: f"static/{name}?v={STATIC_VERSION}"
+
+
+class CachedStaticFiles(StaticFiles):
+    """Static files: versioned URLs (asset()) are immutable, the others are checked again each time."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        versioned = b"v=" in scope.get("query_string", b"")
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable" if versioned else "no-cache"
+        return response
+
 
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -387,7 +405,8 @@ templates.env.filters.update(plural=plural, duration=duration, short_digest=shor
 
 
 def mount(app: FastAPI) -> None:
-    app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+    app.add_middleware(GZipMiddleware, minimum_size=1000)  # pages and static files are mostly text
+    app.mount("/static", CachedStaticFiles(directory=HERE / "static"), name="static")
 
     def render(request: Request, name: str, **context) -> HTMLResponse:
         backend = request.app.state.backend
@@ -725,6 +744,6 @@ def mount(app: FastAPI) -> None:
     async def scan_status(request: Request):
         response = render(request, "_status")
         if request.query_params.get("polling") and not request.app.state.backend.running:
-            # The scan the page was waiting for is over: reload it to show the new results.
-            response.headers["HX-Refresh"] = "true"
+            # The scan the page was waiting for is over: the page reloads its content (see kube-tower.js).
+            response.headers["HX-Trigger"] = "kt-scan-done"
         return response

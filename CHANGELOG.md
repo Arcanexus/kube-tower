@@ -146,6 +146,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Faster UI: the menu and the links of the pages no longer reload the whole page (only its content is
+  swapped, styles and scripts stay loaded), pages and static files are gzip compressed (the static files
+  go from 187 KB to 41 KB), and the static files are cached by browsers until the next release. Pages
+  in a hidden browser tab stop polling.
+
 - Distributed mode: every exchange between the pods goes through Valkey, and only the active controller
   orchestrates ([ADR 0003](docs/adr/0003-valkey-bus.md)). The controller queues the tasks in a Valkey
   stream per role, worker and trivy pods read them there and send their results back; a task not
@@ -179,6 +184,12 @@ All notable changes to this project are documented here. The format follows
   the `<release>-internal` Service becomes `<release>-controller` (`/metrics` of the active controller).
 
 ### Fixed
+
+- Clicks that needed to be repeated in the UI: a click beside an open detail panel only closed it (a
+  filter field or menu needed a second click), and during a scan the status polled every 3 seconds
+  replaced the *Scan now* button and closed the menu of problems under the pointer. A poll now replaces
+  only what changed, and the end of a scan updates the page without reloading it (an open detail panel
+  stays open).
 
 - Distributed mode: the authentication status of the registries stayed **not tried yet** after a scan,
   because the worker pods, not the controller, query the registries. The results of the version checks
