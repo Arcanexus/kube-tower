@@ -1,17 +1,44 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, counters, filters, icon, image_name, list_shown, load_more, more_hint, page_title, sort_th, version_cells %}
+{% from "_macros.html" import badge, chip, counters, icon, image_name, list_shown, load_more, more_hint, page_title, severity_counts, sort_th, update_badge, version_cells %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("images", "Container images", "Images of the workloads and images cached on nodes.", "The icon tells whether a pod runs the image (hover it for details). Below each version, the start of its digest: a different digest is highlighted. Click an image for its details.") }}{% endblock %}
+{% block heading %}{{ page_title("images", "Images", "Versions and vulnerabilities of the container images.", "Images of the workloads and images cached on nodes. The icon tells whether a pod runs the image. Below each version, the start of its digest: a different digest is highlighted. Vulnerabilities come from the Trivy Operator reports, else from kube-tower's Trivy scans. Click an image for its details.") }}{% endblock %}
 {% block content %}
-{{ filters("images", q, status, cluster, snapshot, running, chips, listing) }}
+<form class="filters filters-search" hx-get="images" hx-target="#results" hx-push-url="true"
+      hx-trigger="input changed delay:300ms from:input[name=q], change">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search an image, a tag, a registry or a CVE (CVE-2025-68121)" aria-label="Search"
+         title="Words of the image reference, and vulnerability IDs (CVE, GHSA…), all or part, separated by spaces or commas">
+  {# Set by the chips above the results (ktToggleFilter) #}
+  <input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="severity" value="{{ severity }}">
+  <input type="hidden" name="fixable" value="{{ '1' if fixable }}">
+  <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
+  {% if chips %}
+  <div class="filter-chips">
+    {% for name, label, value in chips %}
+    <span class="filter-chip">{{ label }} <strong>{{ value }}</strong><input type="hidden" name="{{ name }}" value="{{ value }}">
+      <button type="button" onclick="ktRemoveFilter(this)" aria-label="Remove the {{ label | lower }} filter" title="Remove this filter">{{ icon("x") }}</button></span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</form>
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
-{{ counters(matching, "status", status) }}
-<p><small>{{ listing.total | plural("image") }}{{ list_shown(listing) }}</small></p>
+{% for w in warnings if w.startswith("Trivy") %}<p class="notice notice-warn">{{ icon("warning") }}{{ w }} <a href="administration?tab=scans#trivy">Administration</a></p>{% endfor %}
+<div class="chip-rows">
+  {{ counters(matching, "status", status, "Version") }}
+  <div class="counters">
+    <small class="counters-label">CVE</small>
+    {% for s in Severity if s.value in ("critical", "high") %}
+    {{ chip("severity", s.value, severity == s.value, affected[s], '<span class="sev sev-' ~ s.value ~ '">' ~ s.value ~ '</span>', "Show only the images with " ~ s.value ~ " vulnerabilities") }}
+    {% endfor %}
+    {{ chip("fixable", "1", fixable, with_fix, "with a fix", "Show only the images with vulnerabilities that have a fixed version") }}
+  </div>
+</div>
+<p><small>{{ listing.total | plural("image") }}{{ list_shown(listing) }}{% if not listing.sort %}, most urgent first{% endif %}
+  {% if scanning and not snapshot.vulnerabilities_finished_at %}· {{ icon("clock") }}vulnerability scan in progress{% endif %}</small></p>
 <div class="overflow-auto table-wrap">
 <table class="striped stack-sm">
-  <thead><tr>{{ sort_th(listing, 0, "Image") }}{{ sort_th(listing, 1, "Current") }}{{ sort_th(listing, 2, "Latest") }}{{ sort_th(listing, 3, "Status") }}{{ sort_th(listing, 4, "Used by", True, "hide-sm") }}</tr></thead>
+  <thead><tr>{{ sort_th(listing, 0, "Image") }}{{ sort_th(listing, 1, "Current") }}{{ sort_th(listing, 2, "Latest") }}{{ sort_th(listing, 3, "Update") }}{{ sort_th(listing, 4, "Vulnerabilities", True) }}{{ sort_th(listing, 5, "Used by", True, "hide-sm") }}</tr></thead>
   <tbody>{{ self.rows() }}</tbody>
 </table>
 {{ more_hint(listing) }}
@@ -19,15 +46,22 @@
 {% endblock %}
 {% block rows %}
   {% for r in rows %}
-    <tr class="clickable" tabindex="0" hx-get="images/detail?ref={{ r.image | string | urlencode }}" hx-target="#detail"
+    {% set v = r.vulnerabilities %}
+    {% set hits = found.get(r.image | string) %}
+    <tr class="clickable" tabindex="0" hx-get="images/detail?ref={{ r.image | string | urlencode }}{% if hits %}&cve={{ q | urlencode }}{% endif %}" hx-target="#detail"
         hx-trigger="click, keyup[key=='Enter']">
-      <td class="cell-name">{{ image_name(r) }}</td>
+      <td class="cell-name">{{ image_name(r) }}
+        {% if v and v.os_eosl %}<br><small class="tag-latest">{{ icon("warning") }}{{ v.os }} is end of life</small>{% endif %}</td>
       {{ version_cells(r) }}
-      <td data-sort="{{ status_rank[r.status] }}">{{ badge(r.status) }}{% if r.message %}<br><small>{{ r.message }}</small>{% endif %}</td>
-      <td data-sort="{{ r.usages | length }}" class="hide-sm nowrap"><small>{{ r.usages | length | plural("usage") }} · {{ r.clusters | join(", ") }}</small></td>
+      <td data-sort="{{ status_rank[r.status] }}">{{ update_badge(r) }}{% if r.message %}<br><small>{{ r.message }}</small>{% endif %}</td>
+      <td data-sort="{{ vulnerability_score(r) }}" class="vulnerability-cell">{% if v is none %}<small class="muted-text">{{ "pending" if scanning else "not scanned" }}</small>
+        {% elif v.message %}<span class="badge badge-error" title="{{ v.message }}">{{ icon("error") }}scan failed</span>
+        {% else %}{{ severity_counts(v) }}{% endif %}
+        {% if hits %}<br><small class="cve-hits">{% for x in hits[:5] %}<span class="sev sev-{{ x.severity.value }}" title="{{ x.title }}">{{ x.id }}</span> {% endfor %}{% if hits | length > 5 %}+{{ hits | length - 5 }}{% endif %}</small>{% endif %}</td>
+      <td data-sort="{{ workloads(r) }}" class="hide-sm nowrap">{% set n = workloads(r) %}<small>{{ n | plural("workload") if n else "cached on nodes" }} · {{ r.clusters | join(", ") }}</small></td>
     </tr>
   {% else %}
-    <tr><td colspan="5">No image.</td></tr>
+    <tr><td colspan="6">No image.</td></tr>
   {% endfor %}
-  {{ load_more(listing, 5) }}
+  {{ load_more(listing, 6) }}
 {% endblock %}

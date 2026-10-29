@@ -112,8 +112,8 @@ Measured with an inventory of 141 images (about 400 vulnerabilities each) and 51
 
 | Request | CPU per request |
 | --- | --- |
-| Synthesis | about 22 ms |
-| Clusters, Vulnerabilities | 14 to 18 ms |
+| Overview | about 22 ms |
+| Clusters tab, Images filtered by CVE | 14 to 18 ms |
 | Images, Helm charts, Administration, detail panels | 4 to 7 ms |
 | `/api/snapshot` (whole inventory as JSON, built in a thread) | about 530 ms |
 

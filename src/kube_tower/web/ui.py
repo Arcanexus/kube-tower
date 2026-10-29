@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import os
+import platform
 import re
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from urllib.parse import urlencode
 
+import fastapi
 import yaml
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -17,14 +20,13 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.gzip import GZipMiddleware
 
 from kube_tower import __version__
-from kube_tower.administration import unused_node_images
-from kube_tower.config import ROLES, Settings
+from kube_tower.config import DEFAULT_CONFIG_PATH, ROLES, Settings
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, Severity, Status, Usage
 from kube_tower.processes import roles_status
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
 from kube_tower.web.metrics import image_update
-from kube_tower.web.summary import UPDATE_KINDS, WORST_ORDER, summarize
+from kube_tower.web.summary import UPDATE_KINDS, fixable_critical, summarize, todo, workloads
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -240,32 +242,25 @@ IMAGE_COLUMNS = [
     Column(lambda r: natural(r.image.tag or "")),
     Column(lambda r: natural(r.latest_tag or "")),
     Column(lambda r: STATUS_RANK[r.status]),
-    Column(lambda r: len(r.usages), descending=True),
+    Column(lambda r: vulnerability_score(r), descending=True),
+    Column(lambda r: workloads(r), descending=True),
 ]
 CHART_COLUMNS = [
-    Column(lambda c: natural(c.application)),
     Column(lambda c: natural(c.chart)),
     Column(lambda c: natural(c.version or "")),
     Column(lambda c: natural(c.latest_version or "")),
     Column(lambda c: STATUS_RANK[c.worst_status]),
-]
-VULNERABILITY_COLUMNS = [
-    Column(lambda r: r.image.name),
-    Column(lambda r: natural(r.image.tag or "")),
-    Column(lambda r: vulnerability_score(r), descending=True),
-    Column(_fixable, descending=True),
-    Column(lambda r: r.vulnerabilities.source if r.vulnerabilities else ""),
-    Column(lambda r: len(r.usages), descending=True),
+    Column(lambda c: c.repository),
+    Column(lambda c: natural(c.application)),
 ]
 
 
-def vulnerability_sort_key(report: ImageReport) -> tuple:
-    """Most vulnerable images first, then failed scans, then images not scanned (yet), then by name."""
-    vulns = report.vulnerabilities
-    if vulns is None or vulns.message:
-        return (2 if vulns is None else 1, [], str(report.image))
-    counts = vulns.counts()
-    return (0, [-counts[s] for s in Severity], str(report.image))
+def urgency(report: ImageReport) -> tuple:
+    """Default order of the Images page: critical CVEs with a fix first, then outdated images (major first), then
+    failed checks, then the most vulnerable, then by name."""
+    update = image_update(report)
+    rank = UPDATE_KINDS.index(update) if update in UPDATE_KINDS else len(UPDATE_KINDS)
+    return (-fixable_critical(report), STATUS_RANK[report.status], rank, -vulnerability_score(report), str(report.image))
 
 
 def plural(n: int, word: str, many: str = "") -> str:
@@ -379,9 +374,48 @@ def warnings(request: Request) -> list[str]:
 STATUS_RANK = {Status.OUTDATED: 0, Status.ERROR: 1, Status.UNKNOWN: 2, Status.UP_TO_DATE: 3}
 
 
-def cve_terms(value: str) -> list[str]:
-    """`CVE-2025-68121, 2024-` -> ["cve-2025-68121", "2024-"]: each term matches all or part of an ID."""
-    return [t for t in re.split(r"[\s,;]+", value.lower()) if t]
+# Words of the Images search that look for vulnerability IDs: CVE-2025-68121, GHSA-…, 2024-…
+VULNERABILITY_ID = re.compile(r"^(cve|ghsa|go|pysec|rustsec|gms|osv)-|^\d{4}-")
+
+
+def split_query(value: str) -> tuple[list[str], list[str]]:
+    """`nginx CVE-2025-68121, 2024-` -> (["nginx"], ["cve-2025-68121", "2024-"]): words that the image reference must
+    all contain, and vulnerability IDs of which the image must have one (all or part of an ID)."""
+    terms = [t for t in re.split(r"[\s,;]+", value.lower()) if t]
+    return [t for t in terms if not VULNERABILITY_ID.match(t)], [t for t in terms if VULNERABILITY_ID.match(t)]
+
+
+def global_filters(request: Request) -> tuple[str, bool]:
+    """The Cluster and "Running only" filters of the top bar, common to every page. The browser keeps them in
+    cookies (kube-tower.js); a query parameter (a link, a bookmark) wins. "Running only" is on by default, the
+    last value wins (forms send running=0 before the checkbox)."""
+    params, cookies = request.query_params, request.cookies
+    cluster = params.get("cluster")
+    if cluster is None:
+        cluster = cookies.get("kt-cluster", "")
+        if cluster not in {c.name for c in request.app.state.backend.snapshot.clusters}:
+            cluster = ""  # a cluster that is gone
+    return cluster, params.get("running", cookies.get("kt-running", "1")) != "0"
+
+
+def _url(path: str, query: dict) -> str:
+    """Relative URL with the non-empty parameters only."""
+    query = {k: v for k, v in query.items() if v}
+    return f"{path}?{urlencode(query)}" if query else path
+
+
+# Tabs of the Administration page: (key, label, icon); Logs last.
+ADMIN_TABS = {
+    "scans": ("Scans and Trivy", "refresh"),
+    "clusters": ("Clusters", "clusters"),
+    "pods": ("Pods", "server"),
+    "settings": ("Credentials and settings", "key"),
+    "api": ("API", "box"),
+    "logs": ("Logs", "logs"),
+}
+# Versions of the vendored front-end libraries (static/), shown on the About page.
+HTMX_VERSION = (m := re.search(r'version:"([\d.]+)"', (HERE / "static" / "htmx.min.js").read_text())) and m[1] or ""
+PICO_VERSION = (m := re.search(r"Pico CSS \S+ v([\d.]+)", (HERE / "static" / "pico.min.css").read_text())) and m[1] or ""
 
 
 def matching_vulnerabilities(report: ImageReport, terms: list[str]) -> list:
@@ -398,7 +432,8 @@ def vulnerability_score(report: ImageReport) -> int:
     return sum(counts[s] * 1000 ** (len(Severity) - i) for i, s in enumerate(Severity))
 
 
-templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score)
+templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score, workloads=workloads)
+templates.env.globals.update(image_update=image_update, fixable_critical=fixable_critical)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
 templates.env.globals.update(versioning=versioning, image_versions=image_versions, usage_tree=usage_tree)
 templates.env.filters.update(plural=plural, duration=duration, short_digest=short_digest)
@@ -415,10 +450,13 @@ def mount(app: FastAPI) -> None:
         # The next page of a list (infinite scroll): only its rows.
         offset = request.query_params.get("offset", "")
         rows_only = offset.isdigit() and int(offset) > 0
+        cluster, running = global_filters(request)
         return templates.TemplateResponse(
             request,
             f"{name}.html",
             {
+                "cluster": cluster,
+                "running": running,
                 "snapshot": backend.snapshot,
                 "scanning": backend.running,
                 "checking_versions": backend.checking_versions,
@@ -440,52 +478,62 @@ def mount(app: FastAPI) -> None:
             response.headers["HX-Trigger"] = "kt-rescanned"
         return response
 
-    def filters(request: Request) -> tuple[str, str, str]:
-        p = request.query_params
-        return p.get("q", ""), p.get("status", ""), p.get("cluster", "")
-
-    def running_only(request: Request) -> bool:
-        """The "Running only" switch, on by default: the forms send running=0 before the checkbox (running=1), the
-        last value wins."""
-        return request.query_params.get("running", "1") != "0"
-
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    @app.get("/synthesis", response_class=HTMLResponse, include_in_schema=False)
-    async def synthesis(request: Request):
-        running = running_only(request)
-        summary = summarize(request.app.state.backend.snapshot, running=running)
+    async def overview(request: Request):
+        cluster, running = global_filters(request)
+        snapshot = request.app.state.backend.snapshot
+        summary = summarize(snapshot, running=running, cluster=cluster)
+        items, total = todo(snapshot, running=running, cluster=cluster)
         return render(
-            request,
-            "synthesis",
-            tab="synthesis",
-            summary=summary,
-            update_kinds=UPDATE_KINDS,
-            worst_order=WORST_ORDER,
-            running=running,
+            request, "overview", tab="overview", summary=summary, todo=items, todo_total=total, update_kinds=UPDATE_KINDS
         )
 
     @app.get("/images", response_class=HTMLResponse, include_in_schema=False)
     async def images(request: Request):
-        q, status, cluster = filters(request)
-        running = running_only(request)
-        # Set by the links of the Synthesis: a registry, a kind of pending update (major, minor...).
-        registry, update = request.query_params.get("registry", ""), request.query_params.get("update", "")
+        p = request.query_params
+        q, status, severity, fixable = p.get("q", ""), p.get("status", ""), p.get("severity", ""), p.get("fixable", "") == "1"
+        cluster, running = global_filters(request)
+        # Set by the links of the Overview: a registry, a kind of pending update (major, minor...).
+        registry, update = p.get("registry", ""), p.get("update", "")
         chips = [
             (name, label, value)
             for name, label, value in (("registry", "Registry", registry), ("update", "Update", update))
             if value
         ]
-        # Counters ignore the status filter: they are the buttons that set it.
-        matching = [
+        words, terms = split_query(q)
+        found = {}  # image reference -> its vulnerabilities whose ID matches a CVE of the search
+        matching = []
+        for r in request.app.state.backend.snapshot.images:
+            text = str(r.image)
+            if (
+                all(w in text.lower() for w in words)
+                and (not cluster or cluster in r.clusters)
+                and (not running or r.running)
+                and (not registry or r.image.registry == registry)
+                and (not update or image_update(r) == update)
+            ):
+                if terms:
+                    if not (hits := matching_vulnerabilities(r, terms)):
+                        continue
+                    # One badge per ID (a CVE often affects several packages), most severe first
+                    unique = {}
+                    for v in sorted(hits, key=lambda v: list(Severity).index(v.severity)):
+                        unique.setdefault(v.id, v)
+                    found[text] = list(unique.values())
+                matching.append(r)
+        # Counters ignore the filters they set: they are the buttons that set them.
+        counts = {id(r): r.vulnerabilities.counts() if _fixable(r) >= 0 else {} for r in matching}
+        affected = {s: sum(1 for r in matching if counts[id(r)].get(s)) for s in Severity}
+        with_fix = sum(1 for r in matching if _fixable(r) > 0)
+        level = Severity.parse(severity) if severity in Severity._value2member_map_ else None
+        rows = [
             r
-            for r in request.app.state.backend.snapshot.images
-            if _matches(str(r.image), q)
-            and (not cluster or cluster in r.clusters)
-            and (not running or r.running)
-            and (not registry or r.image.registry == registry)
-            and (not update or image_update(r) == update)
+            for r in sorted(matching, key=urgency)
+            if (not status or r.status.value == status)
+            and (level is None or counts[id(r)].get(level))
+            and (not fixable or _fixable(r) > 0)
         ]
-        listing = list_page(request, "images", [r for r in matching if not status or r.status.value == status], IMAGE_COLUMNS)
+        listing = list_page(request, "images", rows, IMAGE_COLUMNS)
         return render(
             request,
             "images",
@@ -495,90 +543,38 @@ def mount(app: FastAPI) -> None:
             matching=matching,
             q=q,
             status=status,
-            cluster=cluster,
-            running=running,
+            severity=severity,
+            fixable=fixable,
+            affected=affected,
+            with_fix=with_fix,
+            found=found,
             chips=chips,
         )
 
     @app.get("/images/detail", response_class=HTMLResponse, include_in_schema=False)
-    async def image_detail(request: Request, ref: str = ""):
-        backend = request.app.state.backend
-        if (report := backend.snapshot.image(ref)) is None:
-            return Response(status_code=404)
-        can_scan = backend.can_rescan_vulnerabilities(report)
-        same_name = len(backend.same_name_images(report))
-        return render_detail(
-            request, "_image_detail", image_key(report), r=report, can_rescan_vulnerabilities=can_scan, same_name=same_name
-        )
-
-    @app.get("/vulnerabilities", response_class=HTMLResponse, include_in_schema=False)
-    async def vulnerabilities(request: Request):
-        # The severity filter is named status, like on the other pages (counters set it).
-        q, severity, cluster = filters(request)
-        running = running_only(request)
-        cve = request.query_params.get("cve", "")
-        terms = cve_terms(cve)
-        found = {}  # image reference -> its vulnerabilities whose ID matches the CVE filter
-        for r in request.app.state.backend.snapshot.images:
-            if terms and (hits := matching_vulnerabilities(r, terms)):
-                # One badge per ID (a CVE often affects several packages), most severe first
-                unique = {}
-                for v in sorted(hits, key=lambda v: list(Severity).index(v.severity)):
-                    unique.setdefault(v.id, v)
-                found[str(r.image)] = list(unique.values())
-        # Counters ignore the severity filter: they are the buttons that set it.
-        matching = sorted(
-            (
-                r
-                for r in request.app.state.backend.snapshot.images
-                if _matches(str(r.image), q)
-                and (not cluster or cluster in r.clusters)
-                and (not running or r.running)
-                and (not terms or str(r.image) in found)
-            ),
-            key=vulnerability_sort_key,
-        )
-        counts = {id(r): r.vulnerabilities.counts() if r.vulnerabilities else {} for r in matching}
-        affected = {s: sum(1 for r in matching if counts[id(r)].get(s)) for s in Severity}
-        rows = [r for r in matching if not severity or counts[id(r)].get(Severity.parse(severity))]
-        listing = list_page(request, "vulnerabilities", rows, VULNERABILITY_COLUMNS)
-        return render(
-            request,
-            "vulnerabilities",
-            tab="vulnerabilities",
-            listing=listing,
-            rows=listing.items,
-            matching=matching,
-            q=q,
-            severity=severity,
-            cluster=cluster,
-            affected=affected,
-            cve=cve,
-            found=found,
-            running=running,
-        )
-
     @app.get("/vulnerabilities/detail", response_class=HTMLResponse, include_in_schema=False)
-    async def vulnerability_detail(request: Request, ref: str = "", cve: str = ""):
+    async def image_detail(request: Request, ref: str = "", cve: str = ""):
+        """One panel per image: versions, vulnerabilities and where it is used. `cve`: the CVEs searched on the
+        Images page, listed first and highlighted."""
         backend = request.app.state.backend
         if (report := backend.snapshot.image(ref)) is None:
             return Response(status_code=404)
-        can_scan = backend.can_rescan_vulnerabilities(report)
-        highlighted = {v.id for v in matching_vulnerabilities(report, cve_terms(cve))}
+        _, terms = split_query(cve)
         return render_detail(
             request,
-            "_vulnerability_detail",
+            "_image_detail",
             image_key(report),
             r=report,
-            can_rescan_vulnerabilities=can_scan,
+            can_rescan_vulnerabilities=backend.can_rescan_vulnerabilities(report),
             same_name=len(backend.same_name_images(report)),
             cve=cve,
-            highlighted=highlighted,
+            highlighted={v.id for v in matching_vulnerabilities(report, terms)},
         )
 
     @app.get("/charts", response_class=HTMLResponse, include_in_schema=False)
     async def charts(request: Request):
-        q, status, cluster = filters(request)
+        q, status = request.query_params.get("q", ""), request.query_params.get("status", "")
+        cluster, _ = global_filters(request)
         matching = [
             c
             for c in request.app.state.backend.snapshot.charts
@@ -587,6 +583,7 @@ def mount(app: FastAPI) -> None:
         listing = list_page(
             request, "charts", [c for c in matching if not status or c.worst_status.value == status], CHART_COLUMNS
         )
+        subcharts = sum(1 for c in matching if c.status != Status.OUTDATED and c.worst_status == Status.OUTDATED)
         return render(
             request,
             "charts",
@@ -596,7 +593,7 @@ def mount(app: FastAPI) -> None:
             matching=matching,
             q=q,
             status=status,
-            cluster=cluster,
+            outdated_subcharts=subcharts,
         )
 
     @app.get("/charts/detail", response_class=HTMLResponse, include_in_schema=False)
@@ -604,6 +601,52 @@ def mount(app: FastAPI) -> None:
         if (report := request.app.state.backend.snapshot.chart(cluster, namespace, app, chart)) is None:
             return Response(status_code=404)
         return render_detail(request, "_chart_detail", chart_key(report), c=report)
+
+    @app.get("/about", response_class=HTMLResponse, include_in_schema=False)
+    async def about(request: Request):
+        backend, settings = request.app.state.backend, request.app.state.settings
+        processes = backend.processes()
+        return render(
+            request,
+            "about",
+            tab="about",
+            settings=settings,
+            processes=processes,
+            roles_status=roles_status(processes),
+            started_at=processes[0].started_at if processes else None,
+            config_path=os.environ.get("KUBE_TOWER_CONFIG", DEFAULT_CONFIG_PATH),
+            trivy_status=backend.trivy_status,
+            components=[
+                ("Python", platform.python_version()),
+                ("FastAPI", fastapi.__version__),
+                ("htmx", HTMX_VERSION),
+                ("Pico CSS", PICO_VERSION),
+            ],
+        )
+
+    # Former pages, merged into the four pages: bookmarks still work (relative links, whatever the sub-path).
+    @app.get("/synthesis", include_in_schema=False)
+    async def synthesis():
+        return RedirectResponse("./", status_code=301)
+
+    @app.get("/vulnerabilities", include_in_schema=False)
+    async def vulnerabilities(request: Request):
+        p = request.query_params
+        query = {
+            "q": " ".join(v for v in (p.get("q", ""), p.get("cve", "")) if v),
+            "severity": p.get("status", ""),
+            "cluster": p.get("cluster", ""),
+            "running": p.get("running", ""),
+        }
+        return RedirectResponse(_url("images", query), status_code=301)
+
+    @app.get("/clusters", include_in_schema=False)
+    @app.get("/settings", include_in_schema=False)
+    @app.get("/logs", include_in_schema=False)
+    async def administration_page(request: Request):
+        tab = request.url.path.rstrip("/").rsplit("/", 1)[-1]
+        query = [("tab", tab), *((k, v) for k, v in request.query_params.multi_items() if k != "tab")]
+        return RedirectResponse(f"administration?{urlencode(query)}", status_code=301)
 
     async def _log_lines(request: Request, after: int, level: str, q: str, roles: list[str]):
         """Lines after `after` matching the filters, and the sequence number to tail from. With roles, the
@@ -629,74 +672,75 @@ def mount(app: FastAPI) -> None:
             "distributed": request.app.state.settings.distributed,
         }
 
-    @app.get("/logs", response_class=HTMLResponse, include_in_schema=False)
-    async def logs(request: Request, level: str = "INFO", q: str = "", role: list[str] = Query(default=[])):  # noqa: B008
-        context = _log_context(request, level, q, role)
-        lines, after = await _log_lines(request, 0, level, q, context["roles"])
-        return render(request, "logs", tab="logs", lines=lines, after=after, levels=LOG_LEVELS, all_roles=ROLES, **context)
-
     @app.get("/logs/tail", response_class=HTMLResponse, include_in_schema=False)
     async def logs_tail(request: Request, after: int = 0, level: str = "INFO", q: str = "", role: list[str] = Query(default=[])):  # noqa: B008
         context = _log_context(request, level, q, role)
         lines, after = await _log_lines(request, after, level, q, context["roles"])
         return render(request, "_log_tail", lines=lines, after=after, **context)
 
-    @app.get("/clusters", response_class=HTMLResponse, include_in_schema=False)
-    async def clusters(request: Request):
-        running = running_only(request)
-        summaries = {c.name: c for c in summarize(request.app.state.backend.snapshot, running=running).clusters}
-        return render(request, "clusters", tab="clusters", summaries=summaries, running=running)
-
-    @app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
-    async def settings(request: Request):
-        # Settings only hold references to secrets (paths, env var names), never their values.
-        settings = request.app.state.settings
-        rendered = yaml.safe_dump(_camel(dataclasses.asdict(settings)), sort_keys=False)
-        return render(request, "settings", tab="settings", settings_yaml=rendered, sections=settings_sections(settings))
-
-    def render_administration(request: Request, notice: str = "", error: str = "", full: bool = False) -> HTMLResponse:
-        """The Administration page, or only its actions (`#administration`) for htmx. While an action runs the
-        actions poll themselves (`polling=1`); the poll that sees them all over reloads the page.
-        """
+    def scans_context(request: Request) -> dict:
+        """What the Scans and Trivy tab of the Administration shows (`#administration`, polled while an action runs)."""
         backend = request.app.state.backend
         images, vulnerabilities, charts = backend.failed_items()
-        busy = bool(backend.locked or backend.rescanning or backend.admin_running)
-        processes = backend.processes()
-        credentials, auth = backend.registry_credentials(request.app.state.settings)
-        response = templates.TemplateResponse(
-            request,
-            "administration.html" if full else "_administration.html",
-            {
-                "tab": "administration",
-                "snapshot": backend.snapshot,
-                "scanning": backend.running,
-                "checking_versions": backend.checking_versions,
-                "warnings": warnings(request),
-                "partial": False,
-                "backend": backend,
-                "busy": busy,
-                "failed": {"images": images, "vulnerabilities": vulnerabilities, "charts": charts},
-                "unused": unused_node_images(backend.snapshot),
-                "trivy_settings": request.app.state.settings.vulnerabilities,
-                "notice": notice,
-                "error": error,
-                "processes": processes,
-                "roles_status": roles_status(processes),
-                "credentials": credentials,
-                "auth": auth,
-            },
-        )
-        if request.query_params.get("polling") and not busy:
+        return {
+            "backend": backend,
+            "busy": bool(backend.locked or backend.rescanning or backend.admin_running),
+            "failed": {"images": images, "vulnerabilities": vulnerabilities, "charts": charts},
+            "trivy_settings": request.app.state.settings.vulnerabilities,
+        }
+
+    def render_administration(request: Request, notice: str = "", error: str = "") -> HTMLResponse:
+        """The actions of the Scans tab (`#administration`) for htmx. While an action runs they poll themselves
+        (`polling=1`); the poll that sees them all over reloads the page.
+        """
+        context = scans_context(request)
+        response = render(request, "_administration", notice=notice, error=error, **context)
+        if request.query_params.get("polling") and not context["busy"]:
             response.headers["HX-Refresh"] = "true"
         return response
 
     @app.get("/administration", response_class=HTMLResponse, include_in_schema=False)
-    async def administration(request: Request):
-        backend, trivy = request.app.state.backend, request.app.state.settings.vulnerabilities
-        if backend.trivy_status is None and trivy.enabled and trivy.trivy.enabled:
-            await backend.refresh_trivy_status()
-        fragment = request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "administration"
-        return render_administration(request, full=not fragment)
+    async def administration(
+        request: Request,
+        tab: str = "scans",
+        level: str = "INFO",
+        q: str = "",
+        role: list[str] = Query(default=[]),  # noqa: B008
+    ):
+        backend, settings = request.app.state.backend, request.app.state.settings
+        tab = tab if tab in ADMIN_TABS else "scans"
+        # The actions of the Scans tab only: asked by htmx, or polled while an action runs
+        fragment = bool(request.query_params.get("polling")) or (
+            request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "administration"
+        )
+        context: dict = {}
+        if tab == "scans" or fragment:
+            trivy = settings.vulnerabilities
+            if backend.trivy_status is None and trivy.enabled and trivy.trivy.enabled:
+                await backend.refresh_trivy_status()
+            if fragment:
+                return render_administration(request)
+            context = scans_context(request)
+        elif tab == "clusters":
+            _, running = global_filters(request)
+            context = {"summaries": {c.name: c for c in summarize(backend.snapshot, running=running).clusters}}
+        elif tab == "pods":
+            processes = backend.processes()
+            context = {"processes": processes, "roles_status": roles_status(processes)}
+        elif tab == "settings":
+            # Settings only hold references to secrets (paths, env var names), never their values.
+            credentials, auth = backend.registry_credentials(settings)
+            context = {
+                "credentials": credentials,
+                "auth": auth,
+                "settings_yaml": yaml.safe_dump(_camel(dataclasses.asdict(settings)), sort_keys=False),
+                "sections": settings_sections(settings),
+            }
+        elif tab == "logs":
+            context = _log_context(request, level, q, role)
+            lines, after = await _log_lines(request, 0, level, q, context["roles"])
+            context |= {"lines": lines, "after": after, "levels": LOG_LEVELS, "all_roles": ROLES}
+        return render(request, "administration", tab="administration", admin_tab=tab, admin_tabs=ADMIN_TABS, **context)
 
     @app.get("/administration/processes", response_class=HTMLResponse, include_in_schema=False)
     async def administration_processes(request: Request):

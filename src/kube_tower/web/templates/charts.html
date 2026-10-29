@@ -1,50 +1,51 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, counters, filters, icon, list_shown, load_more, more_hint, page_title, sort_th, tree_cell %}
+{% from "_macros.html" import badge, chip, counters, filters, icon, list_shown, load_more, more_hint, page_title, sort_th, tree_cell %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.", "The status of a chart is the worst of the chart and its subcharts: the counters and the status filter use it too. Click a chart for its details.") }}{% endblock %}
+{% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.", "One line per chart. The Status column shows the chart and its subcharts as a tree, each with its version and its own status. The chips and the sort use the worst status of the chart and its subcharts. Click a chart for its details.") }}{% endblock %}
 {% block content %}
-{{ filters("charts", q, status, cluster, snapshot, listing=listing) }}
+{{ filters("charts", q, status, listing, "Search a chart, an ArgoCD Application or a repository") }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
-{% set unknown %}<small class="muted-text">unknown</small>{% endset %}
-{{ counters(matching, "worst_status", status) }}
-<p><small>{{ listing.total | plural("chart") }}{{ list_shown(listing) }}</small></p>
+<div class="chip-rows">{{ counters(matching, "worst_status", status) }}</div>
+<p><small>{{ listing.total | plural("chart") }}{{ list_shown(listing) }}{% if outdated_subcharts %} · {{ outdated_subcharts | plural("chart") }} up to date with an outdated subchart{% endif %}</small></p>
 <div class="overflow-auto table-wrap">
-<table class="chart-table stack-sm">
-  <thead><tr>{{ sort_th(listing, 0, "Application") }}{{ sort_th(listing, 1, "Chart") }}{{ sort_th(listing, 2, "Current") }}{{ sort_th(listing, 3, "Latest") }}{{ sort_th(listing, 4, "Status") }}</tr></thead>
-  {{ self.rows() }}
+<table class="striped chart-table stack-sm">
+  <thead><tr>{{ sort_th(listing, 0, "Chart") }}{{ sort_th(listing, 1, "Current") }}{{ sort_th(listing, 2, "Latest") }}{{ sort_th(listing, 3, "Status (chart and subcharts)") }}{{ sort_th(listing, 4, "Repository", False, "hide-sm") }}{{ sort_th(listing, 5, "Application ArgoCD", False, "hide-sm") }}</tr></thead>
+  <tbody>{{ self.rows() }}</tbody>
 </table>
 {{ more_hint(listing) }}
 </div>
 {% endblock %}
 {% block rows %}
   {% set unknown %}<small class="muted-text">unknown</small>{% endset %}
+  {% macro versions(version, latest) -%}
+  <span class="tree-versions">{{ version or "n/a" }}{% if latest and latest != version %} <span class="arrow" aria-hidden="true">→</span> <strong>{{ latest }}</strong>{% endif %}</span>
+  {%- endmacro %}
   {% for c in rows %}
-  {# One tbody per chart: the chart row and its subchart tree, all opening the same detail panel. #}
-  <tbody class="clickable" tabindex="0" hx-trigger="click, keyup[key=='Enter']" hx-target="#detail"
-         hx-get="charts/detail?cluster={{ c.cluster | urlencode }}&namespace={{ c.app_namespace | urlencode }}&app={{ c.application | urlencode }}&chart={{ c.chart | urlencode }}">
-    <tr>
-      <td data-sort="{{ c.application }}" class="cell-name">{{ c.application }}<br><small>{{ c.cluster }}{% if c.destination_namespace %} → {{ c.destination_namespace }}{% endif %}</small></td>
-      <td data-sort="{{ c.chart }}"><code>{{ c.chart }}</code><br><small>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }} · {{ c.repository }}</small></td>
+    {% set subs = dependency_tree(c.dependencies) %}
+    {% set outdated = subs | map(attribute=1) | selectattr("status", "equalto", Status.OUTDATED) | list | length %}
+    <tr class="clickable" tabindex="0" hx-trigger="click, keyup[key=='Enter']" hx-target="#detail"
+        hx-get="charts/detail?cluster={{ c.cluster | urlencode }}&namespace={{ c.app_namespace | urlencode }}&app={{ c.application | urlencode }}&chart={{ c.chart | urlencode }}">
+      <td class="cell-name"><strong>{{ c.chart }}</strong></td>
       <td>{{ c.version }}</td>
       <td>{{ c.latest_version or unknown }}</td>
-      <td data-sort="{{ status_rank[c.worst_status] }}">{{ badge(c.worst_status) }}
-        {%- if c.worst_status != c.status %}<br><small>chart {{ c.status.value }}, subchart {{ c.worst_status.value }}</small>{% endif %}
-        {%- if c.message %}<br><small>{{ c.message }}</small>{% endif %}</td>
+      <td data-sort="{{ status_rank[c.worst_status] }}" class="status-cell">
+        <ul class="status-tree" aria-label="Status of the chart and its subcharts">
+          <li><div class="tree-cell"><span class="tree-label"><code>{{ c.chart }}</code></span>{{ versions(c.version, c.latest_version) }}{{ badge(c.status) }}
+            {%- if outdated %}<small class="subchart-hint">{{ outdated | plural("subchart") }} outdated</small>{% endif %}</div>
+            {%- if c.message %}<small>{{ c.message }}</small>{% endif %}</li>
+          {% for connector, d in subs %}
+          <li class="subchart"><div class="tree-cell">{{ tree_cell(connector) }}<span class="tree-label"><code>{{ d.name }}</code></span>{{ versions(d.version, d.latest_version) }}{{ badge(d.status) }}</div>
+            {%- if d.message %}<small>{{ d.message }}</small>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </td>
+      <td class="hide-sm"><small>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }} · {{ c.repository }}</small></td>
+      <td class="hide-sm"><small>{{ c.application }} · {{ c.cluster }}{% if c.destination_namespace %} → {{ c.destination_namespace }}{% endif %}</small></td>
     </tr>
-    {% for connector, d in dependency_tree(c.dependencies) %}
-    <tr class="subchart">
-      <td></td>
-      <td><div class="tree-cell">{{ tree_cell(connector) }}<span class="tree-label"><code>{{ d.name }}</code></span></div></td>
-      <td>{{ d.version }}</td>
-      <td>{{ d.latest_version or unknown }}</td>
-      <td>{{ badge(d.status) }}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
   {% else %}
-  <tbody><tr><td colspan="5">No chart.</td></tr></tbody>
+    <tr><td colspan="6">No chart.</td></tr>
   {% endfor %}
-  {{ load_more(listing, 5, tbody=True) }}
+  {{ load_more(listing, 6) }}
 {% endblock %}

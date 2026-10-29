@@ -7,7 +7,7 @@
      the pointer. The poll that sees the scan over reloads the page content (kt-scan-done, kube-tower.js). #}
   {% if scanning %}<span hidden hx-get="status?polling=1" hx-trigger="every 3s [document.visibilityState=='visible']"
         hx-select="#scan-state" hx-target="#scan-state" hx-swap="outerHTML"></span>{% endif %}
-  <a id="scan-state" class="scan-state" href="administration#scans" title="Scans in progress (Administration page)">
+  <a id="scan-state" class="scan-state" href="administration?tab=scans" title="Scans in progress (Administration page)">
     {% if scanning %}
       <span class="dot dot-busy" aria-hidden="true"></span><span>{{ "Scan in progress…" if checking_versions else "Vulnerability scan in progress…" }}</span>
     {% elif snapshot.finished_at %}

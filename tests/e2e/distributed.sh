@@ -87,7 +87,7 @@ all_reported() {
     ! grep -q 'process-lost' <<<"$page"
 }
 wait_for 60 "the Administration page lists every pod, none lost" all_reported
-worker_logs() { fetch deploy/"$RELEASE"-ui "http://127.0.0.1:8080/logs?role=worker" | grep "class=\"log-source\" title=\"Roles: worker\">$RELEASE-worker-" >/dev/null; }
+worker_logs() { fetch deploy/"$RELEASE"-ui "http://127.0.0.1:8080/administration?tab=logs&role=worker" | grep "class=\"log-source\" title=\"Roles: worker\">$RELEASE-worker-" >/dev/null; }
 wait_for 60 "the Logs page shows the lines of the worker pods" worker_logs
 
 log "failover"

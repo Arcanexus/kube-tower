@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, page_title %}
+{% set repo = "https://github.com/Arcanexus/kube-tower" %}
+{% block heading %}{{ page_title("info", "About", "Version, links and what this instance runs.") }}{% endblock %}
+{% block content %}
+<article class="about-hero">
+  <img src="{{ asset("logo.svg") }}" alt="" width="56" height="56">
+  <div>
+    <h3>kube-tower <span class="badge badge-version">{{ "v" if version[:1].isdigit() }}{{ version }}</span></h3>
+    <p>Shows which container images and Helm charts are outdated or vulnerable, across all your Kubernetes clusters.</p>
+    {# Checked by the browser (kube-tower.js), not by the server: kube-tower itself makes no call to GitHub. #}
+    <p id="latest-release" data-current="{{ version }}" data-repo="Arcanexus/kube-tower"><small class="muted-text">Checking the latest release on GitHub…</small></p>
+  </div>
+  <p class="actions">
+    <a href="{{ repo }}" target="_blank" rel="noopener" role="button" class="small">{{ icon("github") }}GitHub</a>
+    <a href="{{ repo }}/tree/main/docs" target="_blank" rel="noopener" role="button" class="outline small">{{ icon("external-link") }}Documentation</a>
+    <a href="{{ repo }}/blob/main/CHANGELOG.md" target="_blank" rel="noopener" role="button" class="outline small">{{ icon("external-link") }}What's new</a>
+    <a href="{{ repo }}/issues/new" target="_blank" rel="noopener" role="button" class="outline secondary small">{{ icon("external-link") }}Report a problem</a>
+  </p>
+</article>
+
+<div class="grid-2">
+  <article>
+    <header>{{ icon("server") }}This instance</header>
+    <table class="compact">
+      <tbody>
+        <tr><th scope="row">Mode</th><td>{% if settings.distributed %}Distributed: {{ processes | length | plural("pod") }} sharing Valkey{% else %}One pod running every role{% endif %}</td></tr>
+        <tr><th scope="row">Roles</th><td>{% for r in roles_status %}{{ r.role }} <small class="muted-text">({{ r.summary }})</small>{{ ", " if not loop.last }}{% endfor %}
+          <a href="administration?tab=pods"><small>pods</small></a></td></tr>
+        {% if started_at %}<tr><th scope="row">Running since</th><td><time datetime="{{ started_at.isoformat() }}" class="ago">{{ started_at.strftime("%Y-%m-%d %H:%M UTC") }}</time>
+          <small class="muted-text">({{ started_at.strftime("%Y-%m-%d %H:%M UTC") }})</small></td></tr>{% endif %}
+        <tr><th scope="row">Clusters</th><td>{{ snapshot.clusters | length }}{% if snapshot.clusters %} <small class="muted-text">({{ snapshot.clusters | map(attribute="name") | join(", ") }})</small>{% endif %}</td></tr>
+        <tr><th scope="row">Automatic scan</th><td>every {{ settings.refresh_interval | duration }}{% if snapshot.finished_at %} · last one
+          <time datetime="{{ snapshot.finished_at.isoformat() }}" class="ago">{{ snapshot.finished_at.strftime("%Y-%m-%d %H:%M UTC") }}</time>{% endif %}</td></tr>
+        <tr><th scope="row">Configuration</th><td><code>{{ config_path }}</code> <a href="administration?tab=settings"><small>settings</small></a></td></tr>
+      </tbody>
+    </table>
+  </article>
+  <article>
+    <header>{{ icon("box") }}Components</header>
+    <table class="compact">
+      <tbody>
+        {% if trivy_status and trivy_status.version %}
+        <tr><th scope="row">Trivy</th><td>{{ trivy_status.version }}{% if trivy_status.db and trivy_status.db.updated_at %} · vulnerability database built {{ trivy_status.db.updated_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</td></tr>
+        {% endif %}
+        {% for name, value in components %}<tr><th scope="row">{{ name }}</th><td>{{ value }}</td></tr>{% endfor %}
+        <tr><th scope="row">License</th><td>Apache-2.0 <a href="{{ repo }}/blob/main/LICENSE" target="_blank" rel="noopener"><small>read it</small></a></td></tr>
+      </tbody>
+    </table>
+    <p><small>{{ icon("shield") }}kube-tower only reads your clusters and registries: it never changes anything in them.</small></p>
+  </article>
+</div>
+{% endblock %}

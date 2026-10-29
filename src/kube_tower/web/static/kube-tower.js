@@ -3,15 +3,72 @@
 // instead of loading it again, so styles and scripts stay loaded. Code run at page load must also run
 // after these swaps (htmx:afterSettle).
 
-// Counters above the results toggle the status filter of the filter form.
-function ktFilterStatus(status) {
-  const select = document.querySelector(".filters select[name=status]");
-  if (!select) return;
-  select.value = select.value === status ? "" : status;
-  select.dispatchEvent(new Event("change", { bubbles: true }));
+// Chips above the results (status, severity, with a fix) toggle a hidden field of the filter form.
+function ktToggleFilter(name, value) {
+  const form = document.querySelector("form.filters");
+  const field = form && form.elements[name];
+  if (!field) return;
+  field.value = field.value === value ? "" : value;
+  form.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-// Filters set by a link (Synthesis): their chip removes them and reloads the results.
+// Filter forms leave empty fields out of the URL (?q=&status=… is noise in the address bar and the bookmarks).
+document.addEventListener("htmx:configRequest", (e) => {
+  if (e.detail.verb !== "get" || !e.detail.formData) return;
+  for (const [name, value] of [...e.detail.formData.entries()]) if (value === "") e.detail.formData.delete(name);
+});
+
+// Cluster and "Running only" filters of the top bar, common to every page: kept in cookies for the server
+// (ui.global_filters), on the path of the UI (it may be served under a sub-path). A change reloads the content.
+function ktSaveGlobalFilters(form) {
+  const path = new URL("./", document.baseURI).pathname;
+  const keep = (name, value) => { document.cookie = `${name}=${encodeURIComponent(value)}; path=${path}; max-age=31536000; samesite=lax`; };
+  keep("kt-cluster", form.elements.cluster.value);
+  keep("kt-running", form.elements.running.checked ? "1" : "0");
+}
+function ktGlobalFilters(form) {
+  ktSaveGlobalFilters(form);
+  // A link may have set them in the URL: they now come from the cookies.
+  const url = new URL(location.href);
+  url.searchParams.delete("cluster");
+  url.searchParams.delete("running");
+  url.searchParams.delete("offset");
+  history.replaceState(history.state, "", url);
+  htmx.ajax("GET", url.pathname + url.search, { target: "#main", select: "#main", swap: "outerHTML" });
+}
+// A page opened with ?cluster= or ?running= (a link, a bookmark) makes them the filters of the next pages.
+function ktSyncGlobalFilters() {
+  const form = document.querySelector("form.global-filters");
+  if (form) ktSaveGlobalFilters(form);
+}
+document.addEventListener("DOMContentLoaded", ktSyncGlobalFilters);
+document.addEventListener("htmx:afterSettle", (e) => { if (e.target === document.body) ktSyncGlobalFilters(); });
+
+// About page: the latest release, asked by the browser to GitHub (kube-tower itself makes no call to GitHub).
+function ktLatestRelease() {
+  const p = document.getElementById("latest-release");
+  if (!p || p.dataset.checked) return;
+  p.dataset.checked = "1";
+  const current = p.dataset.current.replace(/^v/, "");
+  fetch(`https://api.github.com/repos/${p.dataset.repo}/releases?per_page=20`)
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((releases) => {
+      const published = releases.filter((r) => !r.draft);
+      const latest = published.find((r) => !r.prerelease) || published[0];
+      if (!latest) throw new Error("no release");
+      const tag = latest.tag_name.replace(/^v/, "");
+      const link = `<a href="${latest.html_url}" target="_blank" rel="noopener">v${tag}</a>`;
+      const date = (latest.published_at || "").slice(0, 10);
+      p.innerHTML = tag === current
+        ? `<span class="badge badge-up-to-date">latest release</span> <small>${link}, published ${date}</small>`
+        : `<small>Latest release: ${link}, published ${date}${/^\d/.test(current) ? "" : " (this one is built from the sources)"}</small>`;
+    })
+    .catch(() => { p.innerHTML = '<small class="muted-text">The latest release could not be checked (no access to GitHub from this browser).</small>'; });
+}
+document.addEventListener("DOMContentLoaded", ktLatestRelease);
+document.addEventListener("htmx:afterSettle", ktLatestRelease);
+
+// Filters set by a link (Overview): their chip removes them and reloads the results.
 function ktRemoveFilter(button) {
   const form = button.closest("form");
   const chips = button.closest(".filter-chips");

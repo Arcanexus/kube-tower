@@ -2,7 +2,7 @@
 
 Start with the **scan errors** (the count next to the scan status, top right of every page) (collection and version check
 errors) and the `message` under each `error` status. Each message says what failed, the HTTP or
-Kubernetes status, and what to do; the Logs page and the pod logs
+Kubernetes status, and what to do; the Logs tab of the Administration page and the pod logs
 (`kubectl -n kube-tower logs deploy/kube-tower`) give the details (set `logs.level: DEBUG` to see
 every request).
 

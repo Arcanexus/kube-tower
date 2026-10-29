@@ -1,0 +1,25 @@
+{% from "_macros.html" import icon %}
+<article id="api">
+  <header>{{ icon("box") }}API</header>
+  <p><small>The data of the UI as JSON (read-only, except the scan and rescan endpoints), and Prometheus metrics.</small></p>
+  <p class="actions">
+    <a href="api/docs" target="_blank" rel="noopener" role="button" class="outline small">{{ icon("external-link") }}API documentation</a>
+    <a href="api/snapshot" target="_blank" rel="noopener" role="button" class="outline secondary small">{{ icon("external-link") }}Last scan (JSON)</a>
+    <a href="metrics" target="_blank" rel="noopener" role="button" class="outline secondary small">{{ icon("external-link") }}Metrics</a>
+  </p>
+  <div class="overflow-auto">
+  <table class="striped compact">
+    <thead><tr><th>Endpoint</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET api/snapshot</code></td><td><small>Every image, chart, vulnerability and cluster of the last scan.</small></td></tr>
+      <tr><td><code>POST api/refresh</code></td><td><small>Starts a full scan.</small></td></tr>
+      <tr><td><code>POST api/rescan/image?ref=…</code></td><td><small>Checks every tag of an image again (versions and vulnerabilities).</small></td></tr>
+      <tr><td><code>POST api/rescan/chart?…</code></td><td><small>Checks a chart and its subcharts again.</small></td></tr>
+      <tr><td><code>POST api/administration/…</code></td><td><small>The actions of the Scans and Trivy tab: <code>retry-failed</code>, <code>trivy-db</code>, <code>connectivity</code>.</small></td></tr>
+      <tr><td><code>GET api/administration/unused-images</code></td><td><small>Images cached on nodes that no workload uses, per cluster.</small></td></tr>
+      <tr><td><code>GET metrics</code></td><td><small>Prometheus metrics: outdated images and charts, vulnerabilities, clusters, scans.</small></td></tr>
+      <tr><td><code>GET healthz</code>, <code>readyz</code></td><td><small>Probes of the pods.</small></td></tr>
+    </tbody>
+  </table>
+  </div>
+</article>
