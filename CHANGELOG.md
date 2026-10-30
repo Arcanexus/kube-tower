@@ -56,6 +56,13 @@ All notable changes to this project are documented here. The format follows
   `auth.oidc.clientId` still sets it in the values instead. `auth.oidc.clientSecret.existingSecret` and
   `.key` of 1.1.0-rc.1 keep working.
 
+### Fixed
+
+- Distributed mode: right after *Scan now* or another action, the page always shows what the action
+  started (the controller publishes its state once the scan has taken its lock), and the action is
+  removed from Valkey before the ui process gets its answer. The `test_ui_process_actions` test failed
+  now and then because of it.
+
 ## [1.0.0] - 2026-10-30
 
 ### Added

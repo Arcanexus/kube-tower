@@ -98,8 +98,10 @@ class Publisher:
         """Publish the state when it changed, with the snapshot when it has a new revision."""
         backend = self.backend
         revision = backend.scanner.revision
-        # Encoded in threads: a large snapshot would hold the event loop meanwhile.
-        data = await asyncio.to_thread(lambda: to_json(backend.state(revision)))
+        # Read here, at once: what the action just started. Encoded in threads: a large snapshot would hold the
+        # event loop meanwhile.
+        state = backend.state(revision)
+        data = await asyncio.to_thread(lambda: to_json(state))
         snapshot = None
         if revision != self._snapshot_revision:
             snapshot = await asyncio.to_thread(lambda: pack(encode(backend.snapshot)))
@@ -140,11 +142,13 @@ class Publisher:
             answer = {"result": await self.backend.action(asked["name"], asked.get("params") or {})}
         except Exception as exc:  # noqa: BLE001 - told to the ui process that asked
             answer = {"error": f"{type(exc).__name__}: {exc}"}
+        await asyncio.sleep(0)  # the tasks the action created (e.g. a scan) start and take their locks
         with contextlib.suppress(RedisError):
             await self.publish()  # the page shows what the action started
         try:
-            await self.bus.reply(message, pack(answer))
+            # Deleted before the answer: the ui process that reads it finds the action done.
             await self.bus.done("actions", ACTION_GROUP, message.id)
+            await self.bus.reply(message, pack(answer))
         except RedisError as exc:
             log.warning("answer to the action of a ui process lost: %s", exc)
 
