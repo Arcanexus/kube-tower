@@ -296,8 +296,11 @@ function ktCurrentTheme() {
 }
 function ktShowTheme() {
   const theme = ktCurrentTheme();
-  const label = document.querySelector(".theme-label");
-  if (label) label.textContent = theme === "auto" ? "Auto theme" : theme === "light" ? "Light theme" : "Dark theme";
+  const button = document.querySelector(".theme-toggle");
+  if (!button) return;
+  const label = (theme === "auto" ? "Auto theme" : theme === "light" ? "Light theme" : "Dark theme") + " (click to change)";
+  button.title = label;
+  button.setAttribute("aria-label", label);
 }
 function ktCycleTheme() {
   const next = KT_THEMES[(KT_THEMES.indexOf(ktCurrentTheme()) + 1) % KT_THEMES.length];

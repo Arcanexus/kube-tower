@@ -205,13 +205,13 @@ main { flex: 1; padding: 1.25rem 1.5rem; }
 .sidebar .logout { display: inline-flex; padding: .3rem; background: transparent; border: 0; color: #8e9bb3; }
 .sidebar .logout:hover { color: #fff; background: rgba(255, 255, 255, .07); filter: none; }
 
-/* Theme button: shows the icon of the current theme */
+/* Theme button: the icon of the current theme, at the end of the version line */
 .theme-toggle {
-  display: flex; align-items: center; justify-content: flex-start; gap: .35rem; width: 100%; padding: .4rem .5rem;
-  background: transparent; border: 1px solid rgba(255, 255, 255, .15); color: var(--kt-sidebar-fg); font-size: .8rem; font-weight: 500;
+  display: inline-flex; align-items: center; justify-content: center; margin-left: auto; padding: .3rem;
+  background: transparent; border: 0; color: #8e9bb3;
 }
 .theme-toggle:hover { background: rgba(255, 255, 255, .07); color: #fff; filter: none; }
-.theme-toggle .icon { display: none; }
+.theme-toggle .icon { display: none; margin: 0; }
 :root:not([data-theme]) .theme-toggle .theme-auto,
 [data-theme="light"] .theme-toggle .theme-light,
 [data-theme="dark"] .theme-toggle .theme-dark { display: inline-block; }
@@ -238,7 +238,8 @@ main { flex: 1; padding: 1.25rem 1.5rem; }
   .sidebar nav > ul:not(.nav-secondary) .icon { width: 1.35rem; height: 1.35rem; }
   .sidebar nav ul.nav-secondary { margin: 0; padding: 0; border: 0; }
   .sidebar .nav-secondary a, .theme-toggle { width: 2.75rem; height: 2.75rem; justify-content: center; padding: 0; border: 0; }
-  .sidebar .nav-secondary span, .theme-toggle .theme-label, .sidebar .version, .sidebar .user-name > span { display: none; }
+  .sidebar .nav-secondary span, .sidebar .version a, .sidebar .user-name > span { display: none; }
+  .theme-toggle { margin: 0; color: var(--kt-sidebar-fg); }
   .sidebar footer { flex-direction: row; align-items: center; gap: 0; }
   .sidebar .user-name { flex: none; width: 2.75rem; height: 2.75rem; justify-content: center; }
   .sidebar .logout { width: 2.75rem; height: 2.75rem; justify-content: center; align-items: center; }

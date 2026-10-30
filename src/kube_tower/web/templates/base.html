@@ -50,12 +50,12 @@
           {% endif %}
         </div>
         {% endif %}
-        <button type="button" class="theme-toggle" onclick="ktCycleTheme()" title="Theme">
-          {{ icon("theme-auto", "theme-auto") }}{{ icon("sun", "theme-light") }}{{ icon("moon", "theme-dark") }}<span class="theme-label"></span>
-        </button>
         <div class="version">
           <a href="about" title="About kube-tower"><small>{{ "v" if version[:1].isdigit() }}{{ version }}</small></a>
           <a href="https://github.com/Arcanexus/kube-tower" target="_blank" rel="noopener" title="kube-tower on GitHub" aria-label="kube-tower on GitHub">{{ icon("github") }}</a>
+          <button type="button" class="theme-toggle" onclick="ktCycleTheme()" title="Theme" aria-label="Theme">
+            {{ icon("theme-auto", "theme-auto") }}{{ icon("sun", "theme-light") }}{{ icon("moon", "theme-dark") }}
+          </button>
         </div>
       </footer>
     </aside>
