@@ -97,7 +97,7 @@ auth:                          # login on the UI and the API, see authentication
   url: ""                      # URL users open kube-tower with (needed by the SSO)
   oidc:                        # single sign-on, see authentication.md#single-sign-on-oidc
     issuer: ""                 # empty: no SSO
-    clientId: ""
+    clientId: ""               # empty: from $KUBE_TOWER_OIDC_CLIENT_ID (the chart reads it from auth.oidc.existingSecret)
     adminGroups: []
     defaultRole: readonly
   dexUrl: ""                   # Dex served on <url>api/dex (Helm chart: dex.enabled)
@@ -264,7 +264,7 @@ existing Secrets (ExternalSecrets, Sealed Secrets) outside a lab.
 | Registry credentials, several at once | `registries.existingSecret` | `registries.dockerConfigJson` | a `kubernetes.io/dockerconfigjson` Secret |
 | Private git repositories holding charts | `git.existingSecret` / `git.secretKey` | `git.token` | a token |
 | Login: admin password and session key | `auth.existingSecret` (keys `admin.password`, `session.key`) | no: created by kube-tower at startup, see [authentication](authentication.md) | random values |
-| OIDC client secret (SSO) | `auth.oidc.clientSecret.existingSecret` (+ `key`) | no | the client secret |
+| OIDC client (SSO) | `auth.oidc.existingSecret` (+ `clientIdKey`, `clientSecretKey`) | no | the client id and the client secret |
 | Passwords of the local accounts | `auth.users[].existingSecret` (+ `passwordKey`) | no | a password |
 | Remote clusters | `clusters[].existingSecret` or `config.clusters.secretNames` (labelled Secrets with `config.clusters.listSecrets: true`) | `clusters[]` with `server`/`config` or `kubeconfig` | see [clusters.md](clusters.md) |
 

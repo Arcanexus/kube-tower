@@ -42,6 +42,11 @@ All notable changes to this project are documented here. The format follows
   (`kubectl -n kube-tower get secret kube-tower-auth -o jsonpath='{.data.admin\.password}' | base64 -d`).
   Scripts calling the API need the Basic auth of a local account. Set `auth.enabled: false` to keep
   kube-tower open as in 1.0.
+- The Secret of the single sign-on client holds the **client id and the client secret**:
+  `auth.oidc.existingSecret` with the keys `clientId` and `clientSecret` (`clientIdKey`,
+  `clientSecretKey`), so the client id stays out of the values too (ExternalSecrets, Sealed Secrets).
+  `auth.oidc.clientId` still sets it in the values instead. `auth.oidc.clientSecret.existingSecret` and
+  `.key` of 1.1.0-rc.1 keep working.
 
 ## [1.0.0] - 2026-10-30
 

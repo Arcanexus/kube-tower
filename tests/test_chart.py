@@ -662,23 +662,55 @@ def test_auth_in_distributed_mode(tmp_path):
     assert ("Role", "kt-kube-tower-auth") in docs
 
 
-def test_auth_oidc(tmp_path):
+def test_auth_oidc(tmp_path, monkeypatch):
     oidc = {
         "name": "Authentik",
         "issuer": "https://auth.example.com/application/o/kube-tower/",
-        "clientId": "kube-tower",
-        "clientSecret": {"existingSecret": "kt-oidc"},
+        "existingSecret": "kt-oidc",
         "adminGroups": ["ops"],
     }
     docs = render(tmp_path, {"auth": {"enabled": True, "admin": False, "url": "https://kt.example.com/", "oidc": oidc}})
+    # The client id and the client secret both come from the Secret
+    variables = env(docs[("Deployment", "kt-kube-tower")]["spec"])
+    assert variables["KUBE_TOWER_OIDC_CLIENT_ID"] == {"secretKeyRef": {"name": "kt-oidc", "key": "clientId"}}
+    assert variables["KUBE_TOWER_OIDC_CLIENT_SECRET"] == {"secretKeyRef": {"name": "kt-oidc", "key": "clientSecret"}}
+    config = yaml.safe_load(docs[("ConfigMap", "kt-kube-tower")]["data"]["config.yaml"])["auth"]["oidc"]
+    assert "existingSecret" not in config and "clientIdKey" not in config and config["clientId"] == ""
+    monkeypatch.setenv("KUBE_TOWER_OIDC_CLIENT_ID", "kube-tower")  # as the pod gets it from the Secret
     auth = app_settings(tmp_path, docs).auth
-    assert auth.url == "https://kt.example.com/" and not auth.admin
-    assert (auth.oidc.name, auth.oidc.issuer, auth.oidc.client_id) == ("Authentik", oidc["issuer"], "kube-tower")
+    assert auth.url == "https://kt.example.com/" and not auth.admin and auth.oidc.client_id == "kube-tower"
+    assert (auth.oidc.name, auth.oidc.issuer, auth.oidc.client_id_env) == (
+        "Authentik",
+        oidc["issuer"],
+        "KUBE_TOWER_OIDC_CLIENT_ID",
+    )
     assert auth.oidc.admin_groups == ["ops"] and auth.oidc.default_role == "readonly" and auth.oidc.groups_claim == "groups"
-    assert env(docs[("Deployment", "kt-kube-tower")]["spec"])["KUBE_TOWER_OIDC_CLIENT_SECRET"] == {
-        "secretKeyRef": {"name": "kt-oidc", "key": "clientSecret"}
-    }
     assert "auth.url is required" in render_error(tmp_path, {"auth": {"enabled": True, "oidc": oidc}})
+    assert "auth.oidc.existingSecret is required" in render_error(
+        tmp_path, {"auth": {"enabled": True, "url": "https://kt.example.com/", "oidc": {"issuer": oidc["issuer"]}}}
+    )
+
+    # Other keys; the client id in the values; clientSecret.existingSecret of 1.1.0-rc.1
+    keys = oidc | {"clientIdKey": "id", "clientSecretKey": "secret"}
+    variables = env(
+        render(tmp_path, {"auth": {"url": "https://kt.example.com/", "oidc": keys}})[("Deployment", "kt-kube-tower")]["spec"]
+    )
+    assert variables["KUBE_TOWER_OIDC_CLIENT_ID"]["secretKeyRef"]["key"] == "id"
+    assert variables["KUBE_TOWER_OIDC_CLIENT_SECRET"]["secretKeyRef"]["key"] == "secret"
+    old = {"issuer": oidc["issuer"], "clientId": "kube-tower", "clientSecret": {"existingSecret": "kt-oidc", "key": "s"}}
+    monkeypatch.delenv("KUBE_TOWER_OIDC_CLIENT_ID")
+    docs = render(tmp_path, {"auth": {"url": "https://kt.example.com/", "oidc": old}})
+    variables = env(docs[("Deployment", "kt-kube-tower")]["spec"])
+    assert "KUBE_TOWER_OIDC_CLIENT_ID" not in variables
+    assert variables["KUBE_TOWER_OIDC_CLIENT_SECRET"] == {"secretKeyRef": {"name": "kt-oidc", "key": "s"}}
+    assert app_settings(tmp_path, docs).auth.oidc.client_id == "kube-tower"
+
+    # Distributed: the client id on every pod (each checks the configuration), the secret on the ui pods only
+    values = {"auth": {"url": "https://kt.example.com/", "oidc": oidc}} | DISTRIBUTED
+    docs = render(tmp_path, values)
+    controller, ui = (env(deployment(docs, role)) for role in ("controller", "ui"))
+    assert "KUBE_TOWER_OIDC_CLIENT_ID" in controller and "KUBE_TOWER_OIDC_CLIENT_SECRET" not in controller
+    assert "KUBE_TOWER_OIDC_CLIENT_SECRET" in ui
     # No issuer: no SSO in the config
     docs = render(tmp_path, {"auth": {"enabled": True, "url": "https://kt.example.com/"}})
     assert app_settings(tmp_path, docs).auth.oidc.issuer == ""

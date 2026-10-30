@@ -295,11 +295,11 @@ auth:
   oidc:
     name: SSO                   # login button: "Log in with <name>"
     issuer: ""                  # empty: no SSO
-    clientId: ""
-    # Secret holding the client secret
-    clientSecret:
-      existingSecret: ""
-      key: clientSecret
+    # Secret holding the client id and the client secret of kube-tower in the provider (keys below)
+    existingSecret: ""
+    clientIdKey: clientId
+    clientSecretKey: clientSecret
+    clientId: ""                # set to give the client id here instead of in the Secret
     scopes: [openid, profile, email, groups]
     usernameClaim: preferred_username
     groupsClaim: groups

@@ -10,7 +10,7 @@ import respx
 from fastapi.testclient import TestClient
 
 from kube_tower.auth import User
-from kube_tower.config import AuthSettings, OidcSettings, Settings, check_auth
+from kube_tower.config import AuthSettings, OidcSettings, Settings, check_auth, load_settings
 from kube_tower.main import create_app
 from kube_tower.oidc import OidcClient, OidcError, jwt_claims, pkce
 from test_web import FakeScanner
@@ -253,3 +253,18 @@ def test_no_sso_routes_without_issuer(tmp_path):
     c = TestClient(create_app(settings, FakeScanner(), background=False))
     assert c.get("/auth/login").status_code == 404 and c.get("/auth/callback").status_code == 404
     assert "Log in with" not in c.get("/login").text
+
+
+def test_client_id_from_the_environment(tmp_path, monkeypatch):
+    """The chart gives the client id of its Secret in $KUBE_TOWER_OIDC_CLIENT_ID: used when clientId is empty."""
+    config = tmp_path / "config.yaml"
+    config.write_text(f"auth:\n  enabled: true\n  url: https://x/\n  oidc:\n    issuer: {ISSUER}\n    clientId: ''\n")
+    monkeypatch.setenv("KUBE_TOWER_OIDC_CLIENT_ID", " kube-tower\n")
+    assert load_settings(str(config)).auth.oidc.client_id == "kube-tower"
+    # A client id in the configuration wins
+    config.write_text(f"auth:\n  enabled: true\n  url: https://x/\n  oidc:\n    issuer: {ISSUER}\n    clientId: mine\n")
+    assert load_settings(str(config)).auth.oidc.client_id == "mine"
+    monkeypatch.delenv("KUBE_TOWER_OIDC_CLIENT_ID")
+    config.write_text(f"auth:\n  enabled: true\n  url: https://x/\n  oidc:\n    issuer: {ISSUER}\n")
+    with pytest.raises(ValueError, match="KUBE_TOWER_OIDC_CLIENT_ID"):
+        load_settings(str(config))
