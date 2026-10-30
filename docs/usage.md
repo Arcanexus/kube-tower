@@ -5,9 +5,9 @@
 The left sidebar gives access to five pages: **Overview**, **Images**, **Helm charts**, **Security**
 and **Administration**, then **About**. At its bottom, the user logged in, with its role, and the
 *Log out* button (see [authentication](authentication.md): log in as `admin` with the password of the
-Secret `kube-tower-auth`, or with single sign-on). Below, a button switches the theme between auto
-(follows the system), light and dark; the choice is remembered by the browser. The version under it
-opens the About page, the GitHub icon the repository.
+Secret `kube-tower-auth`, or with single sign-on). Below, on the last line, the version opens the About
+page, the GitHub icon the repository, and the theme icon at the right switches the theme between auto
+(follows the system, screen icon), light (sun) and dark (moon); the choice is remembered by the browser.
 
 The top bar of every page holds, after the page title:
 
@@ -56,8 +56,8 @@ the matching tab of the Administration page.
 
 ### Dark theme and phones
 
-The theme follows the system (or the sidebar button). On a phone, the five pages are in a tab bar at the
-bottom of the screen, the top bar keeps the About link, the user, *Log out* and the theme button, and the lists show each line
+The theme follows the system (or the theme icon at the bottom of the sidebar). On a phone, the five pages are in a tab bar at the
+bottom of the screen, the top bar keeps the About link, the user, *Log out* and the theme icon, and the lists show each line
 as a block: name first, then the versions and the status.
 
 | Dark theme | Phone |

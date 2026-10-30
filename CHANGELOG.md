@@ -37,6 +37,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- UI: the theme switch is a simple icon at the end of the sidebar's last line, next to the version and
+  the GitHub link (still in the top bar on a phone); its tooltip tells the current theme.
 - **The login is on by default** (`auth.enabled: true`): after an upgrade from 1.0, log in as `admin`
   with the password kube-tower generates in the Secret `<release>-auth`
   (`kubectl -n kube-tower get secret kube-tower-auth -o jsonpath='{.data.admin\.password}' | base64 -d`).
