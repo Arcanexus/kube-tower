@@ -68,9 +68,9 @@ grafanaDashboard:
   enabled: true                  # ConfigMap for the Grafana dashboard sidecar
 ```
 
-kube-tower has no authentication of its own: put it behind your ingress authentication
-(oauth2-proxy, Authentik, Traefik forward auth…) if the UI must not be public. It only reads
-data and never shows secret values.
+kube-tower asks for a login: log in as `admin`, with the password kube-tower generates in the
+Secret `kube-tower-auth` at its first start, then add local accounts, single sign-on or Dex (see
+[authentication](authentication.md)). It only reads data and never shows secret values.
 
 ### Vulnerability scanning (Trivy)
 
@@ -167,8 +167,8 @@ namespace, with the UI reachable only through `kubectl port-forward -n kube-towe
 
 ### Complete example
 
-A typical homelab setup: the UI behind Traefik with a cert-manager certificate and an
-authentication middleware, every cluster ArgoCD manages scanned too, Docker Hub and GitHub
+A typical homelab setup: the UI behind Traefik with a cert-manager certificate, the login with
+Authentik (single sign-on), every cluster ArgoCD manages scanned too, Docker Hub and GitHub
 credentials to avoid rate limits, and Prometheus metrics.
 
 ```yaml
@@ -216,13 +216,22 @@ spec:
               existingSecret: ghcr-token
               passwordKey: token
 
+        # Login: the admin account, and single sign-on with Authentik (docs/authentication.md)
+        auth:
+          url: https://kube-tower.example.com/
+          oidc:
+            name: Authentik
+            issuer: https://auth.example.com/application/o/kube-tower/
+            clientId: kube-tower
+            clientSecret:
+              existingSecret: kube-tower-oidc
+            adminGroups: [kube-tower-admins]
+
         ingress:
           enabled: true
           className: traefik
           annotations:
             cert-manager.io/cluster-issuer: le-wildcard-issuer
-            # kube-tower has no authentication of its own: protect the UI
-            traefik.ingress.kubernetes.io/router.middlewares: authentik-ak-outpost-authentik-embedded-outpost@kubernetescrd
           hosts:
             - host: kube-tower.example.com
               paths:
@@ -244,7 +253,7 @@ spec:
       - CreateNamespace=true
 ```
 
-Adapt the host, the cluster issuer and the middleware to your cluster, and drop the blocks you
+Adapt the host, the cluster issuer and the Authentik provider to your cluster, and drop the blocks you
 do not need.
 
 **Credential Secrets.** Keep tokens out of git: create the Secrets referenced in
@@ -258,6 +267,7 @@ kubectl create namespace kube-tower
 kubectl -n kube-tower create secret generic dockerhub-credentials \
   --from-literal=username=<docker-hub-user> --from-literal=password=<access-token>
 kubectl -n kube-tower create secret generic ghcr-token --from-literal=token=<github-pat-read-packages>
+kubectl -n kube-tower create secret generic kube-tower-oidc --from-literal=clientSecret=<authentik-client-secret>
 ```
 
 A missing Secret keeps the pod in `ContainerCreating`: create the Secrets before the first sync,
@@ -322,7 +332,7 @@ To follow the development version, point `source` at the git repository instead:
 | `config.registries.useImagePullSecrets` | `false` | Reuse the image pull secrets of the workloads (adds `get` on secrets to the ClusterRole), see [registries](registries.md#reusing-the-image-pull-secrets) |
 | `git.existingSecret` / `git.secretKey` | `""` / `token` | Existing Secret with a token for private git repositories holding charts |
 | `git.token` | `""` | The same token inline, the chart creates the Secret |
-| `auth.enabled` | `false` | Login on the UI and the API, see [authentication](authentication.md) |
+| `auth.enabled` | `true` | Login on the UI and the API, see [authentication](authentication.md) |
 | `auth.admin` / `.users` / `.anonymousRole` | `true` / `[]` / `""` | Built-in `admin` account, local accounts (`name`, `role`, `existingSecret`, `passwordKey`), role of the visitors not logged in |
 | `auth.existingSecret` | `""` | Secret with `admin.password` and `session.key`; empty: `<release>-auth`, created by kube-tower when missing |
 | `auth.url` | `""` | URL users open kube-tower with, required by the SSO |

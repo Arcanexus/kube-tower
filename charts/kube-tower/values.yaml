@@ -267,10 +267,10 @@ git:
   # ...or the token itself, the chart then creates the Secret.
   token: ""
 
-# Login on the UI and the API, the ArgoCD way (docs/authentication.md). Off: anyone who reaches kube-tower
-# can use it, as before.
+# Login on the UI and the API, the ArgoCD way (docs/authentication.md): on by default, the password of the
+# built-in admin account in the Secret <release>-auth. false: anyone who reaches kube-tower can use it.
 auth:
-  enabled: false
+  enabled: true
   # Built-in `admin` account (admin role): its password is the key admin.password of the auth Secret.
   admin: true
   # Local accounts, their password in a Secret:

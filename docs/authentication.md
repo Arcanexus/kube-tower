@@ -1,17 +1,10 @@
 # Authentication
 
-kube-tower can ask for a login on the UI and the API, the ArgoCD way: a built-in `admin` account
+kube-tower asks for a login on the UI and the API, the ArgoCD way: a built-in `admin` account
 with a generated password, local accounts, single sign-on with an OpenID Connect provider (Dex,
-Authentik, Keycloak, Entra ID, Okta...), and two roles. It is off by default: without it,
-anyone who reaches kube-tower can use it, as in 1.0.
+Authentik, Keycloak, Entra ID, Okta...), and two roles. It is on by default since 1.1.
 
-## Turn it on
-
-```yaml
-# values.yaml of the chart
-auth:
-  enabled: true
-```
+## The admin account
 
 At startup, kube-tower creates the Secret `<release>-auth` (`kube-tower-auth` for a release named
 `kube-tower`) with two random values, like the `argocd-initial-admin-secret` of ArgoCD:
@@ -40,6 +33,17 @@ first install with the roles apart, the login page asks to wait about a minute. 
 password of `admin`, change `admin.password` in the Secret: the open sessions of `admin` are
 closed within a minute, when the kubelet updates the mounted file. Deleting the Secret makes
 kube-tower create a new one at its next start, with new values (every session closed).
+
+### Turn it off
+
+```yaml
+# values.yaml of the chart
+auth:
+  enabled: false
+```
+
+Anyone who reaches kube-tower can then use it, with the `admin` role, as in 1.0: keep it for a UI
+only reachable with `kubectl port-forward` or behind the authentication of your ingress.
 
 ### Bring your own Secret
 
@@ -269,7 +273,7 @@ The chart writes them in the configuration (see [configuration](configuration.md
 
 ```yaml
 auth:
-  enabled: false
+  enabled: false               # the chart sets true (auth.enabled, on by default)
   admin: true                  # built-in admin account, password in the auth Secret (admin.password)
   users:                       # local accounts
     - name: alice

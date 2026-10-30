@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Login and roles**, the ArgoCD way, off by default (`auth.enabled`, see
+- **Login and roles**, the ArgoCD way, on by default (`auth.enabled`, see
   [authentication](docs/authentication.md)): a built-in `admin` account whose password kube-tower
   generates in the Secret `<release>-auth` (`admin.password`, with the `session.key` signing the
   sessions), created at startup when missing so it stays the same on upgrades and ArgoCD syncs, or
@@ -34,6 +34,14 @@ All notable changes to this project are documented here. The format follows
   architectures differ, and the size of each running digest in the *Digests* section. The nodes are
   read for the sizes even with `images.includeNodeImages: false`. The size is also in `/api/snapshot`
   (`sizes`, bytes by digest).
+
+### Changed
+
+- **The login is on by default** (`auth.enabled: true`): after an upgrade from 1.0, log in as `admin`
+  with the password kube-tower generates in the Secret `<release>-auth`
+  (`kubectl -n kube-tower get secret kube-tower-auth -o jsonpath='{.data.admin\.password}' | base64 -d`).
+  Scripts calling the API need the Basic auth of a local account. Set `auth.enabled: false` to keep
+  kube-tower open as in 1.0.
 
 ## [1.0.0] - 2026-10-30
 
