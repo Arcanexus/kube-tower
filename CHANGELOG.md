@@ -214,6 +214,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Image: 8 vulnerabilities (5 high) reported by Trivy in `setuptools` 70.3.0, `msgpack` 1.1.2 and
+  `urllib3` 2.7.0. They came from the packages vendored by pip, which the base image ships and
+  kube-tower never runs: pip is now removed from the image, which has no known vulnerability left.
+
 - Clicks that needed to be repeated in the UI: a click beside an open detail panel only closed it (a
   filter field or menu needed a second click), and during a scan the status polled every 3 seconds
   replaced the *Scan now* button and closed the menu of problems under the pointer. A poll now replaces
