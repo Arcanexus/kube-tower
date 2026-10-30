@@ -182,3 +182,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-redis" (include "kube-tower.fullname" .) }}
 {{- end }}
 {{- end }}
+
+{{/*
+Secret of the login: admin password and session key (auth.enabled).
+*/}}
+{{- define "kube-tower.authSecretName" -}}
+{{- .Values.auth.existingSecret | default (printf "%s-auth" (include "kube-tower.fullname" .)) }}
+{{- end }}

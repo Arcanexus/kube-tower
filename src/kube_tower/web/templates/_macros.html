@@ -151,7 +151,9 @@
 {# Buttons of a detail panel that check its item again: each starts the rescan with the API, then the
    panel polls itself while it runs (the poll that sees it over reloads the results, see kube-tower.js). #}
 <p class="rescan">
-{% if busy %}
+{% if not can_act() %}
+  <small>{{ icon("lock") }}Rescans need the admin role.</small>
+{% elif busy %}
   <small aria-busy="true">Rescanning…</small>
   <span hidden hx-get="{{ detail_url }}&amp;polling=1" hx-trigger="every 3s [document.visibilityState=='visible']" hx-target="#detail"></span>
 {% else %}

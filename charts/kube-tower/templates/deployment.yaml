@@ -201,6 +201,16 @@ spec:
               readOnly: true
             {{- end }}
             {{- end }}
+            {{- if and $.Values.auth.enabled (has "ui" $roles) }}
+            - name: auth
+              mountPath: /etc/kube-tower/auth
+              readOnly: true
+            {{- range $i, $u := $.Values.auth.users }}
+            - name: user-{{ $i }}
+              mountPath: /etc/kube-tower/users/{{ $i }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
             {{- with $.Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -244,6 +254,18 @@ spec:
             items:
               - key: {{ if $.Values.registries.ca.existingConfigMap }}{{ $.Values.registries.ca.key | default "ca.crt" }}{{ else }}ca.crt{{ end }}
                 path: ca.crt
+        {{- end }}
+        {{- end }}
+        {{- if and $.Values.auth.enabled (has "ui" $roles) }}
+        # Created by the controller when missing: optional, the kubelet mounts it once it exists
+        - name: auth
+          secret:
+            secretName: {{ include "kube-tower.authSecretName" $ }}
+            optional: true
+        {{- range $i, $u := $.Values.auth.users }}
+        - name: user-{{ $i }}
+          secret:
+            secretName: {{ $u.existingSecret }}
         {{- end }}
         {{- end }}
         {{- with $.Values.extraVolumes }}

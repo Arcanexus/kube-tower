@@ -39,6 +39,17 @@
         </ul>
       </nav>
       <footer>
+        {% set user = current_user() %}
+        {% if user %}
+        <div class="user">
+          {% if user.source == "anonymous" %}
+          <a class="user-name" href="login" title="Not logged in: read-only. Log in to run scans and actions.">{{ icon("lock") }}<span>Log in</span></a>
+          {% else %}
+          <span class="user-name" title="Logged in as {{ user.name }} ({{ user.role }})">{{ icon("user") }}<span>{{ user.name }} <small>{{ user.role }}</small></span></span>
+          <form method="post" action="logout" hx-boost="false"><button type="submit" class="logout" title="Log out" aria-label="Log out">{{ icon("log-out") }}</button></form>
+          {% endif %}
+        </div>
+        {% endif %}
         <button type="button" class="theme-toggle" onclick="ktCycleTheme()" title="Theme">
           {{ icon("theme-auto", "theme-auto") }}{{ icon("sun", "theme-light") }}{{ icon("moon", "theme-dark") }}<span class="theme-label"></span>
         </button>

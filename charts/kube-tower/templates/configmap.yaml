@@ -54,6 +54,16 @@ labels its pod, selected by the controller Service */ -}}
 {{- $_ := set $internal "leaseName" (printf "%s-controller" (include "kube-tower.fullname" .)) }}
 {{- $_ := set $config "internal" $internal }}
 {{- end }}
+{{- /* Login: the passwords are mounted from Secrets, only their paths go in the config */ -}}
+{{- if .Values.auth.enabled }}
+{{- $users := list }}
+{{- range $i, $u := .Values.auth.users }}
+{{- $name := required (printf "auth.users[%d].name is required" $i) $u.name }}
+{{- $secret := required (printf "auth.users[%d].existingSecret is required (Secret holding the password)" $i) $u.existingSecret }}
+{{- $users = append $users (dict "name" $name "role" ($u.role | default "readonly") "passwordFile" (printf "/etc/kube-tower/users/%d/%s" $i ($u.passwordKey | default "password"))) }}
+{{- end }}
+{{- $_ := set $config "auth" (dict "enabled" true "admin" .Values.auth.admin "users" $users "anonymousRole" .Values.auth.anonymousRole "sessionDuration" .Values.auth.sessionDuration "metricsPublic" .Values.auth.metricsPublic "secretName" (include "kube-tower.authSecretName" .) "secretDir" "/etc/kube-tower/auth") }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -85,6 +85,15 @@ redis:                         # Redis / Valkey: required when the roles are apa
   passwordEnv: KUBE_TOWER_REDIS_PASSWORD
   key: kube-tower:snapshot     # change it when several installations share one Redis
   keyPrefix: kube-tower        # prefix of the keys of the distributed mode (ADR 0003); change it likewise
+auth:                          # login on the UI and the API, see authentication.md
+  enabled: false
+  admin: true                  # built-in admin account, password in the auth Secret (admin.password)
+  users: []                    # local accounts: name, role (readonly | admin), passwordFile or passwordEnv
+  anonymousRole: ""            # "" (login required) | readonly
+  sessionDuration: 24h
+  secretName: kube-tower-auth  # admin.password and session.key, created with random values when missing
+  secretDir: /etc/kube-tower/auth
+  metricsPublic: true          # false: /metrics needs the Basic auth of a local account
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
@@ -247,6 +256,8 @@ existing Secrets (ExternalSecrets, Sealed Secrets) outside a lab.
 | Registry credentials, one Secret per registry | `registries.credentials[].existingSecret` (+ `usernameKey`, `passwordKey`) | `registries.credentials[].password` (+ `username`) | username / password or token |
 | Registry credentials, several at once | `registries.existingSecret` | `registries.dockerConfigJson` | a `kubernetes.io/dockerconfigjson` Secret |
 | Private git repositories holding charts | `git.existingSecret` / `git.secretKey` | `git.token` | a token |
+| Login: admin password and session key | `auth.existingSecret` (keys `admin.password`, `session.key`) | no: created by kube-tower at startup, see [authentication](authentication.md) | random values |
+| Passwords of the local accounts | `auth.users[].existingSecret` (+ `passwordKey`) | no | a password |
 | Remote clusters | `clusters[].existingSecret` or `config.clusters.secretNames` (labelled Secrets with `config.clusters.listSecrets: true`) | `clusters[]` with `server`/`config` or `kubeconfig` | see [clusters.md](clusters.md) |
 
 A change to a Secret created by the chart restarts the pod.

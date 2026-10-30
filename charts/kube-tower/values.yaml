@@ -267,6 +267,28 @@ git:
   # ...or the token itself, the chart then creates the Secret.
   token: ""
 
+# Login on the UI and the API, the ArgoCD way (docs/authentication.md). Off: anyone who reaches kube-tower
+# can use it, as before.
+auth:
+  enabled: false
+  # Built-in `admin` account (admin role): its password is the key admin.password of the auth Secret.
+  admin: true
+  # Local accounts, their password in a Secret:
+  #   - name: alice
+  #     role: readonly          # readonly (sees everything) or admin (also runs scans, rescans, tests...)
+  #     existingSecret: kube-tower-alice
+  #     passwordKey: password
+  users: []
+  # Role of the visitors who are not logged in: "" (they must log in) or readonly.
+  anonymousRole: ""
+  sessionDuration: 24h
+  # Secret with the keys admin.password and session.key (signs the sessions). Empty: <release>-auth, created
+  # with random values by kube-tower at startup when it does not exist (like argocd-initial-admin-secret),
+  # kept on upgrades and ArgoCD syncs. Set it to bring your own (ExternalSecret...).
+  existingSecret: ""
+  # /metrics stays open for Prometheus; false: it needs the Basic auth of a local user.
+  metricsPublic: true
+
 service:
   type: ClusterIP
   port: 80

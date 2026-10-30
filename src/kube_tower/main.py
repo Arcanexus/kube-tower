@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from kubernetes import client
 
 from kube_tower.administration import Administration
+from kube_tower.auth import Authenticator, ensure_secret
 from kube_tower.backend import LocalBackend, RemoteBackend
 from kube_tower.bus import Bus, connect
 from kube_tower.clusters import current_namespace
@@ -30,6 +31,7 @@ from kube_tower.store import redis_store
 from kube_tower.tasks import QueueRunner
 from kube_tower.web import api, metrics, ui
 from kube_tower.web.csrf import add_csrf_protection
+from kube_tower.web.login import add_login
 from kube_tower.worker import Worker
 
 # The scans run in threads, which share the GIL with the web server: hand it over every millisecond
@@ -66,6 +68,42 @@ def _election(settings: Settings, scanner: Scanner) -> LeaderElection:
     return LeaderElection(settings.internal.lease_name, namespace, client.CoordinationV1Api(local), identity=pod, label=label)
 
 
+AUTH_SECRET_RETRY = 30  # seconds
+
+
+async def keep_auth_secret(settings: Settings, scanner: Scanner, auth: Authenticator | None) -> None:
+    """Controller: create the auth Secret when it is missing (admin password, session key), then hand its
+    values to the ui of this process until the kubelet mounts it."""
+    log = logging.getLogger(__name__)
+    local = scanner.registry.local_client()
+    if local is None:
+        log.warning(
+            "auth.enabled: no Kubernetes API of the cluster kube-tower runs in, the auth Secret is not created: "
+            "mount one in %s (keys admin.password and session.key)",
+            settings.auth.secret_dir,
+        )
+        return
+    core, namespace = client.CoreV1Api(local), current_namespace()
+    while True:
+        try:
+            data = await asyncio.to_thread(ensure_secret, core, namespace, settings.auth.secret_name)
+        except client.ApiException as exc:
+            log.error(
+                "cannot read or create the auth Secret %s/%s: %s %s - the ServiceAccount needs get and create on "
+                "this Secret (Helm chart: rbac.create=true), retry in %ss",
+                namespace,
+                settings.auth.secret_name,
+                exc.status,
+                exc.reason,
+                AUTH_SECRET_RETRY,
+            )
+            await asyncio.sleep(AUTH_SECRET_RETRY)
+            continue
+        if auth is not None:
+            auth.fallback = data
+        return
+
+
 def create_app(
     settings: Settings | None = None,
     scanner: Scanner | None = None,
@@ -85,9 +123,12 @@ def create_app(
     backend: LocalBackend | RemoteBackend | None = None
     # Distributed mode: every exchange with the other processes goes through Valkey (ADR 0003).
     bus = (bus or connect(settings)) if settings.distributed else None
+    auth = Authenticator(settings.auth) if settings.auth.enabled and "ui" in roles else None
     if "controller" in roles:
         scanner = scanner or Scanner(settings, store=redis_store(settings) if settings.redis.url else None)
         runs.append(scanner.run_forever)
+        if settings.auth.enabled:
+            runs.append(lambda: keep_auth_secret(settings, scanner, auth))
         administration = administration or Administration(scanner)
         backend = LocalBackend(
             scanner,
@@ -152,6 +193,8 @@ def create_app(
         app.include_router(api.router)
         ui.mount(app)
         add_csrf_protection(app)
+        if auth is not None:
+            add_login(app, auth)
     else:
         app.include_router(api.probes)  # no UI or API: only the health probes
     log = logging.getLogger(__name__)

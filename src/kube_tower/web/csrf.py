@@ -1,7 +1,8 @@
 """Cross-site request forgery protection, without state nor token.
 
-kube-tower has no login: anyone who can reach it can start scans or clear the Trivy cache. A page on
-another site must not do it through the browser of someone who can reach it. Browsers say where a
+Without login (auth.enabled false) anyone who can reach kube-tower can start scans or clear the Trivy
+cache; with it, a session cookie does. A page on another site must not do it through the browser of
+someone who can reach it (or is logged in). Browsers say where a
 request comes from (`Sec-Fetch-Site`, else `Origin`): requests that change something are refused when
 they come from another site. Clients that are not browsers (curl, scripts) send neither and are allowed.
 """

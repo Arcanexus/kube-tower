@@ -42,6 +42,7 @@ never updates anything, you stay in control of your GitOps workflow.
 | 🖥️ **A UI made for triage** | Five pages: an Overview with a *To do* list (most urgent first), Images with their versions and vulnerabilities in one list (one search for names, tags and CVE IDs), Helm charts with their subchart tree, Security (Trivy Operator reports), Administration. *Cluster* and *Running only* filters common to every page (on by default, *Running only* leaves out the images no pod runs), filters kept in the URL, sortable columns with fixed headers, lists loaded 30 rows at a time as you scroll, resizable or full screen detail panels (digests, image size, registry links, a cluster › namespace › workload › pod tree of where each image is used, subchart tree, CVE list), per item rescan, live logs, light and dark themes, made for phones too (tab bar at the bottom). No CSS framework: about 35 KB of compressed static files. |
 | 🔐 **Registry authentication** | Per registry credentials, cloud identities (IRSA / EKS Pod Identity, GKE and AKS Workload Identity), reuse of the clusters' image pull secrets, private CAs. |
 | 🧰 **Administration** | State of every role and pod (distributed mode), rescan one item or what failed, update the Trivy database, test the connectivity to clusters and registries, see whether each registry accepts the credentials, follow the logs of every pod. Read-only: nothing is ever changed in the clusters. |
+| 🔑 **Login and roles** | Optional login the ArgoCD way: a built-in `admin` account with a generated password, local accounts, a `readonly` role that sees everything and an `admin` role that also runs scans and actions, sessions any UI pod can serve, Basic auth for scripts. |
 | 🪶 **Stateless** | No database. One small pod, rebuilt inventory every few hours or on demand. |
 | 📈 **Observable** | JSON API and Prometheus metrics, ready for Grafana dashboards and alerts. |
 
@@ -52,8 +53,8 @@ never updates anything, you stay in control of your GitOps workflow.
 | ![Image details](docs/images/image-detail.png) | ![Administration](docs/images/administration.png) |
 | **Security** | **About** |
 | ![Security](docs/images/security.png) | ![About](docs/images/about.png) |
-| **Dark theme** | |
-| ![Dark theme](docs/images/dark.png) | |
+| **Dark theme** | **Login** |
+| ![Dark theme](docs/images/dark.png) | ![Login](docs/images/login.png) |
 
 ## Quick start
 
@@ -70,7 +71,8 @@ Then, as needed:
 
 - [register other clusters](docs/clusters.md),
 - [connect private registries](docs/registries.md),
-- [expose the UI with an ingress or deploy with ArgoCD](docs/installation.md).
+- [expose the UI with an ingress or deploy with ArgoCD](docs/installation.md),
+- [ask for a login](docs/authentication.md) (`auth.enabled=true`).
 
 ## How it works
 
@@ -100,6 +102,7 @@ Valkey (or Redis) between them: see [scaling](docs/scaling.md), [ADR 0002](docs/
 | --- | --- |
 | [Installation](docs/installation.md) | Helm, ArgoCD, ingress, upgrades, requirements |
 | [Configuration](docs/configuration.md) | every setting, registry authentication, secrets |
+| [Authentication](docs/authentication.md) | login, admin password, local accounts, readonly and admin roles, API with Basic auth |
 | [Architecture](docs/architecture.md) | diagrams of the roles, the single and distributed modes, a scan step by step |
 | [Scaling](docs/scaling.md) | distributed mode: UI, controller, worker and Trivy pods, standby controller, Redis / Valkey |
 | [Clusters](docs/clusters.md) | registering remote clusters, reusing ArgoCD clusters |
