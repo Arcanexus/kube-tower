@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kube-tower · Versions, lifecycle and vulnerabilities of your Kubernetes clusters</title>
+  <meta name="description" content="kube-tower gives a simple view of the versions, lifecycle and vulnerabilities of every container image and Helm chart across all your Kubernetes clusters.">
+  <meta name="theme-color" content="#0b1424">
+  <link rel="icon" href="images/logo.svg" type="image/svg+xml">
+  <link rel="canonical" href="https://arcanexus.github.io/kube-tower/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="kube-tower">
+  <meta property="og:description" content="Versions, lifecycle and vulnerabilities of every image and Helm chart across your Kubernetes clusters, at a glance.">
+  <meta property="og:url" content="https://arcanexus.github.io/kube-tower/">
+  <meta property="og:image" content="https://arcanexus.github.io/kube-tower/images/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="wrap nav-in">
+      <a class="brand" href="./"><img src="images/logo.svg" alt="" width="32" height="32"> kube-tower</a>
+      <button class="menu" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav-links"><svg><use href="icons.svg#i-menu"/></svg></button>
+      <nav id="nav-links" class="links">
+        <a href="#features">Features</a>
+        <a href="#tour">Tour</a>
+        <a href="#compare">Compare</a>
+        <a href="#start">Get started</a>
+        <a href="https://github.com/Arcanexus/kube-tower/wiki">Docs</a>
+        <a class="gh" href="https://github.com/Arcanexus/kube-tower"><svg><use href="icons.svg#i-github"/></svg> GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="wrap hero-in">
+        <a class="pill" href="https://github.com/Arcanexus/kube-tower/releases" data-release>
+          <span class="dot"></span> <span data-release-text>Open source · Apache-2.0</span>
+        </a>
+        <h1>Versions, lifecycle and vulnerabilities<br><span>of all your clusters, at a glance.</span></h1>
+        <p class="lead">kube-tower inventories every container image and every Helm chart of all your clusters,
+          compares each version with the latest one published in its registry, tells you how far behind it is
+          (patch, minor, major) and which vulnerabilities it carries, so you know what to update first.</p>
+        <div class="cta">
+          <a class="btn primary" href="#start">Get started</a>
+          <a class="btn ghost" href="https://github.com/Arcanexus/kube-tower"><svg><use href="icons.svg#i-github"/></svg> Star on GitHub</a>
+        </div>
+        <ul class="facts">
+          <li><svg><use href="icons.svg#i-outdated"/></svg> Latest versions</li>
+          <li><svg><use href="icons.svg#i-shield"/></svg> CVEs</li>
+          <li><svg><use href="icons.svg#i-clusters"/></svg> Multi-cluster</li>
+          <li><svg><use href="icons.svg#i-database"/></svg> No database</li>
+        </ul>
+        <figure class="shot hero-shot">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <img src="images/overview.png" alt="The Overview page of kube-tower: counters per status, a To do list sorted by urgency and a summary per cluster" width="1360" height="900">
+        </figure>
+      </div>
+    </section>
+
+    <section id="features" class="section">
+      <div class="wrap">
+        <p class="kicker">Features</p>
+        <h2>Every version, its lifecycle and its risks</h2>
+        <p class="sub">What runs where, how far behind it is, and what it exposes: the version checks of watchtower, Renovate and version-checker plus Trivy, in one view.</p>
+        <div class="grid">
+          <article class="card">
+            <svg><use href="icons.svg#i-images"/></svg>
+            <h3>Every image</h3>
+            <p>Pods, Deployments, StatefulSets, DaemonSets and CronJobs, running or not, plus the images cached on the nodes.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-search"/></svg>
+            <h3>Checked at the source</h3>
+            <p>Each image is compared with the registry of its manifest: Docker Hub, ghcr.io, quay.io, ECR, Artifact Registry, ACR, Harbor, Artifactory, Nexus or any OCI registry.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-outdated"/></svg>
+            <h3>Smart tag matching</h3>
+            <p><code>1.25.3-alpine</code> is only compared with <code>x.y.z-alpine</code>, semver with semver, dates with dates. Floating tags like <code>latest</code> are checked by digest.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-charts"/></svg>
+            <h3>Helm charts and subcharts</h3>
+            <p>Charts deployed by ArgoCD Applications, from Helm repositories, OCI registries or git, with every dependency checked.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-shield"/></svg>
+            <h3>Vulnerabilities</h3>
+            <p>CVEs read from Trivy Operator reports, or scanned with Trivy. Search a CVE ID to find every image it affects.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-security"/></svg>
+            <h3>Security reports</h3>
+            <p>Misconfigurations, exposed secrets, risky RBAC roles and CIS, NSA or Pod Security Standards compliance, with how to fix each finding.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-clusters"/></svg>
+            <h3>All your clusters</h3>
+            <p>Register clusters ArgoCD-style with a Secret, or reuse the cluster Secrets ArgoCD already has.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-key"/></svg>
+            <h3>Private registries</h3>
+            <p>Per registry credentials, IRSA and EKS Pod Identity, GKE and AKS Workload Identity, the clusters' pull secrets, private CAs.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-users"/></svg>
+            <h3>Login, SSO and roles</h3>
+            <p>A built-in admin account, local accounts, OpenID Connect or the Dex of the chart, readonly and admin roles from your groups.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-network"/></svg>
+            <h3>Scales out</h3>
+            <p>One small pod by default. For large inventories, UI, controller, worker and Trivy pods scaled apart with Valkey or Redis.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-monitor"/></svg>
+            <h3>Observable</h3>
+            <p>JSON API and Prometheus metrics, with a ready-made Grafana dashboard and alert examples.</p>
+          </article>
+          <article class="card">
+            <svg><use href="icons.svg#i-administration"/></svg>
+            <h3>Made for triage</h3>
+            <p>A To do list sorted by urgency, filters kept in the URL, detail panels, per item rescans, live logs, dark theme and phones.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="tour" class="section alt">
+      <div class="wrap">
+        <p class="kicker">Tour</p>
+        <h2>One place for the whole fleet</h2>
+        <div class="tabs" role="tablist" aria-label="Screenshots">
+          <button role="tab" aria-selected="true" data-shot="images">Images</button>
+          <button role="tab" aria-selected="false" data-shot="image-detail">Image details</button>
+          <button role="tab" aria-selected="false" data-shot="charts">Helm charts</button>
+          <button role="tab" aria-selected="false" data-shot="security">Security</button>
+          <button role="tab" aria-selected="false" data-shot="administration">Administration</button>
+          <button role="tab" aria-selected="false" data-shot="dark">Dark theme</button>
+          <button role="tab" aria-selected="false" data-shot="grafana">Grafana</button>
+        </div>
+        <figure class="shot tour-shot">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <img id="tour-img" src="images/images.png" alt="" width="1360" height="900">
+        </figure>
+        <p id="tour-caption" class="caption" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap how">
+        <div>
+          <p class="kicker">How it works</p>
+          <h2>Install once, see every cluster</h2>
+          <ol class="steps">
+            <li><b>Discover.</b> kube-tower finds its own cluster and every cluster registered with a Secret, ArgoCD-style.</li>
+            <li><b>Collect.</b> With a read-only ServiceAccount, it lists workloads, node images and ArgoCD Applications.</li>
+            <li><b>Check.</b> It asks each registry for its published versions, once per repository, and reads or scans the vulnerabilities.</li>
+            <li><b>Show.</b> The result stays in memory and feeds the UI, the JSON API and <code>/metrics</code>, refreshed every 6 hours or on demand.</li>
+          </ol>
+        </div>
+        <figure class="phone">
+          <img src="images/mobile.png" alt="kube-tower on a phone, with the tab bar at the bottom" width="390" height="844">
+        </figure>
+      </div>
+    </section>
+
+    <section id="compare" class="section alt">
+      <div class="wrap">
+        <p class="kicker">Compare</p>
+        <h2>How kube-tower fits with the tools you know</h2>
+        <div class="table">
+          <table>
+            <thead>
+              <tr><th></th><th class="me">kube-tower</th><th>watchtower</th><th>Renovate</th><th>version-checker</th></tr>
+            </thead>
+            <tbody>
+                            <tr><th>Container images</th><td class="me y">Yes</td><td>Docker only</td><td>From git</td><td class="y">Yes</td></tr>
+              <tr><th>Helm charts and subcharts</th><td class="me y">From ArgoCD</td><td class="n">No</td><td>From git</td><td class="n">No</td></tr>
+              <tr><th>Vulnerabilities (CVE)</th><td class="me y">Trivy</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>
+              <tr><th>Misconfigurations, secrets, compliance</th><td class="me y">Trivy Operator</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>
+              <tr><th>Several clusters in one view</th><td class="me y">Yes</td><td class="n">No</td><td>n/a</td><td>One per cluster</td></tr>
+              <tr><th>Web UI</th><td class="me y">Yes</td><td class="n">No</td><td class="n">No</td><td>Grafana</td></tr>
+              <tr><th>Updates things for you</th><td class="me">No, you decide</td><td>Containers</td><td>Pull requests</td><td>No</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="start" class="section">
+      <div class="wrap">
+        <p class="kicker">Get started</p>
+        <h2>Running in two minutes</h2>
+        <p class="sub">One Helm chart, one small pod. Open the UI and log in as <code>admin</code>.</p>
+        <div class="code">
+          <button class="copy" type="button" aria-label="Copy the commands"><svg><use href="icons.svg#i-clipboard-check"/></svg> <span>Copy</span></button>
+<pre><code><span class="c"># Install the chart</span>
+helm install kube-tower oci://ghcr.io/arcanexus/charts/kube-tower \
+  --namespace kube-tower --create-namespace
+
+<span class="c"># Open the UI on http://localhost:8080</span>
+kubectl -n kube-tower port-forward svc/kube-tower 8080:80
+
+<span class="c"># Password of the admin account, generated at the first start</span>
+kubectl -n kube-tower get secret kube-tower-auth \
+  -o jsonpath='{.data.admin\.password}' | base64 -d; echo</code></pre>
+        </div>
+        <div class="grid links-grid">
+          <a class="card link" href="https://github.com/Arcanexus/kube-tower/wiki">
+            <svg><use href="icons.svg#i-info"/></svg>
+            <h3>Documentation</h3>
+            <p>Installation, configuration, clusters, registries, authentication, scaling.</p>
+          </a>
+          <a class="card link" href="https://github.com/Arcanexus/kube-tower/releases">
+            <svg><use href="icons.svg#i-box"/></svg>
+            <h3>Releases</h3>
+            <p>Changelog of every version, the image and the chart.</p>
+          </a>
+          <a class="card link" href="https://github.com/Arcanexus/kube-tower/pkgs/container/kube-tower">
+            <svg><use href="icons.svg#i-server"/></svg>
+            <h3>Container image</h3>
+            <p><code>ghcr.io/arcanexus/kube-tower</code></p>
+          </a>
+          <a class="card link" href="https://github.com/Arcanexus/kube-tower/issues">
+            <svg><use href="icons.svg#i-git"/></svg>
+            <h3>Issues and ideas</h3>
+            <p>Report a bug, ask for a feature, contribute.</p>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <span><img src="images/logo.svg" alt="" width="20" height="20"> kube-tower, by Arcanexus</span>
+      <span><a href="https://github.com/Arcanexus/kube-tower/blob/main/LICENSE">Apache-2.0</a> · Icons by <a href="https://lucide.dev">Lucide</a></span>
+    </div>
+  </footer>
+
+  <script src="site.js"></script>
+</body>
+</html>
