@@ -31,6 +31,7 @@ from kube_tower.store import redis_store
 from kube_tower.tasks import QueueRunner
 from kube_tower.web import api, metrics, ui
 from kube_tower.web.csrf import add_csrf_protection
+from kube_tower.web.dex import add_dex_proxy
 from kube_tower.web.login import add_login
 from kube_tower.worker import Worker
 
@@ -195,6 +196,8 @@ def create_app(
         add_csrf_protection(app)
         if auth is not None:
             add_login(app, auth)
+            if settings.auth.dex_url:
+                add_dex_proxy(app, settings.auth.dex_url, settings.auth.oidc.issuer)
     else:
         app.include_router(api.probes)  # no UI or API: only the health probes
     log = logging.getLogger(__name__)

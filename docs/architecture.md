@@ -35,7 +35,7 @@ The four **roles** are parts of the same program, in the same image:
 
 | Role | Does | Talks to |
 | --- | --- | --- |
-| `ui` | Pages (Jinja2 + htmx), JSON API (`/api/...`) | the controller |
+| `ui` | Pages (Jinja2 + htmx), JSON API (`/api/...`), login and roles when `auth.enabled` | the controller, the OIDC provider (SSO) |
 | `controller` | Schedules the scans, rescans and Administration actions, splits them in tasks, merges the results in the inventory (the **snapshot**), serves `/metrics` | its Kubernetes `Lease`, Redis / Valkey |
 | `worker` | Runs the `collect`, `check-images` and `check-charts` tasks | the clusters, registries, Helm repositories, git hosts |
 | `trivy` | Runs the `scan-vulnerabilities` and `trivy-admin` tasks, keeps the Trivy databases and results cache | the registries (image layers), the Trivy database registry |
@@ -150,6 +150,7 @@ image or chart, and the retry of failed items, are the same tasks on a few items
 | --- | --- | --- |
 | `8080` (`http`) | every pod | pages, `/api/...`, `/metrics` (controller), `/healthz`, `/readyz`, `/leaderz` |
 | `6379` | Valkey | Redis protocol: every pod in distributed mode, the controller only in single mode |
+| `5556` | Dex (`dex.enabled`) | Dex, reached only by the pods with the `ui` role, which serve it on `/api/dex/` |
 
 No other port: the pods never call each other. The tasks carry registry credentials (image pull
 secrets) through Valkey: set a Valkey password. With `networkPolicy.enabled`, only the kube-tower pods
@@ -168,6 +169,7 @@ reach Valkey.
 | `backend.py` | what the web layer uses: `LocalBackend` (same process) or `RemoteBackend` (ui pods) |
 | `election.py` | controller election with a Kubernetes `Lease`, active pod label |
 | `store.py` | where the snapshot is kept: memory, or memory + Redis / Valkey |
-| `web/` | pages, API, metrics |
+| `auth.py`, `oidc.py` | login (`auth.enabled`): local accounts, signed sessions, the auth Secret, single sign-on with OIDC |
+| `web/` | pages, API, metrics, login page and role checks (`web/login.py`), Dex proxy (`web/dex.py`) |
 
 See [development](development.md) for the full layout.

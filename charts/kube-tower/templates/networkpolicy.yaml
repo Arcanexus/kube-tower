@@ -51,9 +51,42 @@ spec:
         - port: {{ .Values.redis.valkey.port }}
           protocol: TCP
     {{- end }}
+    {{- if .Values.dex.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.dexSelectorLabels" . | nindent 14 }}
+      ports:
+        - port: 5556
+          protocol: TCP
+    {{- end }}
     {{- with $np.egress.extra }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+{{- if .Values.dex.enabled }}
+---
+# Dex: only kube-tower reaches it (it serves Dex on /api/dex); Dex reaches its identity providers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-dex
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dex
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kube-tower.dexSelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: http
+          protocol: TCP
+{{- end }}
 {{- if .Values.redis.valkey.enabled }}
 ---
 # Valkey: only kube-tower reaches it; it reaches nothing.

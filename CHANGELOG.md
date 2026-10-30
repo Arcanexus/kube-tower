@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Login and roles**, the ArgoCD way, off by default (`auth.enabled`, see
+- **Login and roles**, the ArgoCD way, on by default (`auth.enabled`, see
   [authentication](docs/authentication.md)): a built-in `admin` account whose password kube-tower
   generates in the Secret `<release>-auth` (`admin.password`, with the `session.key` signing the
   sessions), created at startup when missing so it stays the same on upgrades and ArgoCD syncs, or
@@ -24,11 +24,24 @@ All notable changes to this project are documented here. The format follows
   Okta... with the authorization code flow and PKCE, the role from the groups of the user
   (`adminGroups`, `readonlyGroups`, `defaultRole`), the groups read from the ID token or the userinfo
   endpoint. *Log in with …* button on the login page, alone when there is no local account.
+- **Dex in the chart**, like ArgoCD (`dex.enabled`, see
+  [authentication](docs/authentication.md#dex-of-the-chart)): Dex served by kube-tower on
+  `<auth.url>api/dex` (the browser only talks to kube-tower), its connectors (GitHub, GitLab, LDAP, SAML,
+  Google, Microsoft, OIDC...) in the values, the client secret generated in the auth Secret
+  (`dex.clientSecret`), a NetworkPolicy letting only kube-tower reach it.
 - **Image size** in the detail panel of an image, as the nodes that pulled it report it
   (`node.status.images`): the size of the running digest, or a range when the digests or the
   architectures differ, and the size of each running digest in the *Digests* section. The nodes are
   read for the sizes even with `images.includeNodeImages: false`. The size is also in `/api/snapshot`
   (`sizes`, bytes by digest).
+
+### Changed
+
+- **The login is on by default** (`auth.enabled: true`): after an upgrade from 1.0, log in as `admin`
+  with the password kube-tower generates in the Secret `<release>-auth`
+  (`kubectl -n kube-tower get secret kube-tower-auth -o jsonpath='{.data.admin\.password}' | base64 -d`).
+  Scripts calling the API need the Basic auth of a local account. Set `auth.enabled: false` to keep
+  kube-tower open as in 1.0.
 
 ## [1.0.0] - 2026-10-30
 

@@ -85,6 +85,12 @@ def test_cluster_secrets_created_or_referenced(tmp_path):
 
 def test_no_secret_access_by_default(tmp_path):
     docs = render(tmp_path, {})
+    # Only the auth Secret of the login, on by default
+    assert [k for k in docs if k[0] in ("Role", "RoleBinding")] == [
+        ("Role", "kt-kube-tower-auth"),
+        ("RoleBinding", "kt-kube-tower-auth"),
+    ]
+    docs = render(tmp_path, {"auth": {"enabled": False}})
     assert not [k for k in docs if k[0] in ("Role", "RoleBinding")]
 
 
@@ -435,7 +441,7 @@ def test_single_mode_is_one_pod_with_every_role(tmp_path):
     assert [k for k in docs if k[0] == "Deployment"] == [("Deployment", "kt-kube-tower")]
     assert "KUBE_TOWER_ROLES" not in env(docs[("Deployment", "kt-kube-tower")]["spec"])
     assert ("Service", "kt-kube-tower-controller") not in docs
-    assert not [k for k in docs if k[0] in ("HorizontalPodAutoscaler", "Role")]
+    assert not [k for k in docs if k[0] == "HorizontalPodAutoscaler" or k == ("Role", "kt-kube-tower-cluster-secrets")]
     assert app_settings(tmp_path, docs).internal.leader_election is False
 
 
@@ -471,7 +477,7 @@ def test_distributed_mode(tmp_path):
     ui = deployment(docs, "ui")["template"]["spec"]
     assert ui["automountServiceAccountToken"] is False
     assert ui["containers"][0]["readinessProbe"]["httpGet"]["path"] == "/healthz"
-    assert {m["name"] for m in ui["containers"][0]["volumeMounts"]} == {"config", "tmp"}
+    assert {m["name"] for m in ui["containers"][0]["volumeMounts"]} == {"config", "tmp", "auth"}
     # The Trivy CLI and its cache in the trivy pod only
     trivy = deployment(docs, "trivy")["template"]["spec"]
     assert [c["name"] for c in trivy["initContainers"]] == ["trivy"]
@@ -596,8 +602,15 @@ def test_the_internal_api_values_of_rc3_are_ignored(tmp_path):
     assert not [k for k in docs if k[0] == "Secret"] and ("Service", "kt-kube-tower-internal") not in docs
 
 
-def test_auth_off_by_default(tmp_path):
+def test_auth_on_by_default(tmp_path):
     docs = render(tmp_path, {})
+    settings = app_settings(tmp_path, docs).auth
+    assert settings.enabled and settings.admin and settings.anonymous_role == ""
+    assert ("Role", "kt-kube-tower-auth") in docs and "auth" in volumes(docs)
+
+
+def test_auth_off(tmp_path):
+    docs = render(tmp_path, {"auth": {"enabled": False}})
     assert "auth" not in yaml.safe_load(docs[("ConfigMap", "kt-kube-tower")]["data"]["config.yaml"])
     assert ("Role", "kt-kube-tower-auth") not in docs and "auth" not in volumes(docs)
 
@@ -669,3 +682,54 @@ def test_auth_oidc(tmp_path):
     # No issuer: no SSO in the config
     docs = render(tmp_path, {"auth": {"enabled": True, "url": "https://kt.example.com/"}})
     assert app_settings(tmp_path, docs).auth.oidc.issuer == ""
+
+
+def test_dex(tmp_path):
+    connectors = [{"type": "github", "id": "github", "name": "GitHub", "config": {"clientSecret": "$GITHUB_CLIENT_SECRET"}}]
+    values = {
+        "auth": {"enabled": True, "url": "https://kt.example.com/tools/", "oidc": {"adminGroups": ["my-org:ops"]}},
+        "dex": {"enabled": True, "connectors": connectors, "envFrom": [{"secretRef": {"name": "dex-github"}}]},
+        "networkPolicy": {"enabled": True},
+    }
+    docs = render(tmp_path, values)
+    auth = app_settings(tmp_path, docs).auth
+    # kube-tower serves Dex on <url>api/dex and is its OIDC client, reaching it through its Service
+    assert auth.dex_url == "http://kt-kube-tower-dex:5556"
+    assert auth.oidc.issuer == "https://kt.example.com/tools/api/dex" and auth.oidc.name == "Dex"
+    assert auth.oidc.provider_url == "http://kt-kube-tower-dex:5556/tools/api/dex"
+    assert auth.oidc.client_id == "kube-tower" and auth.oidc.client_secret_file == "/etc/kube-tower/auth/dex.clientSecret"
+    assert auth.oidc.admin_groups == ["my-org:ops"]
+
+    config = yaml.safe_load(docs[("Secret", "kt-kube-tower-dex")]["stringData"]["config.yaml"])
+    assert config["issuer"] == "https://kt.example.com/tools/api/dex" and config["storage"] == {"type": "memory"}
+    assert config["connectors"] == connectors
+    assert config["staticClients"] == [
+        {
+            "id": "kube-tower",
+            "name": "kube-tower",
+            "secretEnv": "KUBE_TOWER_DEX_CLIENT_SECRET",
+            "redirectURIs": ["https://kt.example.com/tools/auth/callback"],
+        }
+    ]
+    dex = docs[("Deployment", "kt-kube-tower-dex")]["spec"]
+    assert dex["replicas"] == 1
+    pod = dex["template"]["spec"]
+    assert pod["automountServiceAccountToken"] is False
+    assert pod["containers"][0]["env"][0]["valueFrom"]["secretKeyRef"] == {
+        "name": "kt-kube-tower-auth",
+        "key": "dex.clientSecret",
+    }
+    assert pod["containers"][0]["envFrom"] == [{"secretRef": {"name": "dex-github"}}]
+    assert docs[("Service", "kt-kube-tower-dex")]["spec"]["ports"][0]["port"] == 5556
+    # Only kube-tower reaches Dex
+    assert (
+        docs[("NetworkPolicy", "kt-kube-tower-dex")]["spec"]["ingress"][0]["from"][0]["podSelector"]["matchLabels"][
+            "app.kubernetes.io/name"
+        ]
+        == "kube-tower"
+    )
+    egress = docs[("NetworkPolicy", "kt-kube-tower")]["spec"]["egress"]
+    assert any(rule.get("ports") == [{"port": 5556, "protocol": "TCP"}] for rule in egress)
+
+    assert "dex.enabled needs auth.enabled" in render_error(tmp_path, {"auth": {"enabled": False}, "dex": {"enabled": True}})
+    assert "dex.enabled needs auth.url" in render_error(tmp_path, {"auth": {"enabled": True}, "dex": {"enabled": True}})

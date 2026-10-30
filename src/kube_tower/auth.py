@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 COOKIE = "kube_tower_session"
 ADMIN = "admin"
-PASSWORD_KEY, SESSION_KEY = "admin.password", "session.key"
+PASSWORD_KEY, SESSION_KEY, DEX_KEY = "admin.password", "session.key", "dex.clientSecret"
 
 
 @dataclass(frozen=True)
@@ -51,8 +51,8 @@ def _unb64(text: str) -> bytes:
 
 
 def generate_secret() -> dict[str, str]:
-    """Values of a new auth Secret: a random admin password and a random signing key."""
-    return {PASSWORD_KEY: secrets.token_urlsafe(18), SESSION_KEY: secrets.token_urlsafe(48)}
+    """Values of a new auth Secret: a random admin password, signing key and client secret of the chart's Dex."""
+    return {PASSWORD_KEY: secrets.token_urlsafe(18), SESSION_KEY: secrets.token_urlsafe(48), DEX_KEY: secrets.token_urlsafe(32)}
 
 
 def ensure_secret(core: client.CoreV1Api, namespace: str, name: str) -> dict[str, str]:

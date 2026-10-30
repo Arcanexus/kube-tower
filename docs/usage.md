@@ -3,9 +3,11 @@
 ## The dashboards
 
 The left sidebar gives access to five pages: **Overview**, **Images**, **Helm charts**, **Security**
-and **Administration**, then **About**. Its bottom button switches the theme between auto (follows the
-system), light and dark; the choice is remembered by the browser. The version under it opens the
-About page, the GitHub icon the repository.
+and **Administration**, then **About**. At its bottom, the user logged in, with its role, and the
+*Log out* button (see [authentication](authentication.md): log in as `admin` with the password of the
+Secret `kube-tower-auth`, or with single sign-on). Below, a button switches the theme between auto
+(follows the system), light and dark; the choice is remembered by the browser. The version under it
+opens the About page, the GitHub icon the repository.
 
 The top bar of every page holds, after the page title:
 
@@ -55,7 +57,7 @@ the matching tab of the Administration page.
 ### Dark theme and phones
 
 The theme follows the system (or the sidebar button). On a phone, the five pages are in a tab bar at the
-bottom of the screen, the top bar keeps the About link and the theme button, and the lists show each line
+bottom of the screen, the top bar keeps the About link, the user, *Log out* and the theme button, and the lists show each line
 as a block: name first, then the versions and the status.
 
 | Dark theme | Phone |
@@ -338,6 +340,10 @@ components (Trivy and its database, Python, FastAPI, htmx) and its license.
 | `GET /readyz` | 200 once the first scan has finished |
 | `GET /api/docs` | Interactive OpenAPI documentation |
 
+With the login on (the default), the API needs a session or the Basic auth of a local account: `GET`
+for every role, `POST` and `DELETE` for the `admin` role only (others get a 403). `/healthz`,
+`/readyz` and `/metrics` stay open (see [authentication](authentication.md#api-and-metrics)).
+
 Requests that change something (`POST`, `DELETE`) are refused with a 403 when a browser says they come
 from another site (`Sec-Fetch-Site`, else `Origin` compared with the host, or `X-Forwarded-Host` behind a
 proxy): a page on another site cannot start scans through the browser of someone who can reach
@@ -345,7 +351,7 @@ kube-tower. The UI itself and clients that are not browsers (curl, scripts) are 
 
 ```sh
 # Outdated images, as "image current -> latest"
-curl -s http://kube-tower/api/snapshot \
+curl -s -u admin:$PASSWORD http://kube-tower/api/snapshot \
   | jq -r '.images[] | select(.status=="outdated") | "\(.image.ref) -> \(.latest_tag // .latest_digest)"'
 ```
 

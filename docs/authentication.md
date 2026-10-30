@@ -1,17 +1,10 @@
 # Authentication
 
-kube-tower can ask for a login on the UI and the API, the ArgoCD way: a built-in `admin` account
+kube-tower asks for a login on the UI and the API, the ArgoCD way: a built-in `admin` account
 with a generated password, local accounts, single sign-on with an OpenID Connect provider (Dex,
-Authentik, Keycloak, Entra ID, Okta...), and two roles. It is off by default: without it,
-anyone who reaches kube-tower can use it, as in 1.0.
+Authentik, Keycloak, Entra ID, Okta...), and two roles. It is on by default since 1.1.
 
-## Turn it on
-
-```yaml
-# values.yaml of the chart
-auth:
-  enabled: true
-```
+## The admin account
 
 At startup, kube-tower creates the Secret `<release>-auth` (`kube-tower-auth` for a release named
 `kube-tower`) with two random values, like the `argocd-initial-admin-secret` of ArgoCD:
@@ -40,6 +33,17 @@ first install with the roles apart, the login page asks to wait about a minute. 
 password of `admin`, change `admin.password` in the Secret: the open sessions of `admin` are
 closed within a minute, when the kubelet updates the mounted file. Deleting the Secret makes
 kube-tower create a new one at its next start, with new values (every session closed).
+
+### Turn it off
+
+```yaml
+# values.yaml of the chart
+auth:
+  enabled: false
+```
+
+Anyone who reaches kube-tower can then use it, with the `admin` role, as in 1.0: keep it for a UI
+only reachable with `kubectl port-forward` or behind the authentication of your ingress.
 
 ### Bring your own Secret
 
@@ -154,7 +158,59 @@ Create an *OAuth2/OpenID Provider* (client type *Confidential*, redirect URI
 `https://auth.example.com/application/o/kube-tower/`. Authentik puts the groups of the user in the
 `groups` claim of the `profile` scope.
 
-### Dex
+### Dex of the chart
+
+Like ArgoCD, the chart can deploy its own [Dex](https://dexidp.io), served by kube-tower on
+`<auth.url>api/dex`: the users log in with its connectors (GitHub, GitLab, LDAP, SAML, Google,
+Microsoft, another OIDC provider...) without any other identity provider to run.
+
+```yaml
+auth:
+  enabled: true
+  url: https://kube-tower.example.com/
+  oidc:
+    adminGroups: [my-org:ops]          # GitHub teams are "org:team" groups
+dex:
+  enabled: true
+  name: GitHub                         # the login button says "Log in with GitHub"
+  connectors:
+    - type: github
+      id: github
+      name: GitHub
+      config:
+        clientID: Iv1.0123456789abcdef
+        clientSecret: $GITHUB_CLIENT_SECRET
+        redirectURI: https://kube-tower.example.com/api/dex/callback
+        orgs:
+          - name: my-org
+  envFrom:
+    - secretRef:
+        name: dex-github               # holds GITHUB_CLIENT_SECRET
+```
+
+- The chart writes the Dex configuration in the Secret `<release>-dex`: issuer `<auth.url>api/dex`,
+  memory storage (one replica), kube-tower as its only client, your `connectors`. Secrets go in
+  `dex.env` / `dex.envFrom` and are written `$NAME` in the connectors.
+- The client secret between kube-tower and Dex is generated with the auth Secret (key
+  `dex.clientSecret`): Dex starts once kube-tower has created it. With `auth.existingSecret`, add
+  that key to your Secret.
+- The browser only talks to kube-tower: requests under `/api/dex/` are passed to the Dex Service, so
+  the ingress, the TLS certificate and a port-forward work as for the rest of kube-tower. The
+  callback URL of the connectors is `<auth.url>api/dex/callback`.
+- The roles come from the groups Dex sends (`auth.oidc.adminGroups`, `readonlyGroups`,
+  `defaultRole`).
+- With `networkPolicy.enabled`, only kube-tower reaches Dex; Dex reaches its providers.
+
+| Value | Default | What |
+| --- | --- | --- |
+| `dex.enabled` | `false` | Deploy Dex, served on `<auth.url>api/dex` (needs `auth.enabled` and `auth.url`) |
+| `dex.name` | `Dex` | Login button: "Log in with <name>" |
+| `dex.connectors` | `[]` | [Dex connectors](https://dexidp.io/docs/connectors/) |
+| `dex.env` / `dex.envFrom` | `[]` | Secrets of the connectors, as env vars |
+| `dex.image` | `ghcr.io/dexidp/dex:v2.41.1` | Dex image |
+| `dex.resources`, `.nodeSelector`, `.tolerations`, `.affinity` | 10m CPU, 32Mi | Pod settings |
+
+### Dex of your own
 
 ```yaml
 # Dex configuration
@@ -217,7 +273,7 @@ The chart writes them in the configuration (see [configuration](configuration.md
 
 ```yaml
 auth:
-  enabled: false
+  enabled: false               # the chart sets true (auth.enabled, on by default)
   admin: true                  # built-in admin account, password in the auth Secret (admin.password)
   users:                       # local accounts
     - name: alice
@@ -242,6 +298,8 @@ auth:
     readonlyGroups: []
     defaultRole: readonly
     caFile: ""
+    providerUrl: ""            # where kube-tower reaches the provider when not at the issuer (the chart's Dex)
+  dexUrl: ""                   # Dex served on <url>api/dex: the address of its Service (chart: dex.enabled)
 ```
 
 The controller creates the Secret in its own namespace: the chart gives its ServiceAccount `get` on

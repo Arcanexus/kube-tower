@@ -37,10 +37,24 @@ wait_for() {
     log "$what"
 }
 
-# GET <url> from a pod (target: pod/<name> or deploy/<name>), with the Python of the image
+# GET <url> from a pod (target: pod/<name> or deploy/<name>), with the Python of the image, as the admin
+# account (Basic auth, its password in the auth Secret the controller creates)
+PASSWORD=""
 fetch() {
-    kubectl -n "$NS" exec "$1" -- python -c \
-        'import sys, urllib.request; sys.stdout.write(urllib.request.urlopen(sys.argv[1], timeout=20).read().decode())' "$2"
+    kubectl -n "$NS" exec "$1" -- python -c '
+import base64, sys, urllib.request
+auth = base64.b64encode(sys.argv[2].encode()).decode()
+request = urllib.request.Request(sys.argv[1], headers={"Authorization": f"Basic {auth}"})
+sys.stdout.write(urllib.request.urlopen(request, timeout=20).read().decode())' "$2" "admin:$PASSWORD"
+}
+# HTTP status of a GET <url> without credentials
+status() {
+    kubectl -n "$NS" exec "$1" -- python -c '
+import sys, urllib.error, urllib.request
+try:
+    print(urllib.request.urlopen(sys.argv[1], timeout=20).status)
+except urllib.error.HTTPError as exc:
+    print(exc.code)' "$2"
 }
 snapshot() { fetch deploy/"$RELEASE"-ui http://127.0.0.1:8080/api/snapshot; }
 scanned() { snapshot | jq -e '.finished_at != null and (.images | length) > 0'; }
@@ -56,6 +70,14 @@ log "install"
 kubectl create namespace "$NS"
 helm install "$RELEASE" charts/kube-tower -n "$NS" -f tests/e2e/distributed-values.yaml --wait --timeout 10m
 kubectl -n "$NS" get pods -o wide
+
+log "login (auth.enabled, on by default)"
+wait_for 120 "the controller created the auth Secret" kubectl -n "$NS" get secret "$RELEASE"-auth
+PASSWORD=$(kubectl -n "$NS" get secret "$RELEASE"-auth -o jsonpath='{.data.admin\.password}' | base64 -d)
+[ -n "$PASSWORD" ]
+[ "$(status deploy/"$RELEASE"-ui http://127.0.0.1:8080/api/snapshot)" = 401 ]
+# The ui pods read the Secret once the kubelet has mounted it (about a minute)
+wait_for 180 "the admin account logs in on the ui pods" snapshot
 
 log "one active controller"
 wait_for 120 "the controller Service reaches the active controller" active_endpoint

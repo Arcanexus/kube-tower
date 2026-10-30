@@ -267,10 +267,10 @@ git:
   # ...or the token itself, the chart then creates the Secret.
   token: ""
 
-# Login on the UI and the API, the ArgoCD way (docs/authentication.md). Off: anyone who reaches kube-tower
-# can use it, as before.
+# Login on the UI and the API, the ArgoCD way (docs/authentication.md): on by default, the password of the
+# built-in admin account in the Secret <release>-auth. false: anyone who reaches kube-tower can use it.
 auth:
-  enabled: false
+  enabled: true
   # Built-in `admin` account (admin role): its password is the key admin.password of the auth Secret.
   admin: true
   # Local accounts, their password in a Secret:
@@ -310,6 +310,40 @@ auth:
     defaultRole: readonly
     # PEM file of the CA of a provider with a private CA (mount it with extraVolumes / extraVolumeMounts)
     caFile: ""
+
+# Dex served by kube-tower on <auth.url>api/dex, like ArgoCD (needs auth.enabled and auth.url): users log in
+# with its connectors (GitHub, GitLab, LDAP, SAML, Google, Microsoft, OIDC...). kube-tower is its OIDC client;
+# the client secret is generated in the auth Secret (key dex.clientSecret). The roles come from the groups,
+# set with auth.oidc.adminGroups, readonlyGroups and defaultRole.
+dex:
+  enabled: false
+  name: Dex                      # login button: "Log in with <name>"
+  image:
+    repository: ghcr.io/dexidp/dex
+    tag: v2.41.1
+    pullPolicy: IfNotPresent
+  # Dex connectors (https://dexidp.io/docs/connectors/). Secrets as $ENV_VARS from dex.env / dex.envFrom:
+  #   - type: github
+  #     id: github
+  #     name: GitHub
+  #     config:
+  #       clientID: Iv1.0123456789
+  #       clientSecret: $GITHUB_CLIENT_SECRET
+  #       redirectURI: https://kube-tower.example.com/api/dex/callback
+  #       orgs:
+  #         - name: my-org
+  connectors: []
+  env: []
+  envFrom: []
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 service:
   type: ClusterIP

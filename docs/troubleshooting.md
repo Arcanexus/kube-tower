@@ -8,6 +8,9 @@ every request).
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| The login page says *kube-tower is creating its auth Secret* | First start: the controller creates the Secret `<release>-auth`, the ui pods see it once the kubelet has mounted it (about a minute) | Wait a minute. If it lasts, check the controller logs: `rbac.create: false` needs a Role with `get` on that Secret and `create` on Secrets, or bring one with `auth.existingSecret` |
+| Lost password of `admin` | | Read it: `kubectl -n kube-tower get secret kube-tower-auth -o jsonpath='{.data.admin\.password}' \| base64 -d`; or change its `admin.password` key (the open sessions of `admin` close) |
+| Scripts get `401` from the API after an upgrade to 1.1 | The login is on by default | Call the API with the Basic auth of a local account (`curl -u admin:$PASSWORD`), or set `auth.enabled: false` |
 | `cannot list pods: 403 Forbidden` | The ServiceAccount used for that cluster lacks a permission | Apply `deploy/remote-cluster-rbac.yaml` on remote clusters; check `rbac.create` locally |
 | `… uses http://…: refused, only https:// is allowed` | A registry token service or redirect, a Helm repository with credentials, or a git raw URL template (with a git token) uses plain `http://`: the credentials would travel in clear text | Use the `https://` URL of the repository (or of `git.rawUrlTemplates`); for an internal Helm repository without TLS, remove its credentials |
 | A cluster Secret is ignored (cluster missing from the Clusters tab) | Cluster Secrets are read by name: a labelled Secret created outside the chart is not listed | Reference it with `clusters[].existingSecret` or `config.clusters.secretNames`, or set `config.clusters.listSecrets: true` (see [clusters](clusters.md#finding-cluster-secrets-by-label-optional)) |

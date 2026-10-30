@@ -86,7 +86,7 @@ redis:                         # Redis / Valkey: required when the roles are apa
   key: kube-tower:snapshot     # change it when several installations share one Redis
   keyPrefix: kube-tower        # prefix of the keys of the distributed mode (ADR 0003); change it likewise
 auth:                          # login on the UI and the API, see authentication.md
-  enabled: false
+  enabled: false               # the chart sets true (auth.enabled, on by default)
   admin: true                  # built-in admin account, password in the auth Secret (admin.password)
   users: []                    # local accounts: name, role (readonly | admin), passwordFile or passwordEnv
   anonymousRole: ""            # "" (login required) | readonly
@@ -100,6 +100,7 @@ auth:                          # login on the UI and the API, see authentication
     clientId: ""
     adminGroups: []
     defaultRole: readonly
+  dexUrl: ""                   # Dex served on <url>api/dex (Helm chart: dex.enabled)
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
