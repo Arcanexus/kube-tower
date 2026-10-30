@@ -64,6 +64,7 @@ src/kube_tower/
 charts/kube-tower/     Helm chart
 deploy/                manifests for remote clusters
 docs/                  documentation and ADRs
+site/                  product website (plain HTML, CSS and JS), published on GitHub Pages
 ```
 
 ### Adding a source
@@ -111,6 +112,20 @@ docs/                  documentation and ADRs
 | `tests.yml` | push on `main`, pull requests | ruff, pytest with coverage (summary + HTML artifact), helm lint/template; commits the coverage badge data (`.github/badges/coverage.json`) to `main` when it changes |
 | `docker-publish.yml` | push on `main`, tags, pull requests | runs the tests, builds the multi-arch image, pushes it to ghcr.io except for pull requests |
 | `helm-publish.yml` | tags | packages the chart with the tag version and pushes it to `oci://ghcr.io/arcanexus/charts` |
+| `pages.yml` | push on `main` changing `site/`, `docs/images/` or the icons | publishes the product website on GitHub Pages: https://arcanexus.github.io/kube-tower/ |
+
+### Product website
+
+`site/` holds the website: `index.html`, `style.css` and `site.js`, no framework and no build step.
+The workflow copies `docs/images/` into `images/` and the UI icon sprite into `icons.svg`, so the website
+always shows the screenshots of the README: regenerate them and the website follows. To preview it:
+
+```sh
+mkdir -p /tmp/site && cp -r site/. /tmp/site/ && cp -r docs/images /tmp/site/images \
+  && cp src/kube_tower/web/static/icons.svg /tmp/site/ && python -m http.server -d /tmp/site 8000
+```
+
+GitHub Pages must be enabled once with **Settings › Pages › Source: GitHub Actions**.
 
 ## Releasing
 

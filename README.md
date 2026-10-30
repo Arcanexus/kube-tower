@@ -9,6 +9,12 @@
 </p>
 
 <p align="center">
+  <a href="https://arcanexus.github.io/kube-tower/"><strong>Website</strong></a> ·
+  <a href="https://github.com/Arcanexus/kube-tower/wiki"><strong>Documentation</strong></a> ·
+  <a href="https://github.com/Arcanexus/kube-tower/releases"><strong>Releases</strong></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/Arcanexus/kube-tower/releases"><img src="https://img.shields.io/github/v/release/Arcanexus/kube-tower?include_prereleases&sort=semver&label=version" alt="Latest version"></a>
   <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/docker-publish.yml"><img src="https://github.com/Arcanexus/kube-tower/actions/workflows/docker-publish.yml/badge.svg?branch=main" alt="Build"></a>
   <a href="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml"><img src="https://github.com/Arcanexus/kube-tower/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
@@ -100,6 +106,9 @@ the chart can split kube-tower in UI, controller, worker and Trivy Deployments s
 Valkey (or Redis) between them: see [scaling](docs/scaling.md), [ADR 0002](docs/adr/0002-horizontal-scaling.md) and [ADR 0003](docs/adr/0003-valkey-bus.md).
 
 ## Documentation
+
+The [product website](https://arcanexus.github.io/kube-tower/) gives a tour of kube-tower; the guides below
+go into the details.
 
 | Guide | Content |
 | --- | --- |

@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Product website** on GitHub Pages (https://arcanexus.github.io/kube-tower/): features, a tour
+  of the screenshots, comparison with similar tools and quick start, published by the `pages.yml`
+  workflow from `site/` with the screenshots of `docs/images/`.
+
 - **Login and roles**, the ArgoCD way, on by default (`auth.enabled`, see
   [authentication](docs/authentication.md)): a built-in `admin` account whose password kube-tower
   generates in the Secret `<release>-auth` (`admin.password`, with the `session.key` signing the
