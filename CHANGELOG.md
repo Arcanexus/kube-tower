@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Product website** on GitHub Pages (https://arcanexus.github.io/kube-tower/): features, a tour
+  of the screenshots, comparison with similar tools and quick start, published by the `pages.yml`
+  workflow from `site/` with the screenshots of `docs/images/`.
+
 - **Documentation in the [wiki](https://github.com/Arcanexus/kube-tower/wiki)**: `docs/` stays the source, the `wiki.yml` workflow
   publishes it to the wiki (sidebar, images, links between pages) after every merge to `main`.
 - **Login and roles**, the ArgoCD way, on by default (`auth.enabled`, see
@@ -51,6 +55,13 @@ All notable changes to this project are documented here. The format follows
   `clientSecretKey`), so the client id stays out of the values too (ExternalSecrets, Sealed Secrets).
   `auth.oidc.clientId` still sets it in the values instead. `auth.oidc.clientSecret.existingSecret` and
   `.key` of 1.1.0-rc.1 keep working.
+
+### Fixed
+
+- Distributed mode: right after *Scan now* or another action, the page always shows what the action
+  started (the controller publishes its state once the scan has taken its lock), and the action is
+  removed from Valkey before the ui process gets its answer. The `test_ui_process_actions` test failed
+  now and then because of it.
 
 ## [1.0.0] - 2026-10-30
 

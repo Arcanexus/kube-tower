@@ -5,7 +5,13 @@
 <h1 align="center">kube-tower</h1>
 
 <p align="center">
-  <strong>See what is outdated in your Kubernetes clusters, in one place, without touching anything.</strong>
+  <strong>Versions, lifecycle and vulnerabilities of every image and Helm chart of your Kubernetes clusters, at a glance.</strong>
+</p>
+
+<p align="center">
+  <a href="https://arcanexus.github.io/kube-tower/"><strong>Website</strong></a> ·
+  <a href="https://github.com/Arcanexus/kube-tower/wiki"><strong>Documentation</strong></a> ·
+  <a href="https://github.com/Arcanexus/kube-tower/releases"><strong>Releases</strong></a>
 </p>
 
 <p align="center">
@@ -102,7 +108,7 @@ Valkey (or Redis) between them: see [scaling](https://github.com/Arcanexus/kube-
 ## Documentation
 
 The documentation is in the **[wiki](https://github.com/Arcanexus/kube-tower/wiki)**. It is written in [`docs/`](docs/) next to the code and
-published to the wiki after every merge to `main`, so both always show the same pages.
+published to the wiki after every merge to `main`, so both always show the same pages. The [product website](https://arcanexus.github.io/kube-tower/) gives a tour of kube-tower.
 
 | Guide | Content |
 | --- | --- |
