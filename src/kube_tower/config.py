@@ -257,6 +257,9 @@ class OidcSettings:
     default_role: str = "readonly"
     # CA certificates (PEM file) of a provider with a private CA, in addition to the public ones.
     ca_file: str = ""
+    # Where kube-tower itself reaches the provider, when not at the issuer URL (e.g. the Dex of the chart:
+    # http://kube-tower-dex:5556/api/dex): the metadata, token and userinfo requests go there.
+    provider_url: str = ""
 
 
 @dataclass
@@ -281,6 +284,9 @@ class AuthSettings:
     # whose provider sends users back to <url>auth/callback.
     url: str = ""
     oidc: OidcSettings = field(default_factory=OidcSettings)
+    # Dex served by kube-tower on <url>api/dex, like ArgoCD (Helm chart: dex.enabled): the address of the Dex
+    # Service, e.g. http://kube-tower-dex:5556. Empty: no Dex behind kube-tower.
+    dex_url: str = ""
 
 
 @dataclass
@@ -390,5 +396,7 @@ def check_auth(auth: AuthSettings) -> None:
             )
         if oidc.default_role not in ("", *USER_ROLES):
             raise ValueError(f"auth.oidc.defaultRole {oidc.default_role!r}: expected readonly, admin or empty")
+    if auth.dex_url and not oidc.issuer:
+        raise ValueError("auth.dexUrl: set auth.oidc.issuer to <auth.url>api/dex, the issuer of that Dex")
     if auth.enabled and not names and not oidc.issuer:
         raise ValueError("auth.enabled: no account to log in with, keep auth.admin, add auth.users or set auth.oidc")

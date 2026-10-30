@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Reached without a session: probes, static files, the login page itself.
-OPEN_PATHS = ("/healthz", "/readyz", "/leaderz", "/login", "/auth/", "/static/")
+OPEN_PATHS = ("/healthz", "/readyz", "/leaderz", "/login", "/auth/", "/api/dex/", "/static/")
 OIDC_COOKIE = "kube_tower_oidc"  # state of a login with the provider, while the user is there
 OIDC_LOGIN_TIME = 600  # seconds to log in with the provider
 FAILED_LOGIN_DELAY = 1.0  # seconds: slows down password guessing

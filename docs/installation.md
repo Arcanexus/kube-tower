@@ -329,6 +329,8 @@ To follow the development version, point `source` at the git repository instead:
 | `auth.oidc.issuer` / `.clientId` / `.clientSecret.existingSecret` / `.clientSecret.key` | `""` / `""` / `""` / `clientSecret` | Single sign-on with an OIDC provider, see [authentication](authentication.md#single-sign-on-oidc) |
 | `auth.oidc.adminGroups` / `.readonlyGroups` / `.defaultRole` | `[]` / `[]` / `readonly` | Role from the groups of the user |
 | `auth.oidc.name` / `.scopes` / `.usernameClaim` / `.groupsClaim` / `.caFile` | `SSO` / `openid profile email groups` / `preferred_username` / `groups` / `""` | Login button, claims, private CA |
+| `dex.enabled` / `.name` / `.connectors` / `.env` / `.envFrom` | `false` / `Dex` / `[]` / `[]` / `[]` | Dex served by kube-tower on `<auth.url>api/dex`, like ArgoCD, see [authentication](authentication.md#dex-of-the-chart) |
+| `dex.image` / `.resources` / `.nodeSelector` / `.tolerations` / `.affinity` | `ghcr.io/dexidp/dex:v2.41.1` / 10m CPU, 32Mi | Dex pod |
 | `auth.sessionDuration` / `.metricsPublic` | `24h` / `true` | Session length; `/metrics` open for Prometheus or behind the login |
 | `rbac.create` | `true` | Read-only ClusterRole and Role for cluster Secrets (and, with `auth.enabled`, `get` / `create` on the auth Secret) |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | ServiceAccount |

@@ -100,6 +100,7 @@ auth:                          # login on the UI and the API, see authentication
     clientId: ""
     adminGroups: []
     defaultRole: readonly
+  dexUrl: ""                   # Dex served on <url>api/dex (Helm chart: dex.enabled)
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.

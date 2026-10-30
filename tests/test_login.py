@@ -135,7 +135,7 @@ def test_ensure_secret(caplog):
     core.create_namespaced_secret.side_effect = create
     with caplog.at_level(logging.INFO):
         data = ensure_secret(core, "ns", "kt-auth")
-    assert set(data) == {"admin.password", "session.key"} and "auth Secret ns/kt-auth created" in caplog.text
+    assert set(data) == {"admin.password", "session.key", "dex.clientSecret"} and "auth Secret ns/kt-auth created" in caplog.text
 
     # Created meanwhile by another controller
     core = MagicMock()

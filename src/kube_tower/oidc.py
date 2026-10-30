@@ -105,7 +105,7 @@ class OidcClient:
         """The provider metadata (/.well-known/openid-configuration), kept an hour."""
         if self._metadata is not None and time.monotonic() - self._metadata_at < DISCOVERY_TTL:
             return self._metadata
-        url = self.oidc.issuer.rstrip("/") + "/.well-known/openid-configuration"
+        url = (self.oidc.provider_url or self.oidc.issuer).rstrip("/") + "/.well-known/openid-configuration"
         try:
             async with self._client() as client:
                 resp = await client.get(url)
@@ -122,6 +122,11 @@ class OidcClient:
                 f"the provider says its issuer is {metadata.get('issuer')!r}, not {self.oidc.issuer!r}: "
                 "copy it exactly into auth.oidc.issuer"
             )
+        if self.oidc.provider_url:  # the browser goes to the issuer, kube-tower to the provider URL
+            issuer, internal = self.oidc.issuer.rstrip("/"), self.oidc.provider_url.rstrip("/")
+            for key in ("token_endpoint", "userinfo_endpoint"):
+                if str(metadata.get(key, "")).startswith(issuer):
+                    metadata[key] = internal + metadata[key][len(issuer) :]
         self._metadata, self._metadata_at = metadata, time.monotonic()
         return metadata
 

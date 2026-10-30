@@ -71,6 +71,19 @@ labels its pod, selected by the controller Service */ -}}
 {{- $_ := set $auth "url" (required "auth.url is required with auth.oidc.issuer: the URL users open kube-tower with" $.Values.auth.url) }}
 {{- end }}
 {{- end }}
+{{- if .Values.dex.enabled }}
+{{- /* The Dex of the chart, served on <url>api/dex: kube-tower reaches it through its Service */ -}}
+{{- $issuer := include "kube-tower.dexIssuer" . }}
+{{- $oidc := omit .Values.auth.oidc "clientSecret" }}
+{{- $_ := set $oidc "name" .Values.dex.name }}
+{{- $_ := set $oidc "issuer" $issuer }}
+{{- $_ := set $oidc "clientId" "kube-tower" }}
+{{- $_ := set $oidc "clientSecretFile" "/etc/kube-tower/auth/dex.clientSecret" }}
+{{- $_ := set $oidc "providerUrl" (printf "%s%s" (include "kube-tower.dexUrl" .) (urlParse $issuer).path) }}
+{{- $_ := set $auth "oidc" $oidc }}
+{{- $_ := set $auth "url" .Values.auth.url }}
+{{- $_ := set $auth "dexUrl" (include "kube-tower.dexUrl" .) }}
+{{- end }}
 {{- $_ := set $config "auth" $auth }}
 {{- end }}
 apiVersion: v1

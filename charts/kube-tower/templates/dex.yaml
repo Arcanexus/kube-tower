@@ -1,0 +1,129 @@
+{{- if .Values.dex.enabled }}
+{{- $name := printf "%s-dex" (include "kube-tower.fullname" .) }}
+{{- $issuer := include "kube-tower.dexIssuer" . }}
+{{- $config := dict
+  "issuer" $issuer
+  "storage" (dict "type" "memory")
+  "web" (dict "http" "0.0.0.0:5556")
+  "telemetry" (dict "http" "0.0.0.0:5558")
+  "oauth2" (dict "skipApprovalScreen" true)
+  "enablePasswordDB" false
+  "staticClients" (list (dict "id" "kube-tower" "name" "kube-tower" "secretEnv" "KUBE_TOWER_DEX_CLIENT_SECRET" "redirectURIs" (list (printf "%s/auth/callback" (trimSuffix "/" .Values.auth.url)))))
+  "connectors" .Values.dex.connectors }}
+# Configuration of the Dex served by kube-tower on <auth.url>api/dex (connectors may hold secrets: a Secret)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dex
+type: Opaque
+stringData:
+  config.yaml: |
+    {{- toYaml $config | nindent 4 }}
+---
+# One replica: Dex keeps the logins in progress in memory (a few minutes each)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kube-tower.dexSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kube-tower.dexSelectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ toYaml $config | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: dex
+          image: "{{ .Values.dex.image.repository }}:{{ .Values.dex.image.tag }}"
+          imagePullPolicy: {{ .Values.dex.image.pullPolicy }}
+          args: ["dex", "serve", "/etc/dex/config.yaml"]
+          env:
+            # Created by the controller of kube-tower with the auth Secret: Dex starts once it exists
+            - name: KUBE_TOWER_DEX_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kube-tower.authSecretName" . }}
+                  key: dex.clientSecret
+            {{- with .Values.dex.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.dex.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 5556
+            - name: telemetry
+              containerPort: 5558
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: telemetry
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: telemetry
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.dex.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ $name }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.dex.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dex.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dex.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dex
+spec:
+  selector:
+    {{- include "kube-tower.dexSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 5556
+      targetPort: http
+{{- end }}

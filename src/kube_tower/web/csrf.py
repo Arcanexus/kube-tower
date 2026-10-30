@@ -18,6 +18,8 @@ from fastapi.responses import JSONResponse
 log = logging.getLogger(__name__)
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# Dex (served on /api/dex/) gets the answers of the identity providers, a SAML POST from another site among them.
+EXEMPT_PATHS = ("/api/dex/",)
 
 
 def cross_site(request: Request) -> str | None:
@@ -38,7 +40,8 @@ def cross_site(request: Request) -> str | None:
 def add_csrf_protection(app: FastAPI) -> None:
     @app.middleware("http")
     async def refuse_cross_site(request: Request, call_next):
-        if request.method not in SAFE_METHODS and (reason := cross_site(request)):
+        exempt = request.method in SAFE_METHODS or request.url.path.startswith(EXEMPT_PATHS)
+        if not exempt and (reason := cross_site(request)):
             log.warning("cross-site %s %s refused (%s)", request.method, request.url.path, reason)
             return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
         return await call_next(request)

@@ -189,3 +189,23 @@ Secret of the login: admin password and session key (auth.enabled).
 {{- define "kube-tower.authSecretName" -}}
 {{- .Values.auth.existingSecret | default (printf "%s-auth" (include "kube-tower.fullname" .)) }}
 {{- end }}
+
+{{/*
+Dex of the chart (dex.enabled): its selector labels, its address, and its issuer (<auth.url>api/dex).
+*/}}
+{{- define "kube-tower.dexSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "kube-tower.name" . }}-dex
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{- define "kube-tower.dexUrl" -}}
+{{- printf "http://%s-dex:5556" (include "kube-tower.fullname" .) }}
+{{- end }}
+
+{{- define "kube-tower.dexIssuer" -}}
+{{- if not .Values.auth.enabled }}
+{{- fail "dex.enabled needs auth.enabled=true (and auth.url)" }}
+{{- end }}
+{{- $url := required "dex.enabled needs auth.url: the URL users open kube-tower with" .Values.auth.url }}
+{{- printf "%s/api/dex" (trimSuffix "/" $url) }}
+{{- end }}
