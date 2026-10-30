@@ -25,6 +25,7 @@ from kube_tower.models import ChartDependency, ImageRef, ImageReport, SecurityKi
 from kube_tower.processes import roles_status
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
+from kube_tower.web.login import can_act, current_user
 from kube_tower.web.metrics import image_update
 from kube_tower.web.summary import UPDATE_KINDS, fixable_critical, summarize, todo, workloads
 
@@ -34,6 +35,7 @@ templates.env.globals["version"] = __version__
 templates.env.globals["Status"] = Status
 templates.env.globals["Severity"] = Severity
 templates.env.globals["SecurityKind"] = SecurityKind
+templates.env.globals.update(can_act=can_act, current_user=current_user)
 # Static files are cached by browsers for a year: their URLs change with their content (see asset()).
 STATIC_VERSION = hashlib.sha256(b"".join(f.read_bytes() for f in sorted((HERE / "static").iterdir()) if f.is_file())).hexdigest()[
     :12

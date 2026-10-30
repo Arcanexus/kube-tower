@@ -594,3 +594,56 @@ def test_the_internal_api_values_of_rc3_are_ignored(tmp_path):
     values = DISTRIBUTED | {"distributed": {"internal": {"existingSecret": "kube-tower-internal"}}}
     docs = render(tmp_path, values)
     assert not [k for k in docs if k[0] == "Secret"] and ("Service", "kt-kube-tower-internal") not in docs
+
+
+def test_auth_off_by_default(tmp_path):
+    docs = render(tmp_path, {})
+    assert "auth" not in yaml.safe_load(docs[("ConfigMap", "kt-kube-tower")]["data"]["config.yaml"])
+    assert ("Role", "kt-kube-tower-auth") not in docs and "auth" not in volumes(docs)
+
+
+def test_auth(tmp_path):
+    users = [
+        {"name": "alice", "existingSecret": "alice-pw"},
+        {"name": "ops", "role": "admin", "existingSecret": "ops", "passwordKey": "pw"},
+    ]
+    docs = render(tmp_path, {"auth": {"enabled": True, "users": users, "anonymousRole": "readonly", "sessionDuration": "8h"}})
+    settings = app_settings(tmp_path, docs).auth
+    assert settings.enabled and settings.admin and settings.anonymous_role == "readonly" and settings.metrics_public
+    assert settings.session_duration == 8 * 3600
+    assert (settings.secret_name, settings.secret_dir) == ("kt-kube-tower-auth", "/etc/kube-tower/auth")
+    assert [(u.name, u.role, u.password_file) for u in settings.users] == [
+        ("alice", "readonly", "/etc/kube-tower/users/0/password"),
+        ("ops", "admin", "/etc/kube-tower/users/1/pw"),
+    ]
+    # The auth Secret is created by kube-tower (kept on upgrades and ArgoCD syncs), mounted once it exists
+    assert not [k for k in docs if k[0] == "Secret"]
+    assert volumes(docs)["auth"]["secret"] == {"secretName": "kt-kube-tower-auth", "optional": True}
+    assert volumes(docs)["user-1"]["secret"] == {"secretName": "ops"}
+    mounts = {m["name"]: m["mountPath"] for m in container(docs)["volumeMounts"]}
+    assert mounts["auth"] == "/etc/kube-tower/auth" and mounts["user-0"] == "/etc/kube-tower/users/0"
+    rules = docs[("Role", "kt-kube-tower-auth")]["rules"]
+    assert rules == [
+        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["kt-kube-tower-auth"], "verbs": ["get"]},
+        {"apiGroups": [""], "resources": ["secrets"], "verbs": ["create"]},
+    ]
+    assert docs[("RoleBinding", "kt-kube-tower-auth")]["roleRef"]["name"] == "kt-kube-tower-auth"
+
+    # A Secret of your own (ExternalSecret...): read only, never created
+    docs = render(tmp_path, {"auth": {"enabled": True, "existingSecret": "my-auth", "admin": False, "users": users}})
+    assert app_settings(tmp_path, docs).auth.secret_name == "my-auth"
+    assert docs[("Role", "kt-kube-tower-auth")]["rules"] == [
+        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["my-auth"], "verbs": ["get"]}
+    ]
+    assert "auth.users[0].existingSecret is required" in render_error(
+        tmp_path, {"auth": {"enabled": True, "users": [{"name": "x"}]}}
+    )
+
+
+def test_auth_in_distributed_mode(tmp_path):
+    docs = render(tmp_path, DISTRIBUTED | {"auth": {"enabled": True}})
+    # Only the ui pods check the logins; the controller creates the Secret
+    for group, mounted in (("ui", True), ("controller", False), ("worker", False), ("trivy", False)):
+        spec = deployment(docs, group)["template"]["spec"]
+        assert ("auth" in {v["name"] for v in spec["volumes"]}) is mounted, group
+    assert ("Role", "kt-kube-tower-auth") in docs

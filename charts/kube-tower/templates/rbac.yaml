@@ -137,6 +137,42 @@ subjects:
     name: {{ include "kube-tower.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
+{{- if .Values.auth.enabled }}
+---
+# Login (auth.enabled): the controller reads the auth Secret, and creates it when it is missing
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-auth
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["{{ include "kube-tower.authSecretName" . }}"]
+    verbs: ["get"]
+  {{- if not .Values.auth.existingSecret }}
+  # `create` cannot be limited to a name: kube-tower only creates its auth Secret
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-auth
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kube-tower.fullname" . }}-auth
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kube-tower.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- if include "kube-tower.distributed" . }}
 ---
 # Election of the active controller (distributed mode): the Lease of the controllers

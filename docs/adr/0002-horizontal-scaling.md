@@ -57,8 +57,8 @@ its replicas, resources and HPA.
 
 - `roles: [all]` stays the default: small installs see no change.
 - The UI pods, the ones exposed to users, lose every Kubernetes right and registry credential.
-- The `ui` role keeps no session state: the login and SSO planned later (#108, ArgoCD-like local
-  admin + OIDC) will use signed tokens, so any `ui` replica serves any request.
+- The `ui` role keeps no session state: the login (1.1, [authentication](../authentication.md)) keeps
+  sessions in signed cookies, so any `ui` replica serves any request; SSO with OIDC will do the same (#108).
 - Snapshot metrics are exported by the controller only (no duplicated series).
 - Every process but the active controller reports to it every 5 seconds with its new log lines: the
   Logs page shows the lines of every pod (filtered by role), the Administration page the state of

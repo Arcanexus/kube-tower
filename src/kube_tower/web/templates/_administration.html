@@ -2,12 +2,13 @@
 {% macro action(name, label, ico="refresh", disabled=False, why="", confirm="", cls="outline") -%}
 <button type="button" class="{{ cls }} small" hx-post="administration/{{ name }}" hx-target="#administration" hx-swap="outerHTML"
         {% if confirm %}hx-confirm="{{ confirm }}"{% endif %}
-        {% if disabled %}disabled title="{{ why }}"{% endif %}>{{ icon(ico) }}{{ label }}</button>
+        {% if not can_act() %}disabled title="The admin role is needed"{% elif disabled %}disabled title="{{ why }}"{% endif %}>{{ icon(ico) }}{{ label }}</button>
 {%- endmacro %}
 {% macro date(value) -%}{{ value.strftime("%Y-%m-%d %H:%M UTC") if value else "" }}{%- endmacro %}
 {% set locked = checking_versions or backend.busy %}
 <div id="administration" class="administration"
      {% if busy %}hx-get="administration?polling=1" hx-trigger="every 3s [document.visibilityState=='visible']" hx-target="this" hx-swap="outerHTML"{% endif %}>
+  {% if not can_act() %}<p class="notice">{{ icon("lock") }}Read-only: the actions of this page need the admin role.</p>{% endif %}
   {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
   {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
 

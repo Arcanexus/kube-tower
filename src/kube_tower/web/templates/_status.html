@@ -30,6 +30,8 @@
     </div>
   </details>
   {% endif %}
+  {% if can_act() %}
   <button class="refresh" {% if checking_versions %}disabled aria-busy="true"{% endif %} hx-post="api/refresh" hx-swap="none" title="Start a full scan now"
           hx-on::after-request="htmx.ajax('GET', 'status', {target: '#scan-status', swap: 'outerHTML'})">{% if not checking_versions %}{{ icon("refresh") }}{% endif %}Scan now</button>
+  {% endif %}
 </div>

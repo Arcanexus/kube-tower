@@ -219,6 +219,42 @@ class RedisSettings:
     key_prefix: str = "kube-tower"
 
 
+# What a logged in user may do: `readonly` sees everything, `admin` also starts scans, rescans, retries,
+# connectivity tests and the Trivy actions (every request that changes something).
+USER_ROLES = ("readonly", "admin")
+
+
+@dataclass
+class LocalUser:
+    """A local account (like the `accounts` of ArgoCD). Its password is read from a file (mounted Secret) or an
+    env var at each login, never written in the ConfigMap: a new password applies without restart."""
+
+    name: str
+    role: str = "readonly"
+    password_file: str = ""
+    password_env: str = ""
+
+
+@dataclass
+class AuthSettings:
+    """Login on the UI and the API (off by default: anyone who reaches kube-tower can use it)."""
+
+    enabled: bool = False
+    # Built-in `admin` account, its password in the auth Secret (`admin.password`, generated when missing).
+    admin: bool = True
+    users: list[LocalUser] = field(default_factory=list)
+    # Role of the visitors who are not logged in: "" (they must log in) or readonly.
+    anonymous_role: str = ""
+    session_duration: int = 24 * 3600
+    # Secret holding `admin.password` and `session.key` (the key signing the sessions, shared by every ui pod),
+    # in the namespace of kube-tower: created with random values by the controller when missing. Mounted in
+    # secretDir by the chart; a process running the controller also reads it from the Kubernetes API.
+    secret_name: str = "kube-tower-auth"
+    secret_dir: str = "/etc/kube-tower/auth"
+    # /metrics stays open for Prometheus; false: it needs a login too (Basic auth of a local user).
+    metrics_public: bool = True
+
+
 @dataclass
 class Settings:
     roles: list[str] = field(default_factory=lambda: ["all"])
@@ -233,6 +269,7 @@ class Settings:
     git: GitSettings = field(default_factory=GitSettings)
     internal: InternalSettings = field(default_factory=InternalSettings)
     redis: RedisSettings = field(default_factory=RedisSettings)
+    auth: AuthSettings = field(default_factory=AuthSettings)
 
     @property
     def distributed(self) -> bool:
@@ -282,6 +319,7 @@ def load_settings(path: str | None = None) -> Settings:
         settings.redis.key_prefix = prefix
     settings.roles = check_roles(settings.roles)
     check_internal(settings)
+    check_auth(settings.auth)
     return settings
 
 
@@ -302,3 +340,16 @@ def check_internal(settings: Settings) -> None:
             f"roles {', '.join(settings.roles)}: the processes talk through Valkey or Redis, set redis.url"
             " (or $KUBE_TOWER_REDIS_URL)"
         )
+
+
+def check_auth(auth: AuthSettings) -> None:
+    """Roles of the users known, and someone able to log in when the login is on."""
+    if bad := [u.name for u in auth.users if u.role not in USER_ROLES]:
+        raise ValueError(f"auth.users {', '.join(map(repr, bad))}: role must be one of {', '.join(USER_ROLES)}")
+    if auth.anonymous_role not in ("", "readonly"):
+        raise ValueError(f"auth.anonymousRole {auth.anonymous_role!r}: expected readonly or empty (login required)")
+    names = [u.name for u in auth.users] + (["admin"] if auth.admin else [])
+    if len(set(names)) != len(names):
+        raise ValueError("auth.users: each name once (admin is the built-in account unless auth.admin is false)")
+    if auth.enabled and not names:
+        raise ValueError("auth.enabled: no account to log in with, keep auth.admin or add auth.users")

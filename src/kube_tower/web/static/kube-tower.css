@@ -197,6 +197,13 @@ main { flex: 1; padding: 1.25rem 1.5rem; }
 .sidebar .version { display: flex; align-items: center; gap: .5rem; }
 .sidebar .version a { display: inline-flex; color: #8e9bb3; }
 .sidebar .version a:hover { color: #fff; text-decoration: none; }
+/* Logged in user (auth.enabled) and the logout button */
+.sidebar .user { display: flex; align-items: center; gap: .35rem; font-size: .8rem; }
+.sidebar .user-name { display: flex; align-items: center; gap: .35rem; min-width: 0; flex: 1; color: var(--kt-sidebar-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar .user-name small { color: #8e9bb3; }
+.sidebar .user form { margin: 0; }
+.sidebar .logout { display: inline-flex; padding: .3rem; background: transparent; border: 0; color: #8e9bb3; }
+.sidebar .logout:hover { color: #fff; background: rgba(255, 255, 255, .07); filter: none; }
 
 /* Theme button: shows the icon of the current theme */
 .theme-toggle {
@@ -231,7 +238,10 @@ main { flex: 1; padding: 1.25rem 1.5rem; }
   .sidebar nav > ul:not(.nav-secondary) .icon { width: 1.35rem; height: 1.35rem; }
   .sidebar nav ul.nav-secondary { margin: 0; padding: 0; border: 0; }
   .sidebar .nav-secondary a, .theme-toggle { width: 2.75rem; height: 2.75rem; justify-content: center; padding: 0; border: 0; }
-  .sidebar .nav-secondary span, .theme-toggle .theme-label, .sidebar .version { display: none; }
+  .sidebar .nav-secondary span, .theme-toggle .theme-label, .sidebar .version, .sidebar .user-name > span { display: none; }
+  .sidebar footer { flex-direction: row; align-items: center; gap: 0; }
+  .sidebar .user-name { flex: none; width: 2.75rem; height: 2.75rem; justify-content: center; }
+  .sidebar .logout { width: 2.75rem; height: 2.75rem; justify-content: center; align-items: center; }
   .sidebar footer { margin: 0; padding: 0; }
   .topbar { padding: .6rem 1rem; }
   .page-title p { display: none; }
@@ -724,3 +734,12 @@ td.cell-name { max-width: 21rem; }
 .secret-match { word-break: break-all; }
 .empty-state { max-width: 48rem; }
 .empty-state pre { overflow-x: auto; padding: .75rem; border-radius: var(--kt-radius); background: var(--kt-hover); font-size: .8rem; }
+
+/* Login page (auth.enabled) */
+.login { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; max-width: 22rem; margin: 12vh auto 0; padding: 0 1rem; }
+.login-brand { display: flex; align-items: center; justify-content: center; gap: .6rem; font-size: 1.5rem; font-weight: 700; }
+.login form { display: flex; flex-direction: column; gap: .9rem; margin: 0; }
+.login label { display: flex; flex-direction: column; gap: .3rem; font-weight: 600; }
+.login button { justify-content: center; }
+.login .notice { margin: 0; }
+.login-help { text-align: center; color: var(--kt-muted); }

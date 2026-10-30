@@ -322,7 +322,11 @@ To follow the development version, point `source` at the git repository instead:
 | `config.registries.useImagePullSecrets` | `false` | Reuse the image pull secrets of the workloads (adds `get` on secrets to the ClusterRole), see [registries](registries.md#reusing-the-image-pull-secrets) |
 | `git.existingSecret` / `git.secretKey` | `""` / `token` | Existing Secret with a token for private git repositories holding charts |
 | `git.token` | `""` | The same token inline, the chart creates the Secret |
-| `rbac.create` | `true` | Read-only ClusterRole and Role for cluster Secrets |
+| `auth.enabled` | `false` | Login on the UI and the API, see [authentication](authentication.md) |
+| `auth.admin` / `.users` / `.anonymousRole` | `true` / `[]` / `""` | Built-in `admin` account, local accounts (`name`, `role`, `existingSecret`, `passwordKey`), role of the visitors not logged in |
+| `auth.existingSecret` | `""` | Secret with `admin.password` and `session.key`; empty: `<release>-auth`, created by kube-tower when missing |
+| `auth.sessionDuration` / `.metricsPublic` | `24h` / `true` | Session length; `/metrics` open for Prometheus or behind the login |
+| `rbac.create` | `true` | Read-only ClusterRole and Role for cluster Secrets (and, with `auth.enabled`, `get` / `create` on the auth Secret) |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | ServiceAccount |
 | `service.type` / `service.port` | `ClusterIP` / `80` | Service |
 | `ingress.*` | disabled | Standard ingress settings |
