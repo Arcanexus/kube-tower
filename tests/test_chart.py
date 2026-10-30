@@ -647,3 +647,25 @@ def test_auth_in_distributed_mode(tmp_path):
         spec = deployment(docs, group)["template"]["spec"]
         assert ("auth" in {v["name"] for v in spec["volumes"]}) is mounted, group
     assert ("Role", "kt-kube-tower-auth") in docs
+
+
+def test_auth_oidc(tmp_path):
+    oidc = {
+        "name": "Authentik",
+        "issuer": "https://auth.example.com/application/o/kube-tower/",
+        "clientId": "kube-tower",
+        "clientSecret": {"existingSecret": "kt-oidc"},
+        "adminGroups": ["ops"],
+    }
+    docs = render(tmp_path, {"auth": {"enabled": True, "admin": False, "url": "https://kt.example.com/", "oidc": oidc}})
+    auth = app_settings(tmp_path, docs).auth
+    assert auth.url == "https://kt.example.com/" and not auth.admin
+    assert (auth.oidc.name, auth.oidc.issuer, auth.oidc.client_id) == ("Authentik", oidc["issuer"], "kube-tower")
+    assert auth.oidc.admin_groups == ["ops"] and auth.oidc.default_role == "readonly" and auth.oidc.groups_claim == "groups"
+    assert env(docs[("Deployment", "kt-kube-tower")]["spec"])["KUBE_TOWER_OIDC_CLIENT_SECRET"] == {
+        "secretKeyRef": {"name": "kt-oidc", "key": "clientSecret"}
+    }
+    assert "auth.url is required" in render_error(tmp_path, {"auth": {"enabled": True, "oidc": oidc}})
+    # No issuer: no SSO in the config
+    docs = render(tmp_path, {"auth": {"enabled": True, "url": "https://kt.example.com/"}})
+    assert app_settings(tmp_path, docs).auth.oidc.issuer == ""

@@ -288,6 +288,28 @@ auth:
   existingSecret: ""
   # /metrics stays open for Prometheus; false: it needs the Basic auth of a local user.
   metricsPublic: true
+  # URL users open kube-tower with (with its sub-path), e.g. https://kube-tower.example.com/: needed by the
+  # SSO, the provider sends the users back to <url>auth/callback.
+  url: ""
+  # Single sign-on with an OpenID Connect provider: Dex, Authentik, Keycloak, Entra ID, Okta...
+  oidc:
+    name: SSO                   # login button: "Log in with <name>"
+    issuer: ""                  # empty: no SSO
+    clientId: ""
+    # Secret holding the client secret
+    clientSecret:
+      existingSecret: ""
+      key: clientSecret
+    scopes: [openid, profile, email, groups]
+    usernameClaim: preferred_username
+    groupsClaim: groups
+    # Role from the groups: admin when in adminGroups, else readonly when in readonlyGroups, else defaultRole
+    # ("" refuses the users in none of these groups)
+    adminGroups: []
+    readonlyGroups: []
+    defaultRole: readonly
+    # PEM file of the CA of a provider with a private CA (mount it with extraVolumes / extraVolumeMounts)
+    caFile: ""
 
 service:
   type: ClusterIP

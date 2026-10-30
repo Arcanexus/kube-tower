@@ -137,6 +137,13 @@ spec:
                   key: {{ ternary $.Values.git.secretKey "token" (not (empty $.Values.git.existingSecret)) }}
             {{- end }}
             {{- end }}
+            {{- if and $.Values.auth.enabled $.Values.auth.oidc.issuer $.Values.auth.oidc.clientSecret.existingSecret (has "ui" $roles) }}
+            - name: KUBE_TOWER_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.auth.oidc.clientSecret.existingSecret }}
+                  key: {{ $.Values.auth.oidc.clientSecret.key | default "clientSecret" }}
+            {{- end }}
             {{- with $.Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

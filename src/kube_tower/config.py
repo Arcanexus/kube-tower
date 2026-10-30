@@ -236,6 +236,30 @@ class LocalUser:
 
 
 @dataclass
+class OidcSettings:
+    """Single sign-on with an OpenID Connect provider (Dex, Authentik, Keycloak, Entra ID, Okta...), the
+    authorization code flow with PKCE. kube-tower is a confidential client of the provider."""
+
+    # Shown on the login button: "Log in with <name>".
+    name: str = "SSO"
+    issuer: str = ""  # e.g. https://auth.example.com/application/o/kube-tower/ (empty: no SSO)
+    client_id: str = ""
+    client_secret_file: str = ""
+    client_secret_env: str = "KUBE_TOWER_OIDC_CLIENT_SECRET"
+    scopes: list[str] = field(default_factory=lambda: ["openid", "profile", "email", "groups"])
+    # Claims of the ID token (or of the userinfo endpoint) naming the user and listing their groups.
+    username_claim: str = "preferred_username"
+    groups_claim: str = "groups"
+    # Role from the groups: admin when in adminGroups, else readonly when in readonlyGroups, else
+    # defaultRole ("" refuses the users in none of these groups).
+    admin_groups: list[str] = field(default_factory=list)
+    readonly_groups: list[str] = field(default_factory=list)
+    default_role: str = "readonly"
+    # CA certificates (PEM file) of a provider with a private CA, in addition to the public ones.
+    ca_file: str = ""
+
+
+@dataclass
 class AuthSettings:
     """Login on the UI and the API (off by default: anyone who reaches kube-tower can use it)."""
 
@@ -253,6 +277,10 @@ class AuthSettings:
     secret_dir: str = "/etc/kube-tower/auth"
     # /metrics stays open for Prometheus; false: it needs a login too (Basic auth of a local user).
     metrics_public: bool = True
+    # URL users open kube-tower with, e.g. https://kube-tower.example.com/ (with its sub-path): needed by the SSO,
+    # whose provider sends users back to <url>auth/callback.
+    url: str = ""
+    oidc: OidcSettings = field(default_factory=OidcSettings)
 
 
 @dataclass
@@ -351,5 +379,16 @@ def check_auth(auth: AuthSettings) -> None:
     names = [u.name for u in auth.users] + (["admin"] if auth.admin else [])
     if len(set(names)) != len(names):
         raise ValueError("auth.users: each name once (admin is the built-in account unless auth.admin is false)")
-    if auth.enabled and not names:
-        raise ValueError("auth.enabled: no account to log in with, keep auth.admin or add auth.users")
+    oidc = auth.oidc
+    if oidc.issuer:
+        if not oidc.client_id:
+            raise ValueError("auth.oidc.clientId is required with auth.oidc.issuer")
+        if not auth.url.startswith(("https://", "http://")):
+            raise ValueError(
+                "auth.url is required with auth.oidc.issuer: the URL users open kube-tower with "
+                "(e.g. https://kube-tower.example.com/), the provider sends them back to <url>auth/callback"
+            )
+        if oidc.default_role not in ("", *USER_ROLES):
+            raise ValueError(f"auth.oidc.defaultRole {oidc.default_role!r}: expected readonly, admin or empty")
+    if auth.enabled and not names and not oidc.issuer:
+        raise ValueError("auth.enabled: no account to log in with, keep auth.admin, add auth.users or set auth.oidc")

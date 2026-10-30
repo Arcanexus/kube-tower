@@ -22,7 +22,7 @@ from pathlib import Path
 
 from kubernetes import client
 
-from kube_tower.config import AuthSettings, LocalUser
+from kube_tower.config import USER_ROLES, AuthSettings, LocalUser
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ PASSWORD_KEY, SESSION_KEY = "admin.password", "session.key"
 class User:
     name: str
     role: str  # readonly | admin
-    source: str = "local"  # local | anonymous
+    source: str = "local"  # local | oidc | anonymous
 
     @property
     def admin(self) -> bool:
@@ -146,19 +146,13 @@ class Authenticator:
         valid = hmac.compare_digest(password.encode(), (expected or secrets.token_hex(16)).encode())
         return User(user.name, user.role) if user and expected and valid else None
 
-    def session(self, user: User, now: float | None = None) -> str:
-        """The cookie value of a new session."""
-        local = self._local(user.name)
-        payload = {
-            "u": user.name,
-            "e": int((now or time.time()) + self.settings.session_duration),
-            "f": self._fingerprint(self._password(local)) if local else "",
-        }
+    def sign(self, payload: dict) -> str:
+        """`payload` as a cookie value signed with the session key."""
         body = _b64(json.dumps(payload, separators=(",", ":")).encode())
         return f"{body}.{_b64(hmac.new(self._key(), body.encode(), hashlib.sha256).digest())}"
 
-    def from_session(self, value: str, now: float | None = None) -> User | None:
-        """The user of a session cookie, None when it is forged, expired, or its password changed."""
+    def unsign(self, value: str, now: float | None = None) -> dict | None:
+        """The payload of a value made by sign(), None when it is forged or expired (its `e`)."""
         key = self._key()
         body, _, signature = value.partition(".")
         if not key or not signature:
@@ -170,8 +164,30 @@ class Authenticator:
             payload = json.loads(_unb64(body))
         except (ValueError, binascii.Error):
             return None
+        if not isinstance(payload, dict) or payload.get("e", 0) < (now or time.time()):
+            return None
+        return payload
+
+    def session(self, user: User, now: float | None = None) -> str:
+        """The cookie value of a new session."""
+        payload = {"u": user.name, "e": int((now or time.time()) + self.settings.session_duration)}
+        if user.source == "oidc":  # the role from the groups at login: a change applies at the next login
+            payload |= {"s": "oidc", "r": user.role}
+        else:
+            local = self._local(user.name)
+            payload["f"] = self._fingerprint(self._password(local)) if local else ""
+        return self.sign(payload)
+
+    def from_session(self, value: str, now: float | None = None) -> User | None:
+        """The user of a session cookie, None when it is forged, expired, or its password changed."""
+        payload = self.unsign(value, now)
+        if payload is None:
+            return None
+        if payload.get("s") == "oidc":
+            role = payload.get("r")
+            return User(payload.get("u", ""), role, "oidc") if self.settings.oidc.issuer and role in USER_ROLES else None
         local = self._local(payload.get("u", ""))
-        if local is None or payload.get("e", 0) < (now or time.time()):
+        if local is None:
             return None
         password = self._password(local)
         if not password or not hmac.compare_digest(payload.get("f", ""), self._fingerprint(password)):
@@ -188,6 +204,11 @@ class Authenticator:
         except (ValueError, binascii.Error):
             return None
         return self.check_password(name, password)
+
+    @property
+    def local_accounts(self) -> bool:
+        """Some account logs in with a password (else the login page only offers the SSO)."""
+        return self.settings.admin or bool(self.settings.users)
 
     @property
     def anonymous(self) -> User | None:

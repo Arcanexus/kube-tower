@@ -1,10 +1,9 @@
 # Authentication
 
 kube-tower can ask for a login on the UI and the API, the ArgoCD way: a built-in `admin` account
-with a generated password, local accounts, and two roles. It is off by default: without it,
+with a generated password, local accounts, single sign-on with an OpenID Connect provider (Dex,
+Authentik, Keycloak, Entra ID, Okta...), and two roles. It is off by default: without it,
 anyone who reaches kube-tower can use it, as in 1.0.
-
-SSO with OIDC (Dex, Authentik, Keycloak...) comes next, see [#108](https://github.com/Arcanexus/kube-tower/issues/108).
 
 ## Turn it on
 
@@ -94,6 +93,89 @@ kubectl -n kube-tower create secret generic kube-tower-alice --from-literal=pass
 Passwords are read at each login: a new password applies without restart, and closes the sessions
 opened with the old one. A change of role applies to the open sessions too.
 
+## Single sign-on (OIDC)
+
+kube-tower logs users in with an OpenID Connect provider (authorization code flow with PKCE, as a
+confidential client). Their role comes from their groups.
+
+1. In the provider, create a client (an *application*) for kube-tower: confidential, with the
+   redirect URI `<auth.url>auth/callback`, for example `https://kube-tower.example.com/auth/callback`,
+   and the groups in the ID token (or the userinfo endpoint).
+2. Put its client secret in a Secret:
+
+   ```sh
+   kubectl -n kube-tower create secret generic kube-tower-oidc --from-literal=clientSecret='…'
+   ```
+
+3. Set the values:
+
+   ```yaml
+   auth:
+     enabled: true
+     url: https://kube-tower.example.com/   # the URL users open, with its sub-path if any
+     oidc:
+       name: Authentik                      # the login button says "Log in with Authentik"
+       issuer: https://auth.example.com/application/o/kube-tower/
+       clientId: kube-tower
+       clientSecret:
+         existingSecret: kube-tower-oidc
+         key: clientSecret
+       adminGroups: [kube-tower-admins]     # admin role
+       readonlyGroups: []                   # readonly role
+       defaultRole: readonly                # everyone else; "" refuses them
+   ```
+
+The login page then offers *Log in with Authentik*, above the local accounts form. Keep `admin: true`
+as a way in when the provider is down, or set `admin: false` (and no `users`) to only offer the SSO.
+
+| Setting | Default | What |
+| --- | --- | --- |
+| `issuer` | `""` | Issuer URL, exactly as the provider writes it in `/.well-known/openid-configuration` |
+| `clientId`, `clientSecret` | | The client of kube-tower in the provider |
+| `scopes` | `openid profile email groups` | Scopes asked for (Dex needs `groups` for the groups) |
+| `usernameClaim` | `preferred_username` | Claim naming the user (else `email`, else `sub`) |
+| `groupsClaim` | `groups` | Claim listing the groups, read from the ID token, else from the userinfo endpoint |
+| `adminGroups` / `readonlyGroups` / `defaultRole` | `[]` / `[]` / `readonly` | Role from the groups: admin first, then readonly, then the default (`""` refuses the user) |
+| `caFile` | `""` | PEM file of a private CA of the provider (mount it with `extraVolumes`) |
+
+The role is decided at login: a change of groups applies at the next login (sessions last
+`sessionDuration`). *Log out* closes the kube-tower session, not the one of the provider.
+
+The ID token comes straight from the token endpoint of the provider, over a connection kube-tower
+opens: its issuer, audience, expiry and nonce are checked, the TLS certificate of the provider stands
+for its signature (OpenID Connect Core 3.1.3.7). Use an `https` issuer; a plain `http` one (a Dex
+inside the cluster) is logged as a warning.
+
+### Authentik
+
+Create an *OAuth2/OpenID Provider* (client type *Confidential*, redirect URI
+`https://kube-tower.example.com/auth/callback`, scopes `openid`, `email`, `profile`), then an
+*Application* using it, with the slug `kube-tower`. The issuer is
+`https://auth.example.com/application/o/kube-tower/`. Authentik puts the groups of the user in the
+`groups` claim of the `profile` scope.
+
+### Dex
+
+```yaml
+# Dex configuration
+staticClients:
+  - id: kube-tower
+    name: kube-tower
+    secret: <client secret>
+    redirectURIs: [https://kube-tower.example.com/auth/callback]
+```
+
+The issuer is the `issuer` of the Dex configuration (`https://dex.example.com` for example). Keep
+the `groups` scope so that Dex sends the groups of its connectors (GitHub teams as `org:team`, LDAP
+groups...).
+
+### Keycloak
+
+Create an OpenID Connect client with *Client authentication* on and the redirect URI above, then add
+a *Group Membership* mapper (token claim name `groups`, *Full group path* off) to its dedicated scope.
+The issuer is `https://keycloak.example.com/realms/<realm>`. Keycloak refuses unknown scopes: set
+`scopes: [openid, profile, email]`.
+
 ## Visitors who are not logged in
 
 ```yaml
@@ -146,6 +228,20 @@ auth:
   secretName: kube-tower-auth  # created with random values when missing (needs get and create on it)
   secretDir: /etc/kube-tower/auth   # where the ui pods find it mounted
   metricsPublic: true
+  url: ""                      # URL users open kube-tower with: the SSO sends them back to <url>auth/callback
+  oidc:
+    name: SSO
+    issuer: ""                 # empty: no SSO
+    clientId: ""
+    clientSecretFile: ""       # or clientSecretEnv (default KUBE_TOWER_OIDC_CLIENT_SECRET, set by the chart)
+    clientSecretEnv: KUBE_TOWER_OIDC_CLIENT_SECRET
+    scopes: [openid, profile, email, groups]
+    usernameClaim: preferred_username
+    groupsClaim: groups
+    adminGroups: []
+    readonlyGroups: []
+    defaultRole: readonly
+    caFile: ""
 ```
 
 The controller creates the Secret in its own namespace: the chart gives its ServiceAccount `get` on

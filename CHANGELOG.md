@@ -19,6 +19,11 @@ All notable changes to this project are documented here. The format follows
   Login page, user and *Log out* at the bottom of the sidebar, visitors without login optionally
   `readonly` (`auth.anonymousRole`), Basic auth of local accounts for the API, `/metrics` open or
   protected (`auth.metricsPublic`). The actions and the failed logins are logged with the name of the user.
+- **Single sign-on with OpenID Connect** (`auth.oidc`, see
+  [authentication](docs/authentication.md#single-sign-on-oidc)): Dex, Authentik, Keycloak, Entra ID,
+  Okta... with the authorization code flow and PKCE, the role from the groups of the user
+  (`adminGroups`, `readonlyGroups`, `defaultRole`), the groups read from the ID token or the userinfo
+  endpoint. *Log in with …* button on the login page, alone when there is no local account.
 - **Image size** in the detail panel of an image, as the nodes that pulled it report it
   (`node.status.images`): the size of the running digest, or a range when the digests or the
   architectures differ, and the size of each running digest in the *Digests* section. The nodes are

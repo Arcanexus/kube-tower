@@ -94,6 +94,12 @@ auth:                          # login on the UI and the API, see authentication
   secretName: kube-tower-auth  # admin.password and session.key, created with random values when missing
   secretDir: /etc/kube-tower/auth
   metricsPublic: true          # false: /metrics needs the Basic auth of a local account
+  url: ""                      # URL users open kube-tower with (needed by the SSO)
+  oidc:                        # single sign-on, see authentication.md#single-sign-on-oidc
+    issuer: ""                 # empty: no SSO
+    clientId: ""
+    adminGroups: []
+    defaultRole: readonly
 ```
 
 Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m`, `6h`, `1d` or seconds.
@@ -257,6 +263,7 @@ existing Secrets (ExternalSecrets, Sealed Secrets) outside a lab.
 | Registry credentials, several at once | `registries.existingSecret` | `registries.dockerConfigJson` | a `kubernetes.io/dockerconfigjson` Secret |
 | Private git repositories holding charts | `git.existingSecret` / `git.secretKey` | `git.token` | a token |
 | Login: admin password and session key | `auth.existingSecret` (keys `admin.password`, `session.key`) | no: created by kube-tower at startup, see [authentication](authentication.md) | random values |
+| OIDC client secret (SSO) | `auth.oidc.clientSecret.existingSecret` (+ `key`) | no | the client secret |
 | Passwords of the local accounts | `auth.users[].existingSecret` (+ `passwordKey`) | no | a password |
 | Remote clusters | `clusters[].existingSecret` or `config.clusters.secretNames` (labelled Secrets with `config.clusters.listSecrets: true`) | `clusters[]` with `server`/`config` or `kubeconfig` | see [clusters.md](clusters.md) |
 

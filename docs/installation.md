@@ -325,6 +325,10 @@ To follow the development version, point `source` at the git repository instead:
 | `auth.enabled` | `false` | Login on the UI and the API, see [authentication](authentication.md) |
 | `auth.admin` / `.users` / `.anonymousRole` | `true` / `[]` / `""` | Built-in `admin` account, local accounts (`name`, `role`, `existingSecret`, `passwordKey`), role of the visitors not logged in |
 | `auth.existingSecret` | `""` | Secret with `admin.password` and `session.key`; empty: `<release>-auth`, created by kube-tower when missing |
+| `auth.url` | `""` | URL users open kube-tower with, required by the SSO |
+| `auth.oidc.issuer` / `.clientId` / `.clientSecret.existingSecret` / `.clientSecret.key` | `""` / `""` / `""` / `clientSecret` | Single sign-on with an OIDC provider, see [authentication](authentication.md#single-sign-on-oidc) |
+| `auth.oidc.adminGroups` / `.readonlyGroups` / `.defaultRole` | `[]` / `[]` / `readonly` | Role from the groups of the user |
+| `auth.oidc.name` / `.scopes` / `.usernameClaim` / `.groupsClaim` / `.caFile` | `SSO` / `openid profile email groups` / `preferred_username` / `groups` / `""` | Login button, claims, private CA |
 | `auth.sessionDuration` / `.metricsPublic` | `24h` / `true` | Session length; `/metrics` open for Prometheus or behind the login |
 | `rbac.create` | `true` | Read-only ClusterRole and Role for cluster Secrets (and, with `auth.enabled`, `get` / `create` on the auth Secret) |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | ServiceAccount |

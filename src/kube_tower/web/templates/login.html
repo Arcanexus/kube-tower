@@ -5,22 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <script>try { const theme = localStorage.getItem("kt-theme"); if (theme) document.documentElement.dataset.theme = theme; } catch (e) {}</script>
   <title>kube-tower · login</title>
-  <link rel="icon" type="image/svg+xml" href="{{ asset("favicon.svg") }}">
-  <link rel="stylesheet" href="{{ asset("kube-tower.css") }}">
+  {% set up = "../" if request.url.path.startswith("/auth/") else "" %}
+  <link rel="icon" type="image/svg+xml" href="{{ up }}{{ asset("favicon.svg") }}">
+  <link rel="stylesheet" href="{{ up }}{{ asset("kube-tower.css") }}">
 </head>
 <body class="login-page">
   <main class="login">
-    <div class="login-brand"><img src="{{ asset("logo.svg") }}" alt="" width="48" height="48"><span>kube-tower</span></div>
+    <div class="login-brand"><img src="{{ up }}{{ asset("logo.svg") }}" alt="" width="48" height="48"><span>kube-tower</span></div>
     <article>
-      <form method="post" action="login">
+      {% if sso %}
+      <a role="button" class="sso" href="{{ up }}auth/login{% if next %}?next={{ next | urlencode }}{% endif %}">{{ icon("key") }}Log in with {{ sso }}</a>
+      {% if error and not local_accounts %}<p class="notice notice-error" role="alert">{{ icon("error") }}{{ error }}</p>{% endif %}
+      {% if local_accounts %}<p class="login-or"><small>or with a local account</small></p>{% endif %}
+      {% endif %}
+      {% if local_accounts %}
+      <form method="post" action="{{ up }}login">
         <input type="hidden" name="next" value="{{ next }}">
         <label>Username <input name="username" value="{{ name }}" autocomplete="username" required {% if not name %}autofocus{% endif %}></label>
         <label>Password <input name="password" type="password" autocomplete="current-password" required {% if name %}autofocus{% endif %}></label>
         {% if error %}<p class="notice notice-error" role="alert">{{ icon("error") }}{{ error }}</p>{% endif %}
-        <button type="submit" {% if not ready %}title="Waiting for the auth Secret"{% endif %}>{{ icon("lock") }}Log in</button>
+        <button type="submit" {% if sso %}class="outline"{% endif %} {% if not ready %}title="Waiting for the auth Secret"{% endif %}>{{ icon("lock") }}Log in</button>
       </form>
+      {% endif %}
     </article>
-    <p class="login-help"><small>The password of the <code>admin</code> account is in the <code>admin.password</code> key of the auth Secret, see the <a href="https://github.com/Arcanexus/kube-tower/blob/main/docs/authentication.md" target="_blank" rel="noopener">authentication docs</a>.</small></p>
+    {% if local_accounts %}<p class="login-help"><small>The password of the <code>admin</code> account is in the <code>admin.password</code> key of the auth Secret, see the <a href="https://github.com/Arcanexus/kube-tower/blob/main/docs/authentication.md" target="_blank" rel="noopener">authentication docs</a>.</small></p>{% endif %}
   </main>
 </body>
 </html>
