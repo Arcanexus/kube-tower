@@ -62,7 +62,16 @@ labels its pod, selected by the controller Service */ -}}
 {{- $secret := required (printf "auth.users[%d].existingSecret is required (Secret holding the password)" $i) $u.existingSecret }}
 {{- $users = append $users (dict "name" $name "role" ($u.role | default "readonly") "passwordFile" (printf "/etc/kube-tower/users/%d/%s" $i ($u.passwordKey | default "password"))) }}
 {{- end }}
-{{- $_ := set $config "auth" (dict "enabled" true "admin" .Values.auth.admin "users" $users "anonymousRole" .Values.auth.anonymousRole "sessionDuration" .Values.auth.sessionDuration "metricsPublic" .Values.auth.metricsPublic "secretName" (include "kube-tower.authSecretName" .) "secretDir" "/etc/kube-tower/auth") }}
+{{- $auth := dict "enabled" true "admin" .Values.auth.admin "users" $users "anonymousRole" .Values.auth.anonymousRole "sessionDuration" .Values.auth.sessionDuration "metricsPublic" .Values.auth.metricsPublic "secretName" (include "kube-tower.authSecretName" .) "secretDir" "/etc/kube-tower/auth" }}
+{{- with .Values.auth.oidc }}
+{{- if .issuer }}
+{{- /* The client secret comes from its Secret as $KUBE_TOWER_OIDC_CLIENT_SECRET */ -}}
+{{- $oidc := omit . "clientSecret" }}
+{{- $_ := set $auth "oidc" $oidc }}
+{{- $_ := set $auth "url" (required "auth.url is required with auth.oidc.issuer: the URL users open kube-tower with" $.Values.auth.url) }}
+{{- end }}
+{{- end }}
+{{- $_ := set $config "auth" $auth }}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap

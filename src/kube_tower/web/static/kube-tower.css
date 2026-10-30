@@ -743,3 +743,6 @@ td.cell-name { max-width: 21rem; }
 .login button { justify-content: center; }
 .login .notice { margin: 0; }
 .login-help { text-align: center; color: var(--kt-muted); }
+.login .sso { display: flex; justify-content: center; }
+.login article > .notice { margin-top: .9rem; }
+.login-or { margin: .9rem 0; text-align: center; color: var(--kt-muted); }
