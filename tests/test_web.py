@@ -450,6 +450,28 @@ def test_image_detail():
     assert client.get("/images/detail", params={"ref": "nope"}).status_code == 404
 
 
+def test_image_size():
+    from kube_tower.web.ui import image_size
+
+    client, scanner = _client()
+    nginx, app = scanner.snapshot.images[0], scanner.snapshot.images[1]
+    assert image_size(nginx) is None
+    detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    assert "unknown (no node has pulled it)" in detail
+    # The size of the running digest, the other ones (tag pushed again) are left out
+    nginx.running_digests = {"sha256:run"}
+    nginx.sizes = {"sha256:run": 70_000_000, "sha256:old": 65_000_000}
+    assert image_size(nginx) == (70_000_000, 70_000_000)
+    detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    assert re.search(r"Size</th><td>70.0 MB\s*</td>", detail)
+    assert '<small class="muted-text">· 70.0 MB</small>' in detail
+    # Only cached on nodes, two architectures: a range
+    app.sizes = {"sha256:amd64": 30_000_000, "sha256:arm64": 28_000_000}
+    assert image_size(app) == (28_000_000, 30_000_000)
+    detail = client.get("/images/detail", params={"ref": "ghcr.io/org/app:2.0"}).text
+    assert "28.0 MB to 30.0 MB" in detail
+
+
 def test_chart_tree_and_detail():
     client, _ = _client()
     page = client.get("/charts").text

@@ -125,6 +125,8 @@ class ImageReport:
     tag_digest: str | None = None  # digest published in the registry for the current tag
     message: str | None = None
     vulnerabilities: VulnerabilityReport | None = None  # None until scanned
+    # Size in bytes reported by the nodes that pulled the image, by digest ("" when the node gives none).
+    sizes: dict[str, int] = field(default_factory=dict)
 
     @property
     def clusters(self) -> list[str]:

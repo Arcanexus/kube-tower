@@ -365,6 +365,14 @@ def image_versions(r: ImageReport) -> tuple[tuple[str, str], tuple[str, str]]:
     return current, latest
 
 
+def image_size(r: ImageReport) -> tuple[int, int] | None:
+    """(smallest, largest) size in bytes of an image as its nodes report it, None when no node pulled it.
+    The sizes of the running digests when known: a tag pushed again, or another architecture, has its own size.
+    """
+    sizes = [r.sizes[d] for d in r.running_digests if d in r.sizes] or list(r.sizes.values())
+    return (min(sizes), max(sizes)) if sizes else None
+
+
 # Settings shown as durations on the Settings page (values in seconds).
 DURATION_KEYS = {"refreshInterval", "requestTimeout", "timeout", "rescanInterval"}
 
@@ -490,7 +498,7 @@ def vulnerability_score(report: ImageReport) -> int:
 templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score, workloads=workloads)
 templates.env.globals.update(image_update=image_update, fixable_critical=fixable_critical)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
-templates.env.globals.update(versioning=versioning, image_versions=image_versions, usage_tree=usage_tree)
+templates.env.globals.update(versioning=versioning, image_versions=image_versions, image_size=image_size, usage_tree=usage_tree)
 templates.env.filters.update(plural=plural, duration=duration, short_digest=short_digest)
 
 

@@ -41,6 +41,9 @@
   <tr><th scope="row">Current tag</th><td>{{ tag(r.image.tag) }}</td></tr>
   {% if versioning(r.image.tag) %}<tr><th scope="row">Versioning</th><td>{{ versioning(r.image.tag) }} <small>(only tags of the same scheme are compared)</small></td></tr>{% endif %}
   <tr><th scope="row">Latest tag</th><td>{{ r.latest_tag or "n/a" }}</td></tr>
+  {% set size = image_size(r) %}
+  <tr><th scope="row">Size</th><td>{% if size %}{{ size[0] | filesizeformat }}{% if size[1] != size[0] %} to {{ size[1] | filesizeformat }} <small>(depends on the digest or the architecture)</small>{% endif %}
+    {% else %}<small>unknown (no node has pulled it)</small>{% endif %}</td></tr>
   {% if r.latest_tag and r.status == Status.OUTDATED %}
   <tr><th scope="row">Upgrade to</th><td><code>{{ r.image.name }}:{{ r.latest_tag }}</code></td></tr>
   {% endif %}
@@ -81,7 +84,7 @@
   {% if r.image.digest %}<tr><th scope="row">Pinned in the manifest</th><td>{{ digest(r.image.digest) }}</td></tr>{% endif %}
   {% for d in r.running_digests | sort %}
   <tr><th scope="row">Running{% if r.running_digests | length > 1 %} #{{ loop.index }}{% endif %}</th>
-    <td>{{ digest(d) }}
+    <td>{{ digest(d) }}{% if r.sizes[d] %} <small class="muted-text">· {{ r.sizes[d] | filesizeformat }}</small>{% endif %}
       {% if published %}<br>{% if d == published %}<span class="badge badge-up-to-date">{{ icon("ok") }}same as published for '{{ r.image.tag }}'</span>
       {% else %}<span class="badge badge-outdated">{{ icon("outdated") }}differs from published for '{{ r.image.tag }}'</span>{% endif %}{% endif %}
     </td></tr>

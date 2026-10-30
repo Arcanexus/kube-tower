@@ -894,3 +894,11 @@ def test_snapshot_store():
     assert scanner.snapshot is snap
     scanner.snapshot = other = Snapshot()
     assert scanner.store.get() is other
+
+
+def test_merge_images_keeps_the_sizes_of_every_cluster():
+    def found(cluster, sizes):
+        return ImageReport(ImageRef("docker.io", "library/nginx", "1.25"), [Usage(cluster, "Node", None, "n1")], sizes=sizes)
+
+    merged = scanner_module.merge_images([[found("c1", {"sha256:a": 10, "sha256:b": 5})], [found("c2", {"sha256:a": 12})]])
+    assert len(merged) == 1 and merged[0].sizes == {"sha256:a": 12, "sha256:b": 5}

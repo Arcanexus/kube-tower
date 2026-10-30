@@ -36,7 +36,13 @@ def test_image_inventory(monkeypatch):
     cron = NS(metadata=_meta("backup", "ops"), spec=NS(job_template=NS(spec=NS(template=NS(spec=_spec("alpine:3.19"))))))
     node = NS(
         metadata=_meta("node-1"),
-        status=NS(images=[NS(names=["docker.io/library/redis@sha256:bbb", "docker.io/library/redis:7.2"])]),
+        status=NS(
+            images=[
+                NS(names=["docker.io/library/redis@sha256:bbb", "docker.io/library/redis:7.2"], size_bytes=41_000_000),
+                NS(names=["docker.io/library/nginx@sha256:aaa", "docker.io/library/nginx:1.25"], size_bytes=70_000_000),
+                NS(names=["docker.io/library/unknown:1"], size_bytes=None),
+            ]
+        ),
     )
 
     core, apps, batch = MagicMock(), MagicMock(), MagicMock()
@@ -71,11 +77,23 @@ def test_image_inventory(monkeypatch):
         "docker.io/library/nginx:1.25",
         "docker.io/library/alpine:3.19",
         "docker.io/library/redis:7.2",
+        "docker.io/library/unknown:1",
     }
     nginx = inventory.reports["docker.io/library/nginx:1.25"]
-    assert {u.kind for u in nginx.usages} == {"Pod", "Deployment"}
+    assert {u.kind for u in nginx.usages} == {"Pod", "Deployment", "Node"}
     assert nginx.running_digests == {"sha256:aaa"}
     assert inventory.reports["docker.io/library/redis:7.2"].running_digests == {"sha256:bbb"}
+    # Sizes as the nodes report them, by digest
+    assert nginx.sizes == {"sha256:aaa": 70_000_000}
+    assert inventory.reports["docker.io/library/redis:7.2"].sizes == {"sha256:bbb": 41_000_000}
+    assert inventory.reports["docker.io/library/alpine:3.19"].sizes == {}
+    assert inventory.reports["docker.io/library/unknown:1"].sizes == {}
+
+    # Without includeNodeImages, the nodes still give the sizes of the images found elsewhere
+    inventory = ImageInventory(ImagesSettings(include_node_images=False))
+    inventory.collect(Cluster("c1", "https://x", "in-cluster", None))
+    assert "docker.io/library/redis:7.2" not in inventory.reports
+    assert inventory.reports["docker.io/library/nginx:1.25"].sizes == {"sha256:aaa": 70_000_000}
 
 
 def test_charts_from_application_single_and_multi_source():
@@ -212,6 +230,7 @@ def test_image_pull_secrets(monkeypatch, caplog):
     core, apps, batch = MagicMock(), MagicMock(), MagicMock()
     core.list_pod_for_all_namespaces.return_value.items = [pod]
     core.read_namespaced_secret.side_effect = read_secret
+    core.list_node.return_value.items = []
     apps.list_deployment_for_all_namespaces.return_value.items = [deploy]
     apps.list_stateful_set_for_all_namespaces.return_value.items = []
     apps.list_daemon_set_for_all_namespaces.return_value.items = []
@@ -219,6 +238,7 @@ def test_image_pull_secrets(monkeypatch, caplog):
     for api in (core, apps, batch):
         for fn in (
             "list_pod_for_all_namespaces",
+            "list_node",
             "list_deployment_for_all_namespaces",
             "list_stateful_set_for_all_namespaces",
             "list_daemon_set_for_all_namespaces",
@@ -295,7 +315,9 @@ def test_image_inventory_reads_raw_json(monkeypatch):
     )
     node = client.V1Node(
         metadata=_meta("node-1"),
-        status=client.V1NodeStatus(images=[client.V1ContainerImage(names=["redis@sha256:bbb", "redis:7.2"])]),
+        status=client.V1NodeStatus(
+            images=[client.V1ContainerImage(names=["redis@sha256:bbb", "redis:7.2"], size_bytes=41_000_000)]
+        ),
     )
     lists = {
         "list_pod_for_all_namespaces": [pod],
@@ -320,11 +342,12 @@ def test_image_inventory_reads_raw_json(monkeypatch):
         inventory = ImageInventory(ImagesSettings(), pull_secrets=True)
         assert inventory.collect(Cluster("c1", "https://x", "in-cluster", None)) == []
         assert apis.read_namespaced_secret.call_args.args == ("regcred", "shop")
-        return {ref: (r.usages, r.running_digests) for ref, r in inventory.reports.items()}
+        return {ref: (r.usages, r.running_digests, r.sizes) for ref, r in inventory.reports.items()}
 
     raw = collect(raw=True)
     assert raw == collect(raw=False)
-    usages, digests = raw["docker.io/library/nginx:1.25"]
+    usages, digests, _ = raw["docker.io/library/nginx:1.25"]
+    assert raw["docker.io/library/redis:7.2"][2] == {"sha256:bbb": 41_000_000}
     assert Usage("c1", "Pod", "shop", "web-7d9f-x2k9p", "web", "Deployment/web", "node-1") in usages
     assert digests == {"sha256:aaa"}
     assert set(raw) == {"docker.io/library/nginx:1.25", "docker.io/library/busybox:1.36", "docker.io/library/redis:7.2"}

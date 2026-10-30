@@ -131,6 +131,14 @@ class ImageInventory:
             elif ref.digest:
                 report.running_digests.add(ref.digest)
 
+    def add_size(self, image: str, digest: str | None, size: int) -> None:
+        """Record the size of an image as a node reports it, for an image already found."""
+        ref = parse_image_ref(image)
+        key = str(ImageRef(ref.registry, ref.repository, ref.tag, None if ref.tag else ref.digest))
+        with self._lock:
+            if report := self.reports.get(key):
+                report.sizes[digest or ""] = max(size, report.sizes.get(digest or "", 0))
+
     def collect(self, cluster: Cluster) -> list[str]:
         """Read every image of a cluster. Returns non fatal error messages."""
         errors: list[str] = []
@@ -190,15 +198,18 @@ class ImageInventory:
             for name, image in _pod_spec_images(cron.spec.job_template.spec.template.spec):
                 self.add(image, Usage(cluster.name, "CronJob", cron.metadata.namespace, cron.metadata.name, name))
 
-        if self.settings.include_node_images:
-            for node in safe("nodes", core.list_node):
-                for node_image in node.status.images or []:
-                    names = node_image.names or []
-                    digest = next((_digest_from_image_id(n) for n in names if "@sha256:" in n), None)
-                    for image in names:
-                        if "@sha256:" in image:
-                            continue
+        # The nodes also give the size of the images they pulled: read them even without includeNodeImages.
+        for node in safe("nodes", core.list_node):
+            for node_image in node.status.images or []:
+                names = node_image.names or []
+                digest = next((_digest_from_image_id(n) for n in names if "@sha256:" in n), None)
+                for image in names:
+                    if "@sha256:" in image:
+                        continue
+                    if self.settings.include_node_images:
                         self.add(image, Usage(cluster.name, "Node", None, node.metadata.name), digest)
+                    if node_image.size_bytes:
+                        self.add_size(image, digest, node_image.size_bytes)
         if self.read_pull_secrets:
             errors += self._read_pull_secrets(cluster, core, secret_refs)
         log.info(
