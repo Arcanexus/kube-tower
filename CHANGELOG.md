@@ -12,6 +12,8 @@ All notable changes to this project are documented here. The format follows
   of the screenshots, comparison with similar tools and quick start, published by the `pages.yml`
   workflow from `site/` with the screenshots of `docs/images/`.
 
+- **Documentation in the [wiki](https://github.com/Arcanexus/kube-tower/wiki)**: `docs/` stays the source, the `wiki.yml` workflow
+  publishes it to the wiki (sidebar, images, links between pages) after every merge to `main`.
 - **Login and roles**, the ArgoCD way, on by default (`auth.enabled`, see
   [authentication](docs/authentication.md)): a built-in `admin` account whose password kube-tower
   generates in the Secret `<release>-auth` (`admin.password`, with the `session.key` signing the

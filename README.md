@@ -78,10 +78,10 @@ Open http://localhost:8080 and log in as `admin`: the first scan of the local cl
 
 Then, as needed:
 
-- [register other clusters](docs/clusters.md),
-- [connect private registries](docs/registries.md),
-- [expose the UI with an ingress or deploy with ArgoCD](docs/installation.md),
-- [add accounts, single sign-on or Dex](docs/authentication.md), or turn the login off (`auth.enabled=false`).
+- [register other clusters](https://github.com/Arcanexus/kube-tower/wiki/Clusters),
+- [connect private registries](https://github.com/Arcanexus/kube-tower/wiki/Registries),
+- [expose the UI with an ingress or deploy with ArgoCD](https://github.com/Arcanexus/kube-tower/wiki/Installation),
+- [add accounts, single sign-on or Dex](https://github.com/Arcanexus/kube-tower/wiki/Authentication), or turn the login off (`auth.enabled=false`).
 
 ## How it works
 
@@ -100,31 +100,31 @@ Every `refreshInterval` (6h by default), kube-tower lists the workloads, nodes a
 Applications of every reachable cluster with a read-only ServiceAccount, asks each registry for
 its published versions (each repository once per scan), then reads or scans the vulnerabilities
 of every image, and keeps the result in memory.
-The [architecture](docs/architecture.md) page draws the parts of kube-tower and how they talk to
-each other; design choices are explained in [ADR 0001](docs/adr/0001-architecture.md). For large inventories,
+The [architecture](https://github.com/Arcanexus/kube-tower/wiki/Architecture) page draws the parts of kube-tower and how they talk to
+each other; design choices are explained in [ADR 0001](https://github.com/Arcanexus/kube-tower/wiki/ADR-0001-kube-tower-architecture). For large inventories,
 the chart can split kube-tower in UI, controller, worker and Trivy Deployments scaled apart, with
-Valkey (or Redis) between them: see [scaling](docs/scaling.md), [ADR 0002](docs/adr/0002-horizontal-scaling.md) and [ADR 0003](docs/adr/0003-valkey-bus.md).
+Valkey (or Redis) between them: see [scaling](https://github.com/Arcanexus/kube-tower/wiki/Scaling), [ADR 0002](https://github.com/Arcanexus/kube-tower/wiki/ADR-0002-horizontal-scaling-with-roles) and [ADR 0003](https://github.com/Arcanexus/kube-tower/wiki/ADR-0003-the-processes-talk-through-Valkey).
 
 ## Documentation
 
-The [product website](https://arcanexus.github.io/kube-tower/) gives a tour of kube-tower; the guides below
-go into the details.
+The documentation is in the **[wiki](https://github.com/Arcanexus/kube-tower/wiki)**. It is written in [`docs/`](docs/) next to the code and
+published to the wiki after every merge to `main`, so both always show the same pages. The [product website](https://arcanexus.github.io/kube-tower/) gives a tour of kube-tower.
 
 | Guide | Content |
 | --- | --- |
-| [Installation](docs/installation.md) | Helm, ArgoCD, ingress, upgrades, requirements |
-| [Configuration](docs/configuration.md) | every setting, registry authentication, secrets |
-| [Authentication](docs/authentication.md) | login, admin password, local accounts, SSO with OIDC (Authentik, Dex, Keycloak), readonly and admin roles, API with Basic auth |
-| [Architecture](docs/architecture.md) | diagrams of the roles, the single and distributed modes, a scan step by step |
-| [Scaling](docs/scaling.md) | distributed mode: UI, controller, worker and Trivy pods, standby controller, Redis / Valkey |
-| [Clusters](docs/clusters.md) | registering remote clusters, reusing ArgoCD clusters |
-| [Registries](docs/registries.md) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: authentication, private CAs |
-| [Usage](docs/usage.md) | the pages, filters and sorting, rescans, administration, statuses, JSON API |
-| [Vulnerabilities](docs/vulnerabilities.md) | CVE detection with Trivy Operator reports or Trivy |
-| [Security](docs/security.md) | Trivy Operator config audit, exposed secrets, RBAC, infrastructure and compliance reports |
-| [Metrics and Grafana](docs/metrics.md) | Prometheus exporter, PromQL examples, alerts, Grafana dashboard |
-| [Development](docs/development.md) | run locally, tests and coverage, project layout, releases |
-| [Troubleshooting](docs/troubleshooting.md) | common errors and how to fix them |
+| [Installation](https://github.com/Arcanexus/kube-tower/wiki/Installation) | Helm, ArgoCD, ingress, upgrades, requirements |
+| [Configuration](https://github.com/Arcanexus/kube-tower/wiki/Configuration) | every setting, registry authentication, secrets |
+| [Authentication](https://github.com/Arcanexus/kube-tower/wiki/Authentication) | login, admin password, local accounts, SSO with OIDC (Authentik, Dex, Keycloak), readonly and admin roles, API with Basic auth |
+| [Architecture](https://github.com/Arcanexus/kube-tower/wiki/Architecture) | diagrams of the roles, the single and distributed modes, a scan step by step |
+| [Scaling](https://github.com/Arcanexus/kube-tower/wiki/Scaling) | distributed mode: UI, controller, worker and Trivy pods, standby controller, Redis / Valkey |
+| [Clusters](https://github.com/Arcanexus/kube-tower/wiki/Clusters) | registering remote clusters, reusing ArgoCD clusters |
+| [Registries](https://github.com/Arcanexus/kube-tower/wiki/Registries) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: authentication, private CAs |
+| [Usage](https://github.com/Arcanexus/kube-tower/wiki/Usage) | the pages, filters and sorting, rescans, administration, statuses, JSON API |
+| [Vulnerabilities](https://github.com/Arcanexus/kube-tower/wiki/Vulnerabilities) | CVE detection with Trivy Operator reports or Trivy |
+| [Security](https://github.com/Arcanexus/kube-tower/wiki/Security) | Trivy Operator config audit, exposed secrets, RBAC, infrastructure and compliance reports |
+| [Metrics and Grafana](https://github.com/Arcanexus/kube-tower/wiki/Metrics-and-Grafana) | Prometheus exporter, PromQL examples, alerts, Grafana dashboard |
+| [Development](https://github.com/Arcanexus/kube-tower/wiki/Development) | run locally, tests and coverage, project layout, releases |
+| [Troubleshooting](https://github.com/Arcanexus/kube-tower/wiki/Troubleshooting) | common errors and how to fix them |
 
 ## Compared to similar tools
 
@@ -140,7 +140,7 @@ go into the details.
 
 ## Contributing
 
-Issues and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), the [development guide](docs/development.md) and the [changelog](CHANGELOG.md). Security issues: see [SECURITY.md](SECURITY.md).
+Issues and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), the [development guide](https://github.com/Arcanexus/kube-tower/wiki/Development) and the [changelog](CHANGELOG.md). Security issues: see [SECURITY.md](SECURITY.md).
 
 ## License
 

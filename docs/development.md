@@ -63,7 +63,8 @@ src/kube_tower/
                        metrics.py, static/ (htmx, kube-tower.css/.js, icons; cached with asset())
 charts/kube-tower/     Helm chart
 deploy/                manifests for remote clusters
-docs/                  documentation and ADRs
+docs/                  documentation and ADRs, published to the wiki
+.github/scripts/       docs_to_wiki.py (builds the wiki from docs/)
 site/                  product website (plain HTML, CSS and JS), published on GitHub Pages
 ```
 
@@ -113,8 +114,34 @@ site/                  product website (plain HTML, CSS and JS), published on Gi
 | `docker-publish.yml` | push on `main`, tags, pull requests | runs the tests, builds the multi-arch image, pushes it to ghcr.io except for pull requests |
 | `helm-publish.yml` | tags | packages the chart with the tag version and pushes it to `oci://ghcr.io/arcanexus/charts` |
 | `pages.yml` | push on `main` changing `site/`, `docs/images/` or the icons | publishes the product website on GitHub Pages: https://arcanexus.github.io/kube-tower/ |
+| `wiki.yml` | push on `main` that changes `docs/` | publishes `docs/` to the [wiki](https://github.com/Arcanexus/kube-tower/wiki) |
 
-### Product website
+## Documentation
+
+The documentation is written in `docs/` (Markdown, images in `docs/images/`, ADRs in `docs/adr/`) and
+changes in the same pull request as the code. After every merge to `main`, `wiki.yml` publishes it to
+the [wiki](https://github.com/Arcanexus/kube-tower/wiki) with `.github/scripts/docs_to_wiki.py`:
+
+- `docs/README.md` becomes the Home page, the other pages get the names listed in `PAGES` of the
+  script, which also orders the sidebar (`_Sidebar.md`). ADRs are added on their own, named after
+  their title.
+- Links between pages and to images are written as usual relative links (`clusters.md#x`,
+  `images/a.png`) and work both on GitHub and in the wiki. Links to other files of the repository
+  (`../deploy/x.yaml`) become links to the `main` branch on GitHub.
+- Each wiki page ends with a link to its source: never edit the wiki itself, the next publication
+  replaces it.
+
+A new page must be added to `PAGES`, else the tests (`tests/test_docs_to_wiki.py`) and the
+publication fail. To preview the wiki locally:
+
+```sh
+python .github/scripts/docs_to_wiki.py docs /tmp/wiki && ls /tmp/wiki
+```
+
+The wiki must exist before the first publication: enable it (Settings > Features > Wikis) and save a
+first page in the Wiki tab, then run the **Wiki** workflow (it also runs by hand, *Run workflow*).
+
+## Product website
 
 `site/` holds the website: `index.html`, `style.css` and `site.js`, no framework and no build step.
 The workflow copies `docs/images/` into `images/` and the UI icon sprite into `icons.svg`, so the website
