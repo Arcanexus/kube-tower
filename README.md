@@ -5,7 +5,7 @@
 <h1 align="center">kube-tower</h1>
 
 <p align="center">
-  <strong>See what is outdated in your Kubernetes clusters, in one place, without touching anything.</strong>
+  <strong>Versions, lifecycle and vulnerabilities of every image and Helm chart of your Kubernetes clusters, at a glance.</strong>
 </p>
 
 <p align="center">
