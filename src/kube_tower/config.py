@@ -244,6 +244,7 @@ class OidcSettings:
     name: str = "SSO"
     issuer: str = ""  # e.g. https://auth.example.com/application/o/kube-tower/ (empty: no SSO)
     client_id: str = ""
+    client_id_env: str = "KUBE_TOWER_OIDC_CLIENT_ID"  # read when client_id is empty (the chart sets it)
     client_secret_file: str = ""
     client_secret_env: str = "KUBE_TOWER_OIDC_CLIENT_SECRET"
     scopes: list[str] = field(default_factory=lambda: ["openid", "profile", "email", "groups"])
@@ -351,6 +352,9 @@ def load_settings(path: str | None = None) -> Settings:
         settings.redis.url = url
     if prefix := os.environ.get("KUBE_TOWER_REDIS_KEY_PREFIX"):
         settings.redis.key_prefix = prefix
+    oidc = settings.auth.oidc
+    if not oidc.client_id and oidc.client_id_env:
+        oidc.client_id = os.environ.get(oidc.client_id_env, "").strip()
     settings.roles = check_roles(settings.roles)
     check_internal(settings)
     check_auth(settings.auth)
@@ -388,7 +392,10 @@ def check_auth(auth: AuthSettings) -> None:
     oidc = auth.oidc
     if oidc.issuer:
         if not oidc.client_id:
-            raise ValueError("auth.oidc.clientId is required with auth.oidc.issuer")
+            raise ValueError(
+                f"auth.oidc.clientId is required with auth.oidc.issuer (or ${oidc.client_id_env}, set by the chart from the "
+                "key clientId of auth.oidc.existingSecret)"
+            )
         if not auth.url.startswith(("https://", "http://")):
             raise ValueError(
                 "auth.url is required with auth.oidc.issuer: the URL users open kube-tower with "

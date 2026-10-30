@@ -105,10 +105,11 @@ confidential client). Their role comes from their groups.
 1. In the provider, create a client (an *application*) for kube-tower: confidential, with the
    redirect URI `<auth.url>auth/callback`, for example `https://kube-tower.example.com/auth/callback`,
    and the groups in the ID token (or the userinfo endpoint).
-2. Put its client secret in a Secret:
+2. Put its client id and client secret in a Secret (by hand, or with ExternalSecrets or Sealed Secrets):
 
    ```sh
-   kubectl -n kube-tower create secret generic kube-tower-oidc --from-literal=clientSecret='…'
+   kubectl -n kube-tower create secret generic kube-tower-oidc \
+     --from-literal=clientId=kube-tower --from-literal=clientSecret='…'
    ```
 
 3. Set the values:
@@ -120,10 +121,7 @@ confidential client). Their role comes from their groups.
      oidc:
        name: Authentik                      # the login button says "Log in with Authentik"
        issuer: https://auth.example.com/application/o/kube-tower/
-       clientId: kube-tower
-       clientSecret:
-         existingSecret: kube-tower-oidc
-         key: clientSecret
+       existingSecret: kube-tower-oidc     # keys clientId and clientSecret
        adminGroups: [kube-tower-admins]     # admin role
        readonlyGroups: []                   # readonly role
        defaultRole: readonly                # everyone else; "" refuses them
@@ -135,7 +133,8 @@ as a way in when the provider is down, or set `admin: false` (and no `users`) to
 | Setting | Default | What |
 | --- | --- | --- |
 | `issuer` | `""` | Issuer URL, exactly as the provider writes it in `/.well-known/openid-configuration` |
-| `clientId`, `clientSecret` | | The client of kube-tower in the provider |
+| `existingSecret` | `""` | Secret holding the client of kube-tower in the provider: its client id (key `clientIdKey`, default `clientId`) and client secret (key `clientSecretKey`, default `clientSecret`) |
+| `clientId` | `""` | The client id in the values instead of the Secret, if you prefer |
 | `scopes` | `openid profile email groups` | Scopes asked for (Dex needs `groups` for the groups) |
 | `usernameClaim` | `preferred_username` | Claim naming the user (else `email`, else `sub`) |
 | `groupsClaim` | `groups` | Claim listing the groups, read from the ID token, else from the userinfo endpoint |
@@ -288,7 +287,8 @@ auth:
   oidc:
     name: SSO
     issuer: ""                 # empty: no SSO
-    clientId: ""
+    clientId: ""               # empty: read from clientIdEnv
+    clientIdEnv: KUBE_TOWER_OIDC_CLIENT_ID   # set by the chart from the key clientId of auth.oidc.existingSecret
     clientSecretFile: ""       # or clientSecretEnv (default KUBE_TOWER_OIDC_CLIENT_SECRET, set by the chart)
     clientSecretEnv: KUBE_TOWER_OIDC_CLIENT_SECRET
     scopes: [openid, profile, email, groups]

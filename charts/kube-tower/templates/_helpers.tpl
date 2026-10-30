@@ -186,6 +186,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/*
 Secret of the login: admin password and session key (auth.enabled).
 */}}
+{{/*
+Secret of the OIDC client (auth.oidc.existingSecret, or auth.oidc.clientSecret.existingSecret of 1.1.0-rc.1)
+and its keys.
+*/}}
+{{- define "kube-tower.oidcSecretName" -}}
+{{- .Values.auth.oidc.existingSecret | default (dig "clientSecret" "existingSecret" "" .Values.auth.oidc) }}
+{{- end }}
+
+{{- define "kube-tower.oidcClientSecretKey" -}}
+{{- dig "clientSecret" "key" "" .Values.auth.oidc | default .Values.auth.oidc.clientSecretKey | default "clientSecret" }}
+{{- end }}
+
 {{- define "kube-tower.authSecretName" -}}
 {{- .Values.auth.existingSecret | default (printf "%s-auth" (include "kube-tower.fullname" .)) }}
 {{- end }}

@@ -137,12 +137,22 @@ spec:
                   key: {{ ternary $.Values.git.secretKey "token" (not (empty $.Values.git.existingSecret)) }}
             {{- end }}
             {{- end }}
-            {{- if and $.Values.auth.enabled $.Values.auth.oidc.issuer $.Values.auth.oidc.clientSecret.existingSecret (has "ui" $roles) }}
+            {{- with and $.Values.auth.enabled $.Values.auth.oidc.issuer (not $.Values.dex.enabled) (include "kube-tower.oidcSecretName" $) }}
+            {{- if not $.Values.auth.oidc.clientId }}
+            {{- /* Every pod checks the configuration: the client id, not secret, goes to all of them */}}
+            - name: KUBE_TOWER_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.auth.oidc.clientIdKey | default "clientId" }}
+            {{- end }}
+            {{- if has "ui" $roles }}
             - name: KUBE_TOWER_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ $.Values.auth.oidc.clientSecret.existingSecret }}
-                  key: {{ $.Values.auth.oidc.clientSecret.key | default "clientSecret" }}
+                  name: {{ . }}
+                  key: {{ include "kube-tower.oidcClientSecretKey" $ }}
+            {{- end }}
             {{- end }}
             {{- with $.Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

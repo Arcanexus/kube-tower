@@ -222,9 +222,7 @@ spec:
           oidc:
             name: Authentik
             issuer: https://auth.example.com/application/o/kube-tower/
-            clientId: kube-tower
-            clientSecret:
-              existingSecret: kube-tower-oidc
+            existingSecret: kube-tower-oidc   # keys clientId and clientSecret
             adminGroups: [kube-tower-admins]
 
         ingress:
@@ -267,7 +265,8 @@ kubectl create namespace kube-tower
 kubectl -n kube-tower create secret generic dockerhub-credentials \
   --from-literal=username=<docker-hub-user> --from-literal=password=<access-token>
 kubectl -n kube-tower create secret generic ghcr-token --from-literal=token=<github-pat-read-packages>
-kubectl -n kube-tower create secret generic kube-tower-oidc --from-literal=clientSecret=<authentik-client-secret>
+kubectl -n kube-tower create secret generic kube-tower-oidc \
+  --from-literal=clientId=kube-tower --from-literal=clientSecret=<authentik-client-secret>
 ```
 
 A missing Secret keeps the pod in `ContainerCreating`: create the Secrets before the first sync,
@@ -336,7 +335,7 @@ To follow the development version, point `source` at the git repository instead:
 | `auth.admin` / `.users` / `.anonymousRole` | `true` / `[]` / `""` | Built-in `admin` account, local accounts (`name`, `role`, `existingSecret`, `passwordKey`), role of the visitors not logged in |
 | `auth.existingSecret` | `""` | Secret with `admin.password` and `session.key`; empty: `<release>-auth`, created by kube-tower when missing |
 | `auth.url` | `""` | URL users open kube-tower with, required by the SSO |
-| `auth.oidc.issuer` / `.clientId` / `.clientSecret.existingSecret` / `.clientSecret.key` | `""` / `""` / `""` / `clientSecret` | Single sign-on with an OIDC provider, see [authentication](authentication.md#single-sign-on-oidc) |
+| `auth.oidc.issuer` / `.existingSecret` / `.clientIdKey` / `.clientSecretKey` / `.clientId` | `""` / `""` / `clientId` / `clientSecret` / `""` | Single sign-on with an OIDC provider, see [authentication](authentication.md#single-sign-on-oidc) |
 | `auth.oidc.adminGroups` / `.readonlyGroups` / `.defaultRole` | `[]` / `[]` / `readonly` | Role from the groups of the user |
 | `auth.oidc.name` / `.scopes` / `.usernameClaim` / `.groupsClaim` / `.caFile` | `SSO` / `openid profile email groups` / `preferred_username` / `groups` / `""` | Login button, claims, private CA |
 | `dex.enabled` / `.name` / `.connectors` / `.env` / `.envFrom` | `false` / `Dex` / `[]` / `[]` / `[]` | Dex served by kube-tower on `<auth.url>api/dex`, like ArgoCD, see [authentication](authentication.md#dex-of-the-chart) |
