@@ -24,7 +24,7 @@ clusters:
   execCommands: []             # commands kubeconfig exec plugins may run (EKS, GKE, AKS), see clusters.md
 images:
   enabled: true
-  includeNodeImages: true      # images cached on nodes (node.status.images)
+  includeNodeImages: true      # images cached on nodes (node.status.images); the nodes give the image sizes either way
   includePrerelease: false
   checkFloatingDigests: true   # compare digests for latest/stable tags
   fetchTagDigests: true        # published digests of the current/latest tags (image details)

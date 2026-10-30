@@ -139,9 +139,13 @@ life OS release says so under its name.
 The detail panel of an image starts with its update and "current → latest" (with their digests),
 then:
 
-- **Versions**: the reference, the [versioning scheme](#versioning-schemes), the latest tag and the
-  upgrade target, with links to the image page on its registry (Docker Hub, GitHub Packages, Quay, ECR
-  Public, Microsoft Artifact Registry).
+- **Versions**: the reference, the [versioning scheme](#versioning-schemes), the latest tag, the
+  upgrade target and the **size** of the image, with links to the image page on its registry (Docker
+  Hub, GitHub Packages, Quay, ECR Public, Microsoft Artifact Registry). The size is the one reported by
+  the nodes that pulled the image (`node.status.images`, read even with `images.includeNodeImages:
+  false`): the download size with containerd, the unpacked size with Docker. It is the size of the
+  running digest, or a range when the digests or the architectures of the nodes differ, and is unknown
+  for an image no node has pulled (workload scaled to zero).
 - **Vulnerabilities**: the counts by severity and how many have a fix, the source (Trivy Operator
   report or Trivy scan by kube-tower), the scan date, the scanned digest and the OS (with a warning
   when it is end of life).
@@ -150,7 +154,7 @@ then:
   of their ReplicaSet, the CronJob of their Job); a workload without pod says **no pod running**
   (scaled to zero, CronJob between two runs). The nodes that have the image in their cache close each
   cluster. Clusters and namespaces fold.
-- **Digests**: the digests reported by the running pods, the digest currently published for the same
+- **Digests**: the digests reported by the running pods (with their size), the digest currently published for the same
   tag (a difference means the tag was pushed again since the pods started), and the digest of the
   latest tag. Published digests are read with `images.fetchTagDigests` (enabled by default).
 - **Check again**: the rescan buttons.

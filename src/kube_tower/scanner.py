@@ -529,7 +529,7 @@ class Scanner:
         new = []
         for found in merge_images(collected):
             if current := known.get(str(found.image)):
-                current.usages, current.running_digests = found.usages, found.running_digests
+                current.usages, current.running_digests, current.sizes = found.usages, found.running_digests, found.sizes
             else:
                 new.append(found)
         if new:
@@ -695,6 +695,8 @@ def merge_images(found: Iterable[list[ImageReport]]) -> list[ImageReport]:
             if (current := merged.setdefault(str(report.image), report)) is not report:
                 current.usages += report.usages  # usages name their cluster: no duplicate across clusters
                 current.running_digests |= report.running_digests
+                for digest, size in report.sizes.items():
+                    current.sizes[digest] = max(size, current.sizes.get(digest, 0))
     return sorted(merged.values(), key=lambda r: str(r.image))
 
 

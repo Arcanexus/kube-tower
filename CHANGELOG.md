@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Image size** in the detail panel of an image, as the nodes that pulled it report it
+  (`node.status.images`): the size of the running digest, or a range when the digests or the
+  architectures differ, and the size of each running digest in the *Digests* section. The nodes are
+  read for the sizes even with `images.includeNodeImages: false`. The size is also in `/api/snapshot`
+  (`sizes`, bytes by digest).
+
+## [1.0.0] - 2026-10-30
+
+### Added
+
 - **Security** page for the reports of Trivy Operator (without it, the page says how to install it, with
   a link to its documentation): its config audit,
   exposed secrets, RBAC, infrastructure and compliance reports (CIS, NSA, Pod Security Standards) of
