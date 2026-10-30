@@ -44,8 +44,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # uvicorn trusts X-Forwarded-Proto/For from the ingress controller (TLS terminated upstream)
 ENV FORWARDED_ALLOW_IPS=*
 
-# Unprivileged user, matches runAsUser in the Helm chart
-RUN adduser -D -H -u 10001 -s /sbin/nologin kube-tower
+# Unprivileged user, matches runAsUser in the Helm chart. pip is not used at run time: removed with
+# the packages it vendors (setuptools, msgpack, urllib3...), which image scanners report with their CVEs.
+RUN adduser -D -H -u 10001 -s /sbin/nologin kube-tower \
+    && rm -rf /usr/local/bin/pip* /usr/local/lib/python3.13/site-packages/pip \
+        /usr/local/lib/python3.13/site-packages/pip-*.dist-info /usr/local/lib/python3.13/ensurepip/_bundled
 
 COPY --from=deps /deps /usr/local/lib/python3.13/site-packages
 COPY src/ /app/src/
