@@ -58,6 +58,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Subcharts of HTTP Helm repositories whose `index.yaml` points to an OCI registry (Bitnami lists its
+  recent versions as `oci://registry-1.docker.io/bitnamicharts/<chart>:<version>`): their `Chart.yaml`
+  is now read from the registry instead of failing with `Request URL has an unsupported protocol 'oci://'`.
 - Distributed mode: right after *Scan now* or another action, the page always shows what the action
   started (the controller publishes its state once the scan has taken its lock), and the action is
   removed from Valkey before the ui process gets its answer. The `test_ui_process_actions` test failed
