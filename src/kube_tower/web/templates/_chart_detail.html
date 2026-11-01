@@ -1,4 +1,4 @@
-{% from "_macros.html" import badge, drawer, icon, links, rescan %}
+{% from "_macros.html" import badge, drawer, icon, links, rescan, subchart_badge %}
 {% set query = "cluster=" ~ (c.cluster | urlencode) ~ "&namespace=" ~ (c.app_namespace | urlencode) ~ "&app=" ~ (c.application | urlencode) ~ "&chart=" ~ (c.chart | urlencode) %}
 {% macro chart_versions(version, latest) -%}
 <span class="tree-versions">{{ version or "n/a" }}{% if latest and latest != version %} <span class="arrow" aria-hidden="true">→</span> {{ latest }}{% endif %}</span>
@@ -6,8 +6,8 @@
 
 {% macro subchart_item(d) -%}
 {# A subchart and its own subcharts (see ChartDependency.dependencies). #}
-<li>{{ icon("box") }}<strong>{{ d.name }}</strong> {{ chart_versions(d.version, d.latest_version) }} {{ badge(d.status) }}
-  <div class="tree-sub"><small class="tree-repo">{{ d.repository or "local" }}</small>{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</div>
+<li>{{ icon("box") }}<strong>{{ d.name }}</strong> {{ chart_versions(d.version, d.latest_version) }} {{ subchart_badge(d) }}
+  <div class="tree-sub"><small class="tree-repo">{{ d.repository or "local" }}</small>{% if not d.deployed %}<br><small>Not deployed: {{ d.not_deployed }}</small>{% endif %}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</div>
   {% if d.dependencies %}<ul>{% for s in d.dependencies %}{{ subchart_item(s) }}{% endfor %}</ul>{% endif %}
 </li>
 {%- endmacro %}

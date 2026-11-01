@@ -1219,3 +1219,23 @@ def test_about_page():
     assert "api.github.com" in client.get("/static/kube-tower.js").text
     # the version of every page links to it
     assert '<a href="about" title="About kube-tower"><small>dev</small></a>' in client.get("/images").text
+
+
+def test_subchart_not_deployed():
+    # common, the outdated subchart of redis, is left out by the Helm values: redis is up to date
+    client, scanner = _client()
+    scanner.snapshot.charts[0].dependencies[0].not_deployed = "common.enabled is false"
+    page = client.get("/charts").text
+    row = " ".join(page.split('id="results"')[1].split())
+    assert (
+        '<span class="badge badge-not-deployed" title="Left out of the release: common.enabled is false (version outdated)">'
+        in row
+    )
+    assert "subchart-hint" not in row and "with an outdated subchart" not in row
+    assert "redis" not in client.get("/charts?status=outdated").text.split('id="results"')[1]
+    detail = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
+    assert "Not deployed: common.enabled is false" in detail
+    assert (
+        'kube_tower_chart_dependency_outdated{application="redis",chart="redis",cluster="c1",dependency="common",latest="2.1.0",'
+        'status="not-deployed",update="minor",version="2.0.0"} 0.0'
+    ) in client.get("/metrics").text

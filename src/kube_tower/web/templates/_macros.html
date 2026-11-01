@@ -7,6 +7,13 @@
 <span class="badge badge-{{ status.value }}">{{ icon(icons[status.value]) }}{{ status.value }}</span>
 {%- endmacro %}
 
+{% macro subchart_badge(d) -%}
+{# The status of a subchart, or "not deployed" when the values of the release leave it out. #}
+{% if d.deployed %}{{ badge(d.status) }}{% else -%}
+<span class="badge badge-not-deployed" title="Left out of the release: {{ d.not_deployed }} (version {{ d.status.value }})">{{ icon("not-running") }}not deployed</span>
+{%- endif %}
+{%- endmacro %}
+
 {% macro page_title(name, title, subtitle, help="") -%}
 {# A short subtitle; longer explanations go in `help`, shown when hovering or focusing the help icon. #}
 <hgroup class="page-title">

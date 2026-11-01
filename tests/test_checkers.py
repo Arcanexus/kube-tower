@@ -6,8 +6,8 @@ import yaml
 
 from kube_tower.checkers import ChartChecker, ImageChecker
 from kube_tower.config import GitSettings, HelmSettings, ImagesSettings
-from kube_tower.models import ChartReport, ImageRef, ImageReport, Status
-from kube_tower.registry.helm import chart_yaml_from_archive, split_oci
+from kube_tower.models import ChartReport, ImageRef, ImageReport, Status, ValueFile
+from kube_tower.registry.helm import ChartFiles, chart_yaml_from_archive, split_oci
 from kube_tower.registry.oci import RegistryError
 
 
@@ -100,12 +100,27 @@ class FakeHelm:
     async def list_versions(self, repository, chart):
         return self.versions[(repository, chart)]
 
+    values: dict = {}  # chart -> default values
+    files: dict = {}  # path -> content, in the chart or in git
+
     async def chart_metadata(self, repository, chart, version):
         return {
             "name": chart,
             "version": version,
             "dependencies": self.dependencies.get(chart, []),
         }
+
+    async def chart_files(self, repository, chart, version, extra=()):
+        files = {p: self.files[p] for p in extra if p in self.files}
+        return ChartFiles(await self.chart_metadata(repository, chart, version), self.values.get(chart, {}), files)
+
+    async def git_chart_values(self, repository, ref, path):
+        return self.values.get("monitoring", {})
+
+    async def git_file(self, repository, ref, path, missing_ok=False):
+        if path.startswith("forbidden/"):
+            raise RegistryError("cannot read forbidden/values.yaml at main in https://github.com/o/r.git: HTTP 403")
+        return self.files.get(path)
 
     async def git_chart_metadata(self, repository, ref, path):
         return {
@@ -247,3 +262,110 @@ async def test_charts_of_an_http_index_pointing_to_oci_urls():
         (2, "common", "2.30.0", Status.UP_TO_DATE),
     ]
     assert pg.worst_status == Status.OUTDATED
+
+
+class DeploymentHelm(FakeHelm):
+    """external-secrets: bitwarden-sdk-server left out by its condition; redis with a disabled subchart."""
+
+    versions = {
+        **FakeHelm.versions,
+        ("https://charts.external-secrets.io", "external-secrets"): ["2.14.0"],
+        ("oci://ghcr.io/external-secrets/charts", "bitwarden-sdk-server"): ["v0.6.0", "v0.8.1"],
+        ("https://charts.bitnami.com/bitnami", "metrics"): ["1.0.0"],
+    }
+    dependencies = {
+        "external-secrets": [
+            {
+                "name": "bitwarden-sdk-server",
+                "version": "v0.6.0",
+                "repository": "oci://ghcr.io/external-secrets/charts",
+                "condition": "bitwarden-sdk-server.enabled",
+            },
+            {"name": "redis", "version": "19.0.0", "repository": "https://charts.bitnami.com/bitnami", "alias": "cache"},
+            {"name": "metrics", "version": "1.0.0", "repository": "https://charts.bitnami.com/bitnami", "tags": ["metrics"]},
+        ],
+        "redis": [
+            {
+                "name": "common",
+                "version": "2.0.0",
+                "repository": "https://charts.bitnami.com/bitnami",
+                "condition": "common.enabled",
+            },
+        ],
+        "bitwarden-sdk-server": [{"name": "common", "version": "2.0.0", "repository": "https://charts.bitnami.com/bitnami"}],
+    }
+    values = {
+        "external-secrets": {"bitwarden-sdk-server": {"enabled": False}, "tags": {"metrics": True}},
+        "redis": {"common": {"enabled": True}},
+    }
+    files = {
+        "apps/external-secrets/values.yaml": "cache:\n  common:\n    enabled: false\n",
+        "values-prod.yaml": "tags:\n  metrics: false\n",
+    }
+
+
+def _eso(**kwargs) -> ChartReport:
+    repository = "https://charts.external-secrets.io"
+    return ChartReport("c1", "eso", "argocd", "external-secrets", repository, "2.14.0", "helm", **kwargs)
+
+
+async def test_subcharts_left_out_by_the_values_are_not_deployed(caplog):
+    values = ValueFile("apps/external-secrets/values.yaml", "https://github.com/freuds/mediaserver.git", "main")
+    report = _eso(value_files=[values, ValueFile("values-prod.yaml", in_chart=True)])
+    await ChartChecker(DeploymentHelm(), HelmSettings()).check(report)
+    bitwarden, redis, metrics = report.dependencies
+    # its version is still checked, but it does not count in the status of the chart
+    assert (bitwarden.status, bitwarden.latest_version) == (Status.OUTDATED, "v0.8.1")
+    assert bitwarden.not_deployed == "bitwarden-sdk-server.enabled is false" and bitwarden.dependencies == []
+    # the value file of the Application, under the alias of redis, disables common (enabled by redis' defaults)
+    assert redis.deployed and redis.dependencies[0].not_deployed == "common.enabled is false"
+    assert metrics.not_deployed == "tags.metrics false"  # the value file of the chart overrides its defaults
+    # bitwarden-sdk-server and common are outdated, but not deployed: the chart is up to date
+    assert (report.status, redis.status, report.worst_status) == (Status.UP_TO_DATE,) * 3
+
+    # inline values (parameters) come last
+    report = _eso(inline_values={"bitwarden-sdk-server": {"enabled": True}})
+    await ChartChecker(DeploymentHelm(), HelmSettings()).check(report)
+    assert report.dependencies[0].deployed and report.dependencies[0].dependencies[0].name == "common"
+
+
+async def test_unreadable_values_leave_every_subchart_deployed(caplog):
+    for value_file in (
+        ValueFile("forbidden/values.yaml", "https://github.com/o/r.git", "main"),
+        ValueFile("missing.yaml", "https://github.com/o/r.git", "main"),
+        ValueFile("https://example.com/values.yaml"),
+    ):
+        report = _eso(value_files=[value_file])
+        await ChartChecker(DeploymentHelm(), HelmSettings()).check(report)
+        assert all(d.deployed for _, d in report.walk())
+    assert "cannot read the Helm values of application eso, every subchart of external-secrets is considered deployed" in (
+        caplog.text
+    )
+    assert (
+        "HTTP 403" in caplog.text
+        and (
+            "value file missing.yaml not found in https://github.com/o/r.git at main (private repository without "
+            "git.token / git.existingSecret?)"
+        )
+        in caplog.text
+    )
+    assert "value file https://example.com/values.yaml cannot be read by kube-tower" in caplog.text
+
+    # ignoreMissingValueFiles: the missing file is skipped, the defaults apply
+    report = _eso(value_files=[ValueFile("missing.yaml", "https://github.com/o/r.git", "main")], ignore_missing_value_files=True)
+    await ChartChecker(DeploymentHelm(), HelmSettings()).check(report)
+    assert not report.dependencies[0].deployed
+
+
+async def test_git_chart_defaults_decide_the_subcharts():
+    class Helm(DeploymentHelm):
+        values = {"monitoring": {"common": {"enabled": False}}}
+
+        async def git_chart_metadata(self, repository, ref, path):
+            deps = [{"name": "common", "version": "2.0.0", "repository": "https://charts.bitnami.com/bitnami"}]
+            return {"name": "monitoring", "version": "0.3.0", "dependencies": [{**deps[0], "condition": "common.enabled"}]}
+
+    report = ChartReport("c1", "mon", "argocd", "mon", "https://github.com/o/r.git", "", "git", git_ref="HEAD", path="mon")
+    await ChartChecker(Helm(), HelmSettings()).check(report)
+    assert report.dependencies[0].not_deployed == "common.enabled is false"
+    assert report.worst_status == Status.UP_TO_DATE  # common 2.0.0 is outdated, but not deployed

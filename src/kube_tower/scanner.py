@@ -70,7 +70,7 @@ def check_errors(snap: Snapshot) -> list[str]:
             f"[{c.cluster}] subchart {d.name} {d.version} of application {c.application}: {d.message}"
             for top in c.dependencies
             for _, d in top.walk()
-            if d.status == Status.ERROR
+            if d.status == Status.ERROR and d.deployed
         ]
     return errors
 

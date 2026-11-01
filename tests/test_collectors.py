@@ -9,7 +9,7 @@ from kube_tower.collectors import images as images_collector
 from kube_tower.collectors.helm import charts_from_application
 from kube_tower.collectors.images import ImageInventory
 from kube_tower.config import HelmSettings, ImagesSettings
-from kube_tower.models import Usage
+from kube_tower.models import Usage, ValueFile
 
 
 def _meta(name, namespace=None):
@@ -351,3 +351,43 @@ def test_image_inventory_reads_raw_json(monkeypatch):
     assert Usage("c1", "Pod", "shop", "web-7d9f-x2k9p", "web", "Deployment/web", "node-1") in usages
     assert digests == {"sha256:aaa"}
     assert set(raw) == {"docker.io/library/nginx:1.25", "docker.io/library/busybox:1.36", "docker.io/library/redis:7.2"}
+
+
+def test_charts_from_application_helm_values():
+    app = {
+        "metadata": {"name": "eso", "namespace": "argocd"},
+        "spec": {
+            "sources": [
+                {
+                    "repoURL": "https://charts.external-secrets.io",
+                    "chart": "external-secrets",
+                    "targetRevision": "2.14.0",
+                    "helm": {
+                        "valueFiles": ["$values/apps/eso/values.yaml", "values-prod.yaml", "$other/x.yaml", "https://x/v.yaml"],
+                        "ignoreMissingValueFiles": True,
+                        "valuesObject": {"bitwarden-sdk-server": {"enabled": True}, "password": "secret"},
+                        "parameters": [{"name": "webhook.create", "value": "false"}],
+                    },
+                },
+                {"ref": "values", "repoURL": "https://github.com/freuds/mediaserver.git", "targetRevision": "main"},
+                {
+                    "repoURL": "https://github.com/o/charts.git",
+                    "path": "charts/mon",
+                    "helm": {"valueFiles": ["../common/values.yaml"]},
+                },
+            ]
+        },
+        "status": {"sourceTypes": ["Helm", "Directory", "Helm"]},
+    }
+    eso, mon = charts_from_application("c1", app)
+    assert eso.value_files == [
+        ValueFile("apps/eso/values.yaml", "https://github.com/freuds/mediaserver.git", "main"),
+        ValueFile("values-prod.yaml", in_chart=True),
+        ValueFile("$other/x.yaml"),
+        ValueFile("https://x/v.yaml"),
+    ]
+    assert eso.ignore_missing_value_files
+    # only the booleans: the other values can hold secrets and go to the snapshot
+    assert eso.inline_values == {"bitwarden-sdk-server": {"enabled": True}, "webhook": {"create": False}}
+    assert mon.value_files == [ValueFile("charts/common/values.yaml", "https://github.com/o/charts.git", "HEAD")]
+    assert (mon.inline_values, mon.ignore_missing_value_files) == ({}, False)

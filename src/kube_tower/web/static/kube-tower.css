@@ -359,6 +359,7 @@ th[aria-sort="descending"]::after { content: "↓"; opacity: 1; color: var(--kt-
 .badge-outdated { background: var(--kt-warn-soft); color: var(--kt-warn); }
 .badge-changed { background: var(--kt-accent-soft); color: var(--kt-accent); }
 .badge-unknown { background: var(--kt-unk-soft); color: var(--kt-unk); }
+.badge-not-deployed { background: var(--kt-unk-soft); color: var(--kt-unk); font-weight: 500; font-style: italic; }
 .badge-error { background: var(--kt-err-soft); color: var(--kt-err); }
 .segment-up-to-date { background: #2e7d32; color: #fff; }
 .segment-outdated { background: #ef6c00; color: #fff; }

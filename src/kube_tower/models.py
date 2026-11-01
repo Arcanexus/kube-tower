@@ -148,12 +148,35 @@ class ChartDependency:
     latest_version: str | None = None
     message: str | None = None
     dependencies: list[ChartDependency] = field(default_factory=list)  # subcharts of the subchart
+    alias: str = ""
+    condition: str = ""  # `condition` of Chart.yaml: comma separated value paths
+    tags: list[str] = field(default_factory=list)
+    # Why Helm leaves the subchart out of the release (its condition or tags are false), None when deployed
+    # or when the values could not be read. Its status is still the one of its version, ignored by worst_status.
+    not_deployed: str | None = None
+
+    @property
+    def deployed(self) -> bool:
+        return self.not_deployed is None
 
     def walk(self, depth: int = 0):
         """Yield (depth, dependency) for this subchart and its own subcharts, depth first."""
         yield depth, self
         for d in self.dependencies:
             yield from d.walk(depth + 1)
+
+
+@dataclass
+class ValueFile:
+    """A `valueFiles` entry of an ArgoCD Application, located: a file of the chart itself (`in_chart`) or a file
+    of a git repository (the chart repository for git sources, a `ref` source for `$ref/...`).
+    `repository` is empty when the file cannot be located (URL, unknown `$ref`).
+    """
+
+    path: str
+    repository: str = ""
+    revision: str = ""
+    in_chart: bool = False
 
 
 def _worst(statuses: set[Status]) -> Status:
@@ -179,6 +202,12 @@ class ChartReport:
     message: str | None = None
     dependencies: list[ChartDependency] = field(default_factory=list)
     path: str | None = None  # git sources: path of the chart in the repository (`chart` becomes its name once read)
+    # Helm values of the Application, to know which subcharts are deployed: the files, read at each check, and
+    # the booleans only of the inline values and parameters (conditions and tags are booleans; the other
+    # values, which can hold secrets, are not kept in the snapshot).
+    value_files: list[ValueFile] = field(default_factory=list)
+    ignore_missing_value_files: bool = False
+    inline_values: dict = field(default_factory=dict)
 
     @property
     def key(self) -> tuple[str, str, str, str]:
@@ -192,7 +221,7 @@ class ChartReport:
 
     @property
     def worst_status(self) -> Status:
-        return _worst({self.status, *(d.status for _, d in self.walk())})
+        return _worst({self.status, *(d.status for _, d in self.walk() if d.deployed)})
 
 
 class SecurityKind(StrEnum):
