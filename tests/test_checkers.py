@@ -189,3 +189,61 @@ async def test_git_chart_checked_again_from_its_path():
     assert report.chart == "monitoring"
     await ChartChecker(Helm(), HelmSettings()).check(report)  # rescan: Chart.yaml read from the same path
     assert paths == ["charts/mon", "charts/mon"]
+
+
+async def test_charts_of_an_http_index_pointing_to_oci_urls():
+    """Bitnami's index.yaml points its recent versions to oci:// URLs (#159): a chart deployed from that repository
+    keeps its version status and its subchart tree instead of going to error, and so do its subcharts.
+    """
+    import httpx
+    import respx
+
+    from kube_tower.registry.helm import HELM_CHART_LAYER, HelmClient
+    from kube_tower.registry.oci import OCIClient
+
+    repo = "https://charts.bitnami.com/bitnami"
+
+    def entry(name, version):
+        return {"version": version, "urls": [f"oci://registry-1.docker.io/bitnamicharts/{name}:{version}"]}
+
+    def published(name, version, dependencies=()):
+        chart = {
+            "name": name,
+            "version": version,
+            "dependencies": [{"name": d, "version": v, "repository": repo} for d, v in dependencies],
+        }
+        base = f"https://registry-1.docker.io/v2/bitnamicharts/{name}"
+        digest = f"sha256:{name}{version}".replace(".", "")
+        respx.get(f"{base}/manifests/{version}").respond(
+            200, json={"layers": [{"mediaType": HELM_CHART_LAYER, "digest": digest}]}
+        )
+        respx.get(f"{base}/blobs/{digest}").respond(200, content=_chart_archive(chart))
+
+    index = {
+        "entries": {
+            "redis": [entry("redis", "21.0.0"), entry("redis", "20.3.0")],
+            "common": [entry("common", "2.30.0"), entry("common", "2.29.0")],
+            "postgresql": [entry("postgresql", "16.7.0")],
+        }
+    }
+    with respx.mock:
+        respx.get(f"{repo}/index.yaml").respond(200, text=yaml.safe_dump(index))
+        published("redis", "21.0.0", [("common", "2.29.0")])
+        published("postgresql", "16.7.0", [("redis", "20.3.0")])
+        published("redis", "20.3.0", [("common", "2.30.0")])
+        published("common", "2.29.0")
+        published("common", "2.30.0")
+        redis = ChartReport("c1", "cache", "argocd", "redis", repo, "21.0.0", "helm")
+        pg = ChartReport("c1", "db", "argocd", "postgresql", repo, "16.7.0", "helm")
+        async with httpx.AsyncClient() as http:
+            await ChartChecker(HelmClient(http, OCIClient(http), GitSettings()), HelmSettings()).check_all([redis, pg])
+
+    # The chart deployed directly: its own status, not "unsupported protocol 'oci://'".
+    assert (redis.status, redis.message, redis.latest_version) == (Status.UP_TO_DATE, None, "21.0.0")
+    assert [(depth, d.name, d.version, d.status) for depth, d in redis.walk()] == [(1, "common", "2.29.0", Status.OUTDATED)]
+    # A subchart of that repository: the subcharts it includes itself are read too.
+    assert [(depth, d.name, d.version, d.status) for depth, d in pg.walk()] == [
+        (1, "redis", "20.3.0", Status.OUTDATED),
+        (2, "common", "2.30.0", Status.UP_TO_DATE),
+    ]
+    assert pg.worst_status == Status.OUTDATED
