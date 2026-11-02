@@ -39,6 +39,15 @@ def split_oci(repository: str, chart: str) -> tuple[str, str]:
     return registry, f"{prefix}/{chart}".lstrip("/")
 
 
+def split_oci_url(url: str, version: str) -> tuple[str, str, str]:
+    """`oci://registry-1.docker.io/bitnamicharts/redis:21.0.0` -> (`registry-1.docker.io`, `bitnamicharts/redis`,
+    `21.0.0`). Without a tag, the chart version is the tag (Helm pushes each version under its own tag).
+    """
+    registry, _, path = url.removeprefix("oci://").partition("/")
+    name, _, tag = path.rpartition("/")[2].partition(":")
+    return registry, f"{path.rpartition('/')[0]}/{name}".lstrip("/"), tag or version
+
+
 def chart_yaml_from_archive(data: bytes) -> dict:
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for member in tar.getmembers():
@@ -155,21 +164,29 @@ class HelmClient:
         """Return the Chart.yaml of a published chart version (used to read its dependencies)."""
         if is_oci(repository):
             registry, path = split_oci(repository, chart)
-            manifest = await self.oci.get_manifest(registry, path, version, HELM_MANIFEST_ACCEPT)
-            layer = next((layer for layer in manifest.get("layers", []) if layer.get("mediaType") == HELM_CHART_LAYER), None)
-            if layer is None:
-                raise RegistryError(f"{repository}/{chart}:{version} is an OCI artifact but not a Helm chart")
-            return chart_yaml_from_archive(await self.oci.get_blob(registry, path, layer["digest"]))
+            return await self._oci_chart_metadata(registry, path, version)
         entries = (await self._index(repository)).get("entries", {}).get(chart, [])
         # ArgoCD accepts a leading "v" (targetRevision: v4.11.0) for a chart published as 4.11.0.
         entry = next((e for e in entries if str(e.get("version", "")).removeprefix("v") == version.removeprefix("v")), None)
         if entry is None:
             raise RegistryError(f"version {version} of chart {chart} is not published in {repository} (removed from the index?)")
         url = urljoin(f"{repository.rstrip('/')}/", entry["urls"][0])
+        if url.startswith("oci://"):
+            # The index can point to charts pushed to an OCI registry (Bitnami since 2025):
+            # httpx cannot download them, the registry API serves them.
+            registry, path, tag = split_oci_url(url, version)
+            return await self._oci_chart_metadata(registry, path, tag)
         resp = await self.oci.client_for(httpx.URL(url).host).get(url, auth=await self._auth(url), follow_redirects=True)
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot download chart {chart} {version}", resp))
         return chart_yaml_from_archive(resp.content)
+
+    async def _oci_chart_metadata(self, registry: str, path: str, version: str) -> dict:
+        manifest = await self.oci.get_manifest(registry, path, version, HELM_MANIFEST_ACCEPT)
+        layer = next((layer for layer in manifest.get("layers", []) if layer.get("mediaType") == HELM_CHART_LAYER), None)
+        if layer is None:
+            raise RegistryError(f"{registry}/{path}:{version} is an OCI artifact but not a Helm chart")
+        return chart_yaml_from_archive(await self.oci.get_blob(registry, path, layer["digest"]))
 
     async def git_chart_metadata(self, repo_url: str, ref: str, path: str) -> dict:
         """Fetch `<path>/Chart.yaml` from a git repository through its raw file URL."""

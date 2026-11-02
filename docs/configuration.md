@@ -206,7 +206,8 @@ clusters can be reused: [registries.md](registries.md) explains the method for e
 (Harbor, Artifactory, Nexus, private CAs...). Credentials apply to:
 
 - container registries and OCI Helm registries (token exchange or basic auth),
-- classic HTTP Helm repositories (`index.yaml` and chart downloads, basic auth).
+- classic HTTP Helm repositories (`index.yaml` and chart downloads, basic auth). Chart versions that
+  an `index.yaml` lists with an `oci://` URL (Bitnami) are downloaded from that registry, with its credentials.
 
 With the Helm chart, each registry gets one Secret, either an existing one or one the chart
 creates from the values. The chart mounts it read-only and writes only the file paths in the

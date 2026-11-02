@@ -15,6 +15,7 @@ from kube_tower.registry.helm import (
     chart_yaml_from_archive,
     is_oci,
     normalize_dependency_repository,
+    split_oci_url,
 )
 from kube_tower.registry.oci import OCIClient, RegistryError
 
@@ -52,6 +53,13 @@ def test_helpers():
     assert normalize_dependency_repository("https://charts.example.com/") == "https://charts.example.com"
     with pytest.raises(RegistryError):
         chart_yaml_from_archive(_empty_archive())
+    assert split_oci_url("oci://registry-1.docker.io/bitnamicharts/redis:21.0.0", "x") == (
+        "registry-1.docker.io",
+        "bitnamicharts/redis",
+        "21.0.0",
+    )
+    assert split_oci_url("oci://ghcr.io/app", "1.0.0") == ("ghcr.io", "app", "1.0.0")
+    assert split_oci_url("oci://localhost:5000/org/app", "1.0.0") == ("localhost:5000", "org/app", "1.0.0")
 
 
 def _empty_archive() -> bytes:
@@ -105,6 +113,34 @@ async def test_oci_chart():
         assert (await helm.chart_metadata("ghcr.io/org/charts", "app", "1.2.0"))["version"] == "1.2.0"
         with pytest.raises(RegistryError, match="not a Helm chart"):
             await helm.chart_metadata("oci://ghcr.io/org/charts", "notchart", "1.0.0")
+
+
+@respx.mock
+async def test_http_repository_index_pointing_to_oci_charts():
+    """Bitnami's index.yaml lists the recent versions with oci:// URLs: they are read from the registry."""
+    index = {
+        "entries": {
+            "redis": [
+                {"version": "21.0.0", "urls": ["oci://registry-1.docker.io/bitnamicharts/redis:21.0.0"]},
+                {"version": "20.3.0", "urls": ["https://charts.bitnami.com/bitnami/redis-20.3.0.tgz"]},
+            ]
+        }
+    }
+    respx.get("https://charts.bitnami.com/bitnami/index.yaml").respond(200, text=yaml.safe_dump(index))
+    respx.get("https://registry-1.docker.io/v2/bitnamicharts/redis/manifests/21.0.0").respond(
+        200, json={"layers": [{"mediaType": HELM_CHART_LAYER, "digest": "sha256:abc"}]}
+    )
+    respx.get("https://registry-1.docker.io/v2/bitnamicharts/redis/blobs/sha256:abc").respond(
+        200, content=_archive({"name": "redis", "version": "21.0.0", "dependencies": [{"name": "common"}]})
+    )
+    respx.get("https://charts.bitnami.com/bitnami/redis-20.3.0.tgz").respond(
+        200, content=_archive({"name": "redis", "version": "20.3.0"})
+    )
+    async with httpx.AsyncClient() as http:
+        helm = HelmClient(http, OCIClient(http), GitSettings())
+        meta = await helm.chart_metadata("https://charts.bitnami.com/bitnami", "redis", "21.0.0")
+        assert meta["dependencies"] == [{"name": "common"}]
+        assert (await helm.chart_metadata("https://charts.bitnami.com/bitnami", "redis", "20.3.0"))["version"] == "20.3.0"
 
 
 @respx.mock
