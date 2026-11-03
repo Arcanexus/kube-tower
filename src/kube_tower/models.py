@@ -329,6 +329,9 @@ class Snapshot:
     finished_at: datetime | None = None
     # End of the vulnerability scan, which runs after the version checks
     vulnerabilities_finished_at: datetime | None = None
+    # A controller resumed the unfinished vulnerability scan of this snapshot (read back from the store):
+    # done once only, so a vulnerability scan that stops the controller again cannot loop on restarts
+    vulnerabilities_resumed: bool = False
     errors: list[str] = field(default_factory=list)
     # Reports of Trivy Operator other than the VulnerabilityReports (Security page)
     security: list[SecurityReport] = field(default_factory=list)
