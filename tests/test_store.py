@@ -185,3 +185,52 @@ def test_controller_uses_redis_when_configured(monkeypatch):
     assert settings.redis.url == "redis://valkey:6379/0"
     app = create_app(settings, background=False)
     assert isinstance(app.state.scanner.store, RedisSnapshotStore)
+
+
+async def test_scanner_resumes_the_unfinished_vulnerability_scan_of_a_stored_snapshot(monkeypatch):
+    """A controller stopped during the Trivy phase stored a snapshot whose images without a Trivy Operator
+    report have no vulnerability report: the next controller scans them at once, not after refreshInterval."""
+    settings = Settings()
+    settings.refresh_interval = 3600
+    snap = _snapshot()
+    snap.finished_at = datetime.now(UTC) - timedelta(minutes=10)
+    scanner = Scanner(settings, store=MemorySnapshotStore(snap))
+    scanned = []
+
+    async def scan_vulnerabilities(s):
+        scanned.append(s)
+        s.vulnerabilities_finished_at = datetime.now(UTC)
+
+    async def sleep(seconds):
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(scanner, "_scan_vulnerabilities", scan_vulnerabilities)
+    monkeypatch.setattr("kube_tower.scanner.asyncio.sleep", sleep)
+    with pytest.raises(RuntimeError, match="stop"):
+        await scanner.run_forever()
+    assert scanned == [snap] and not scanner.running
+
+    scanned.clear()  # finished: not scanned again before the next scan
+    with pytest.raises(RuntimeError, match="stop"):
+        await scanner.run_forever()
+    assert scanned == []
+
+
+async def test_failed_vulnerability_phase_gives_the_images_the_reason(monkeypatch):
+    settings = Settings()
+    snap = _snapshot()
+    scanner = Scanner(settings, store=MemorySnapshotStore(snap))
+
+    async def broken(s):
+        raise RuntimeError("trivy pod gone")
+
+    monkeypatch.setattr(scanner, "_scan_vulnerabilities", broken)
+    with pytest.raises(RuntimeError):
+        await scanner._vulnerability_phase(snap)
+    v = snap.images[0].vulnerabilities
+    assert v.source == "trivy" and v.message == "vulnerability scan interrupted: trivy pod gone"
+    assert snap.errors == [
+        "vulnerability scan interrupted: trivy pod gone (1 image(s) not scanned, see the Vulnerabilities page)"
+    ]
+    assert scanner.failed_items()[1] == snap.images  # retried by "Retry what failed"
+    assert not scanner.running and snap.vulnerabilities_finished_at is None

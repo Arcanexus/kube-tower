@@ -135,7 +135,7 @@ life OS release says so under its name.
 | Current | Tag used by the workloads, with the start of its digest below (the digest pinned in the manifest, else the one reported by the running pods, else the one published for the tag) |
 | Latest | Highest tag of the same shape and [versioning scheme](#versioning-schemes) published in the registry (the current tag again for a floating tag pushed again, or when up to date), with the start of its digest below, in orange when it differs from the current one; `unknown` when the registry could not tell |
 | Update | The kind of update when the image is outdated (`major`, `minor`, `patch`, `newer`, `new digest`), else its [status](#statuses) |
-| Vulnerabilities | Number of vulnerabilities by severity (C critical, H high, M medium, L low), `scan failed` (reason on hover), `pending` while the vulnerability scan runs, or `not scanned` |
+| Vulnerabilities | Number of vulnerabilities by severity (C critical, H high, M medium, L low), `scan failed` (reason on hover), `pending` while the vulnerability scan runs, or `not scanned` (no report: ignored, or no Trivy and no Trivy Operator report, see [troubleshooting](vulnerabilities.md#troubleshooting)) |
 | Used by | Number of workloads using the image (or `cached on nodes`), and their clusters (hidden on phones) |
 
 The detail panel of an image starts with its update and "current → latest" (with their digests),

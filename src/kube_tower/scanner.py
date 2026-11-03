@@ -200,23 +200,43 @@ class Scanner:
             # Versions are shown as soon as they are checked, vulnerabilities fill in afterwards.
             self.snapshot = snap
         if self.settings.vulnerabilities.enabled:
-            self.trivy_waiting += 1
-            try:
-                await self._trivy_lock.acquire()
-            finally:
-                self.trivy_waiting -= 1
-            try:
-                # A newer scan waiting for this lock too would make these results obsolete at once:
-                # it scans its own snapshot (reusing the Trivy results cached meanwhile).
-                if self.snapshot is snap:
-                    self.trivy_started_at = datetime.now(UTC)
-                    await run_in_thread("trivy", lambda: asyncio.run(self._scan_vulnerabilities(snap)))
-                else:
-                    log.info("vulnerability scan skipped: a newer scan replaced this one")
-            finally:
-                self.trivy_started_at = None
-                self._trivy_lock.release()
+            await self._vulnerability_phase(snap)
         return snap
+
+    async def _vulnerability_phase(self, snap: Snapshot) -> None:
+        """The Trivy phase of a scan. When it fails, the images it did not scan get the reason (shown as
+        "scan failed", retried by "Retry what failed") instead of staying "not scanned" until the next scan."""
+        self.trivy_waiting += 1
+        try:
+            await self._trivy_lock.acquire()
+        finally:
+            self.trivy_waiting -= 1
+        try:
+            # A newer scan waiting for this lock too would make these results obsolete at once:
+            # it scans its own snapshot (reusing the Trivy results cached meanwhile).
+            if self.snapshot is snap:
+                self.trivy_started_at = datetime.now(UTC)
+                await run_in_thread("trivy", lambda: asyncio.run(self._scan_vulnerabilities(snap)))
+            else:
+                log.info("vulnerability scan skipped: a newer scan replaced this one")
+        except Exception as exc:
+            self._interrupted(snap, f"vulnerability scan interrupted: {exc}")
+            raise
+        finally:
+            self.trivy_started_at = None
+            self._trivy_lock.release()
+
+    def _interrupted(self, snap: Snapshot, message: str) -> None:
+        """Give the images the failed Trivy phase left without a report the reason."""
+        settings = self.settings.vulnerabilities
+        if not settings.trivy.enabled:
+            return
+        left = [r for r in snap.images if r.vulnerabilities is None and not vulnerabilities_ignored(r.image, settings.ignore)]
+        for r in left:
+            r.vulnerabilities = VulnerabilityReport("trivy", datetime.now(UTC), message=message)
+        if left:
+            snap.errors.append(f"{message} ({len(left)} image(s) not scanned, see the Vulnerabilities page)")
+            self._changed()
 
     def activities(self) -> list[Activity]:
         """What runs now: the phases of the scan, the scans waiting for a Trivy phase, the rescans."""
@@ -610,6 +630,15 @@ class Scanner:
     async def run_forever(self) -> None:
         await asyncio.to_thread(self.store.load)  # this process is the active controller from now on
         self.revision += 1
+        snap = self.snapshot
+        if snap.finished_at is not None and snap.vulnerabilities_finished_at is None and self.settings.vulnerabilities.enabled:
+            # The previous controller stopped during the Trivy phase (restart, upgrade, standby taking
+            # over): its images without a Trivy Operator report would stay "not scanned" until the next scan.
+            log.info("the vulnerability scan of the stored snapshot did not finish: running it now")
+            try:
+                await self._vulnerability_phase(snap)
+            except Exception:  # noqa: BLE001 - the images got the reason, the loop goes on
+                log.exception("vulnerability scan of the stored snapshot failed")
         if (finished := self.snapshot.finished_at) is not None:  # read from the store (Redis)
             wait = self.settings.refresh_interval - (datetime.now(UTC) - finished).total_seconds()
             if wait > 0:

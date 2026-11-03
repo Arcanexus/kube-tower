@@ -151,3 +151,10 @@ kube_tower_image_vulnerabilities_fixable{severity="critical"} > 0
 - **`remote error: ... UNAUTHORIZED` / `DENIED`**: private image: add credentials for its registry.
 - **The pod is OOMKilled or evicted**: standalone mode needs memory and disk for the database. Raise
   `resources.limits.memory` / `trivy.cacheSizeLimit`, lower `concurrency`, or enable `trivy.server`.
+- **An image stays `not scanned`**: it has no report at all. Either it matches `vulnerabilities.ignore`,
+  or `vulnerabilities.trivy.enabled` is `false` and Trivy Operator has no `VulnerabilityReport` for it
+  (`kubectl get vulnerabilityreports -A | grep <image>`: the operator may not have scanned it yet, or its
+  scan job failed), or the vulnerability phase of the last scan did not finish. A controller that
+  starts with a stored snapshot whose vulnerability phase did not finish (it was restarted during
+  that phase) runs it at once; a vulnerability phase that fails gives the images it did not scan
+  `scan failed` with the reason (retried by *Retry what failed* on the Administration page).

@@ -58,6 +58,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Images left `not scanned` for hours: when the controller stopped during the vulnerability phase
+  (restart, upgrade, ArgoCD sync, standby taking over), the snapshot it had stored in Valkey had no
+  report for the images without a Trivy Operator report, and the next controller waited
+  `refreshInterval` before scanning again. It now runs the unfinished vulnerability phase at once. When
+  the vulnerability phase itself fails (e.g. the trivy pod restarted), the images it did not scan show
+  `scan failed` with the reason and are retried by *Retry what failed*, instead of `not scanned`.
 - Subcharts of HTTP Helm repositories whose `index.yaml` points to an OCI registry (Bitnami lists its
   recent versions as `oci://registry-1.docker.io/bitnamicharts/<chart>:<version>`): their `Chart.yaml`
   is now read from the registry instead of failing with `Request URL has an unsupported protocol 'oci://'`.
