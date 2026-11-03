@@ -133,7 +133,7 @@ def summarize(snap: Snapshot, top: int = 5, registries: int = 6, running: bool =
     return Summary(
         images=Counter(r.status.value for r in images),
         charts=Counter(c.worst_status.value for c in charts),
-        subcharts=Counter(d.status.value for c in charts for _, d in c.walk()),
+        subcharts=Counter(d.status.value if d.deployed else "not-deployed" for c in charts for _, d in c.walk()),
         charts_subchart_outdated=sum(1 for c in charts if c.status != Status.OUTDATED and c.worst_status == Status.OUTDATED),
         updates=[(kind, n) for kind in UPDATE_KINDS if (n := sum(1 for k in update_of.values() if k == kind))],
         update_of=update_of,

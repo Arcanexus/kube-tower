@@ -198,6 +198,18 @@ with the `outdated` chip. The other columns give the chart name, its current and
 repository (and source type) and the **ArgoCD Application** (with its cluster and destination
 namespace). Search by chart, Application or repository.
 
+A subchart that the Helm values of the Application leave out of the release is shown **not deployed**
+(the badge tells why, e.g. `bitwarden-sdk-server.enabled is false`): its version is still compared
+(→ latest), but it does not count in the status of the chart, nor in the chips, the sort, the metrics
+and the scan errors, and its own subcharts are not read. kube-tower evaluates the `condition` and
+`tags` of each dependency in `Chart.yaml` like Helm does, with the values ArgoCD renders the chart
+with: the default `values.yaml` of the chart, then the `valueFiles` of the Application (files of the
+chart, of its git repository, or of a `ref` source with `$ref/...`, read through
+`git.rawUrlTemplates`), then its `values` / `valuesObject` and `parameters`. When a value file cannot be
+read (private git repository without `git.token`, URL...), a warning says why and every subchart counts
+as deployed. Only the booleans of the inline values are kept in the snapshot: the other values can hold
+secrets.
+
 The detail panel of a chart shows its source, the ArgoCD Application, links to the repository and
 Artifact Hub, and the subchart tree with the repository of each subchart, drawn like the **Used by**
 tree of the images.
@@ -322,6 +334,7 @@ components (Trivy and its database, Python, FastAPI, htmx) and its license.
 | 🟠 `outdated` | A newer version, or a newer image under the same floating tag, is available |
 | ⚪ `unknown` | Cannot be compared: image pinned by digest only, floating tag without known digest, version constraint (`1.x`), local subchart (`file://`) |
 | 🔴 `error` | The registry or repository could not be queried: the message tells why (authentication, not found, timeout…) |
+| `not deployed` | Subcharts only: left out of the release by the Helm values (`condition` or `tags` false). Ignored in the status of the chart |
 
 ## API
 

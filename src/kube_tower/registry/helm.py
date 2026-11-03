@@ -9,6 +9,7 @@ import os
 import re
 import tarfile
 import threading
+from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -16,6 +17,7 @@ import yaml
 
 from kube_tower.config import GitSettings
 from kube_tower.errors import GIT_CREDENTIALS, http_error_message
+from kube_tower.helmvalues import parse_values
 from kube_tower.registry.auth import normalize_host
 from kube_tower.registry.oci import OCIClient, RegistryError, require_https
 
@@ -48,13 +50,35 @@ def split_oci_url(url: str, version: str) -> tuple[str, str, str]:
     return registry, f"{path.rpartition('/')[0]}/{name}".lstrip("/"), tag or version
 
 
-def chart_yaml_from_archive(data: bytes) -> dict:
+@dataclass
+class ChartFiles:
+    """What kube-tower reads in a chart: its Chart.yaml, its default values and the value files asked for."""
+
+    metadata: dict
+    values: dict = field(default_factory=dict)
+    files: dict[str, str] = field(default_factory=dict)  # path in the chart -> content
+
+
+def chart_files_from_archive(data: bytes, extra: tuple[str, ...] = ()) -> ChartFiles:
+    """Chart.yaml, values.yaml and the `extra` files at the root of the chart (not the subcharts' ones)."""
+    wanted = {"Chart.yaml", "values.yaml", *extra}
+    found: dict[str, str] = {}
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for member in tar.getmembers():
-            # <chart>/Chart.yaml at the root of the archive, not the subcharts' ones
-            if member.name.count("/") == 1 and member.name.endswith("/Chart.yaml"):
-                return yaml.safe_load(tar.extractfile(member).read()) or {}
-    raise RegistryError("Chart.yaml not found in chart archive")
+            path = member.name.partition("/")[2]
+            if member.isfile() and path in wanted:
+                found[path] = tar.extractfile(member).read().decode(errors="replace")
+    if "Chart.yaml" not in found:
+        raise RegistryError("Chart.yaml not found in chart archive")
+    return ChartFiles(
+        yaml.safe_load(found.pop("Chart.yaml")) or {},
+        parse_values(found.pop("values.yaml", None)),
+        {path: text for path, text in found.items()},
+    )
+
+
+def chart_yaml_from_archive(data: bytes) -> dict:
+    return chart_files_from_archive(data).metadata
 
 
 def _trim_index(index: dict | None) -> dict:
@@ -162,9 +186,16 @@ class HelmClient:
 
     async def chart_metadata(self, repository: str, chart: str, version: str) -> dict:
         """Return the Chart.yaml of a published chart version (used to read its dependencies)."""
+        return (await self.chart_files(repository, chart, version)).metadata
+
+    async def chart_files(self, repository: str, chart: str, version: str, extra: tuple[str, ...] = ()) -> ChartFiles:
+        """Chart.yaml, default values and `extra` files of a published chart version."""
+        return chart_files_from_archive(await self._chart_archive(repository, chart, version), extra)
+
+    async def _chart_archive(self, repository: str, chart: str, version: str) -> bytes:
         if is_oci(repository):
             registry, path = split_oci(repository, chart)
-            return await self._oci_chart_metadata(registry, path, version)
+            return await self._oci_chart_archive(registry, path, version)
         entries = (await self._index(repository)).get("entries", {}).get(chart, [])
         # ArgoCD accepts a leading "v" (targetRevision: v4.11.0) for a chart published as 4.11.0.
         entry = next((e for e in entries if str(e.get("version", "")).removeprefix("v") == version.removeprefix("v")), None)
@@ -175,38 +206,47 @@ class HelmClient:
             # The index can point to charts pushed to an OCI registry (Bitnami since 2025):
             # httpx cannot download them, the registry API serves them.
             registry, path, tag = split_oci_url(url, version)
-            return await self._oci_chart_metadata(registry, path, tag)
+            return await self._oci_chart_archive(registry, path, tag)
         resp = await self.oci.client_for(httpx.URL(url).host).get(url, auth=await self._auth(url), follow_redirects=True)
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot download chart {chart} {version}", resp))
-        return chart_yaml_from_archive(resp.content)
+        return resp.content
 
-    async def _oci_chart_metadata(self, registry: str, path: str, version: str) -> dict:
+    async def _oci_chart_archive(self, registry: str, path: str, version: str) -> bytes:
         manifest = await self.oci.get_manifest(registry, path, version, HELM_MANIFEST_ACCEPT)
         layer = next((layer for layer in manifest.get("layers", []) if layer.get("mediaType") == HELM_CHART_LAYER), None)
         if layer is None:
             raise RegistryError(f"{registry}/{path}:{version} is an OCI artifact but not a Helm chart")
-        return chart_yaml_from_archive(await self.oci.get_blob(registry, path, layer["digest"]))
+        return await self.oci.get_blob(registry, path, layer["digest"])
 
     async def git_chart_metadata(self, repo_url: str, ref: str, path: str) -> dict:
         """Fetch `<path>/Chart.yaml` from a git repository through its raw file URL."""
+        return yaml.safe_load(await self.git_file(repo_url, ref, f"{path.strip('/')}/Chart.yaml")) or {}
+
+    async def git_chart_values(self, repo_url: str, ref: str, path: str) -> dict:
+        """The default values of a chart in a git repository (`<path>/values.yaml`, empty when it has none)."""
+        return parse_values(await self.git_file(repo_url, ref, f"{path.strip('/')}/values.yaml", missing_ok=True))
+
+    async def git_file(self, repo_url: str, ref: str, path: str, missing_ok: bool = False) -> str | None:
+        """A file of a git repository, through its raw file URL (None for a missing file with `missing_ok`)."""
         parsed = urlparse(repo_url if "://" in repo_url else f"https://{repo_url.split('@')[-1].replace(':', '/', 1)}")
         template = self.git.raw_url_templates.get(parsed.hostname or "")
         if template is None:
             raise RegistryError(f"no raw URL template for git host {parsed.hostname}: add one in git.rawUrlTemplates")
         owner, _, repo = parsed.path.strip("/").removesuffix(".git").partition("/")
         ref = "HEAD" if ref in ("", "HEAD") else ref
-        url = template.format(owner=owner, repo=repo, ref=ref, path=f"{path.strip('/')}/Chart.yaml".lstrip("/"))
+        path = path.strip("/")
+        url = template.format(owner=owner, repo=repo, ref=ref, path=path)
         headers = {}
         if token := os.environ.get(self.git.token_env):
             require_https(url, f"the raw URL template of {parsed.hostname} (git.rawUrlTemplates), with a git token,")
             headers["Authorization"] = f"Bearer {token}"
         resp = await self.http.get(url, headers=headers, follow_redirects=True)
+        if resp.status_code == 404 and missing_ok:
+            return None
         if resp.status_code != 200:
-            raise RegistryError(
-                http_error_message(f"cannot read {path.strip('/')}/Chart.yaml at {ref} in {repo_url}", resp, GIT_CREDENTIALS)
-            )
-        return yaml.safe_load(resp.text) or {}
+            raise RegistryError(http_error_message(f"cannot read {path} at {ref} in {repo_url}", resp, GIT_CREDENTIALS))
+        return resp.text
 
 
 def normalize_dependency_repository(repository: str) -> str | None:

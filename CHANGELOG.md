@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Subcharts not deployed**: a subchart that the Helm values of the Application leave out of the
+  release (`condition` or `tags` of `Chart.yaml` false, e.g. `bitwarden-sdk-server` in
+  `external-secrets`) is shown *not deployed*: its version is still compared, but it no longer makes
+  the chart outdated (status, chips, sort, metrics, scan errors). The values are the ones ArgoCD renders
+  the chart with: defaults of the chart, `valueFiles` (in the chart, its git repository or a `$ref`
+  source, read through `git.rawUrlTemplates` and `git.token`), `values` / `valuesObject` and
+  `parameters`. Only their booleans are kept in the snapshot.
+
 - **Product website** on GitHub Pages (https://arcanexus.github.io/kube-tower/): features, a tour
   of the screenshots, comparison with similar tools and quick start, published by the `pages.yml`
   workflow from `site/` with the screenshots of `docs/images/`.

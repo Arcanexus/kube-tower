@@ -200,10 +200,10 @@ class SnapshotCollector(Collector):
                         d.name,
                         d.version,
                         d.latest_version or "",
-                        d.status.value,
+                        d.status.value if d.deployed else "not-deployed",
                         update_kind(d.version, d.latest_version),
                     ],
-                    d.status == Status.OUTDATED,
+                    d.deployed and d.status == Status.OUTDATED,
                 )
         return chart, dependency
 

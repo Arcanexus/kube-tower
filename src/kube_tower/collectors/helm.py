@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+import posixpath
 
 from kubernetes import client
 
 from kube_tower.clusters import Cluster
 from kube_tower.config import HelmSettings
 from kube_tower.errors import kubernetes_hint
-from kube_tower.models import ChartReport
+from kube_tower.helmvalues import application_values
+from kube_tower.models import ChartReport, ValueFile
 
 log = logging.getLogger(__name__)
 
@@ -27,12 +29,38 @@ def _sources(app: dict) -> list[tuple[dict, str | None]]:
     return []
 
 
+def _value_files(source: dict, refs: dict[str, dict]) -> list[ValueFile]:
+    """Locate the `valueFiles` of a helm source: `$ref/path` in a `ref` source, a relative path in the chart
+    (helm and OCI charts) or next to it in the git repository (git charts). URLs are not located.
+    """
+    files = []
+    for name in (source.get("helm") or {}).get("valueFiles") or []:
+        name = str(name)
+        if name.startswith("$"):
+            ref, _, path = name[1:].partition("/")
+            if ref_source := refs.get(ref):
+                files.append(ValueFile(path, ref_source.get("repoURL", ""), ref_source.get("targetRevision") or "HEAD"))
+            else:
+                files.append(ValueFile(name))
+        elif "://" in name:
+            files.append(ValueFile(name))
+        elif source.get("chart"):
+            files.append(ValueFile(posixpath.normpath(name), in_chart=True))
+        else:
+            path = posixpath.normpath(posixpath.join(source.get("path") or ".", name))
+            files.append(ValueFile(path, source.get("repoURL", ""), source.get("targetRevision") or "HEAD"))
+    return files
+
+
 def charts_from_application(cluster: str, app: dict) -> list[ChartReport]:
     meta = app.get("metadata", {})
     destination = app.get("spec", {}).get("destination", {})
+    sources = _sources(app)
+    refs = {src["ref"]: src for src, _ in sources if src.get("ref")}
     reports = []
-    for source, source_type in _sources(app):
+    for source, source_type in sources:
         repo = source.get("repoURL", "")
+        helm = source.get("helm") or {}
         base = dict(
             cluster=cluster,
             application=meta.get("name", ""),
@@ -40,6 +68,9 @@ def charts_from_application(cluster: str, app: dict) -> list[ChartReport]:
             repository=repo,
             version=source.get("targetRevision") or "",
             destination_namespace=destination.get("namespace"),
+            value_files=_value_files(source, refs),
+            ignore_missing_value_files=bool(helm.get("ignoreMissingValueFiles")),
+            inline_values=application_values(helm),
         )
         if source.get("chart"):
             kind = "oci" if repo.startswith("oci://") or "://" not in repo else "helm"

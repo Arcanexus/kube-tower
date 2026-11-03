@@ -58,12 +58,14 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
 | Metric | Labels | Value |
 | --- | --- | --- |
 | `kube_tower_chart_outdated` | `cluster`, `application`, `destination_namespace`, `chart`, `source`, `version`, `latest`, `status`, `update` | 1 if the chart **or one of its subcharts** has a newer version |
-| `kube_tower_chart_dependency_outdated` | `cluster`, `application`, `chart`, `dependency`, `version`, `latest`, `status`, `update` | 1 if the subchart has a newer version |
+| `kube_tower_chart_dependency_outdated` | `cluster`, `application`, `chart`, `dependency`, `version`, `latest`, `status`, `update` | 1 if the subchart has a newer version and is deployed |
 
 - `source` is `helm` (HTTP repository), `oci` or `git`.
 - On `kube_tower_chart_outdated`, `status` is the worst status of the chart and its subcharts, while
   `latest` and `update` describe the chart itself: a chart can be `outdated` with an empty `update`
   when only a subchart is behind.
+- On `kube_tower_chart_dependency_outdated`, `status` is `not-deployed` (and the value 0) for a subchart
+  that the Helm values of the Application leave out of the release (see [usage](usage.md#helm-charts)).
 
 ### Vulnerabilities
 

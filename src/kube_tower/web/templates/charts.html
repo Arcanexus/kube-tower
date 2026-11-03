@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, chip, counters, filters, icon, list_shown, load_more, more_hint, page_title, sort_th, tree_cell %}
+{% from "_macros.html" import badge, chip, counters, filters, icon, list_shown, load_more, more_hint, page_title, sort_th, subchart_badge, tree_cell %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.", "One line per chart. The Status column shows the chart and its subcharts as a tree, each with its version and its own status. The chips and the sort use the worst status of the chart and its subcharts. Click a chart for its details.") }}{% endblock %}
+{% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.", "One line per chart. The Status column shows the chart and its subcharts as a tree, each with its version and its own status. The chips and the sort use the worst status of the chart and its deployed subcharts: a subchart that the Helm values of the Application leave out (condition or tags false) is shown as not deployed. Click a chart for its details.") }}{% endblock %}
 {% block content %}
 {{ filters("charts", q, status, listing, "Search a chart, an ArgoCD Application or a repository") }}
 <div id="results">{{ self.results() }}</div>
@@ -24,7 +24,7 @@
   {%- endmacro %}
   {% for c in rows %}
     {% set subs = dependency_tree(c.dependencies) %}
-    {% set outdated = subs | map(attribute=1) | selectattr("status", "equalto", Status.OUTDATED) | list | length %}
+    {% set outdated = subs | map(attribute=1) | selectattr("deployed") | selectattr("status", "equalto", Status.OUTDATED) | list | length %}
     <tr class="clickable" tabindex="0" hx-trigger="click, keyup[key=='Enter']" hx-target="#detail"
         hx-get="charts/detail?cluster={{ c.cluster | urlencode }}&namespace={{ c.app_namespace | urlencode }}&app={{ c.application | urlencode }}&chart={{ c.chart | urlencode }}">
       <td class="cell-name"><strong>{{ c.chart }}</strong></td>
@@ -36,7 +36,7 @@
             {%- if outdated %}<small class="subchart-hint">{{ outdated | plural("subchart") }} outdated</small>{% endif %}</div>
             {%- if c.message %}<small>{{ c.message }}</small>{% endif %}</li>
           {% for connector, d in subs %}
-          <li class="subchart"><div class="tree-cell">{{ tree_cell(connector) }}<span class="tree-label"><code>{{ d.name }}</code></span>{{ versions(d.version, d.latest_version) }}{{ badge(d.status) }}</div>
+          <li class="subchart"><div class="tree-cell">{{ tree_cell(connector) }}<span class="tree-label"><code>{{ d.name }}</code></span>{{ versions(d.version, d.latest_version) }}{{ subchart_badge(d) }}</div>
             {%- if d.message %}<small>{{ d.message }}</small>{% endif %}</li>
           {% endfor %}
         </ul>

@@ -595,6 +595,26 @@ def test_summary_folds_small_registries():
     assert registries[-1] == ("other", 6) and len(registries) == 3
 
 
+def test_summary_counts_not_deployed_subcharts():
+    from kube_tower.web.summary import summarize
+
+    def chart(name, *dependencies):
+        return ChartReport(
+            "c1", name, "argocd", name, "https://r", "1.0.0", "helm", status=Status.UP_TO_DATE, dependencies=list(dependencies)
+        )
+
+    left_out = ChartDependency("bitwarden-sdk-server", "v0.6.0", "oci://x", status=Status.OUTDATED, not_deployed="off")
+    snap = Snapshot(
+        charts=[
+            chart("eso", left_out, ChartDependency("redis", "19.0.0", "https://x", status=Status.UP_TO_DATE)),
+            chart("loki", ChartDependency("minio", "4.0.0", "https://x", status=Status.OUTDATED)),
+        ]
+    )
+    s = summarize(snap)
+    assert s.subcharts == {"not-deployed": 1, "up-to-date": 1, "outdated": 1}
+    assert s.charts_subchart_outdated == 1  # loki only: the outdated subchart of eso is not deployed
+
+
 def test_version_comes_from_the_image(monkeypatch):
     import importlib
 
@@ -1219,3 +1239,23 @@ def test_about_page():
     assert "api.github.com" in client.get("/static/kube-tower.js").text
     # the version of every page links to it
     assert '<a href="about" title="About kube-tower"><small>dev</small></a>' in client.get("/images").text
+
+
+def test_subchart_not_deployed():
+    # common, the outdated subchart of redis, is left out by the Helm values: redis is up to date
+    client, scanner = _client()
+    scanner.snapshot.charts[0].dependencies[0].not_deployed = "common.enabled is false"
+    page = client.get("/charts").text
+    row = " ".join(page.split('id="results"')[1].split())
+    assert (
+        '<span class="badge badge-not-deployed" title="Left out of the release: common.enabled is false (version outdated)">'
+        in row
+    )
+    assert "subchart-hint" not in row and "with an outdated subchart" not in row
+    assert "redis" not in client.get("/charts?status=outdated").text.split('id="results"')[1]
+    detail = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
+    assert "Not deployed: common.enabled is false" in detail
+    assert (
+        'kube_tower_chart_dependency_outdated{application="redis",chart="redis",cluster="c1",dependency="common",latest="2.1.0",'
+        'status="not-deployed",update="minor",version="2.0.0"} 0.0'
+    ) in client.get("/metrics").text

@@ -7,9 +7,10 @@ import logging
 from collections import Counter
 
 from kube_tower.config import HelmSettings, ImagesSettings
-from kube_tower.errors import explain
+from kube_tower.errors import GIT_CREDENTIALS, explain
+from kube_tower.helmvalues import merge, not_deployed, parse_values, subchart_values
 from kube_tower.models import ChartDependency, ChartReport, ImageReport, Status
-from kube_tower.registry.helm import HelmClient, normalize_dependency_repository
+from kube_tower.registry.helm import ChartFiles, HelmClient, normalize_dependency_repository
 from kube_tower.registry.oci import OCIClient
 from kube_tower.versions import is_newer, latest_matching, latest_semver, parse
 
@@ -21,9 +22,24 @@ MAX_DEPENDENCY_DEPTH = 3
 
 def _dependencies(metadata: dict) -> list[ChartDependency]:
     return [
-        ChartDependency(name=d.get("name", ""), version=str(d.get("version", "")), repository=d.get("repository", ""))
+        ChartDependency(
+            name=d.get("name", ""),
+            version=str(d.get("version", "")),
+            repository=d.get("repository", ""),
+            alias=d.get("alias") or "",
+            condition=str(d.get("condition") or ""),
+            tags=[str(t) for t in d.get("tags") or []],
+        )
         for d in metadata.get("dependencies") or []
     ]
+
+
+def _mark_deployed(dependencies: list[ChartDependency], values: dict | None, tags: dict) -> None:
+    """Note the subcharts that the `values` of their parent chart leave out (unknown values: all deployed)."""
+    if values is None:
+        return
+    for d in dependencies:
+        d.not_deployed = not_deployed(d, values, tags)
 
 
 def _summary(statuses) -> str:
@@ -133,12 +149,12 @@ class ChartChecker:
 
         return await self.memo.get(("versions", repository, chart), fetch)
 
-    async def _metadata(self, repository: str, chart: str, version: str) -> dict:
+    async def _files(self, repository: str, chart: str, version: str, extra: tuple[str, ...] = ()) -> ChartFiles:
         async def fetch():
             async with self.sem:
-                return await self.helm.chart_metadata(repository, chart, version)
+                return await self.helm.chart_files(repository, chart, version, extra)
 
-        return await self.memo.get(("meta", repository, chart, version), fetch)
+        return await self.memo.get(("files", repository, chart, version, extra), fetch)
 
     async def _git_metadata(self, repository: str, ref: str, path: str) -> dict:
         async def fetch():
@@ -147,10 +163,61 @@ class ChartChecker:
 
         return await self.memo.get(("git", repository, ref, path), fetch)
 
+    async def _git_values(self, repository: str, ref: str, path: str) -> dict:
+        async def fetch():
+            async with self.sem:
+                return await self.helm.git_chart_values(repository, ref, path)
+
+        return await self.memo.get(("git-values", repository, ref, path), fetch)
+
+    async def _git_file(self, repository: str, ref: str, path: str) -> str | None:
+        async def fetch():
+            async with self.sem:
+                return await self.helm.git_file(repository, ref, path, missing_ok=True)
+
+        return await self.memo.get(("git-file", repository, ref, path), fetch)
+
+    async def _release_values(self, report: ChartReport, defaults: dict, chart_files: dict[str, str]) -> dict | None:
+        """The values ArgoCD renders the chart with: its defaults, the value files, then the inline values
+        (booleans only, see ChartReport.inline_values). None when a value file cannot be read.
+        """
+        values = defaults
+        try:
+            for vf in report.value_files:
+                if vf.in_chart:
+                    text = chart_files.get(vf.path)
+                elif vf.repository:
+                    text = await self._git_file(vf.repository, vf.revision, vf.path)
+                else:
+                    raise ValueError(f"value file {vf.path} cannot be read by kube-tower (URL or unknown $ref)")
+                if text is None:
+                    if report.ignore_missing_value_files:
+                        continue
+                    hint = (
+                        ""
+                        if vf.in_chart
+                        else f" in {vf.repository} at {vf.revision} (private repository without {GIT_CREDENTIALS}?)"
+                    )
+                    raise ValueError(f"value file {vf.path} not found{hint}")
+                values = merge(values, parse_values(text))
+        except Exception as exc:  # noqa: BLE001 - the versions are still checked, every subchart counts as deployed
+            log.warning(
+                "[%s] cannot read the Helm values of application %s, every subchart of %s is considered deployed: %s",
+                report.cluster,
+                report.application,
+                report.chart,
+                explain(exc),
+            )
+            return None
+        return merge(values, report.inline_values)
+
     async def _latest(self, repository: str, chart: str) -> str | None:
         return latest_semver(await self._versions(repository, chart), self.settings.include_prerelease)
 
-    async def check_dependency(self, dep: ChartDependency, depth: int = 1) -> None:
+    async def check_dependency(self, dep: ChartDependency, depth: int = 1, parent: dict | None = None, tags=None) -> None:
+        """Check a subchart, then its own subcharts. `parent` holds the values of the chart that includes it
+        (None when unknown) and `tags` the `tags:` block of the release values.
+        """
         repository = normalize_dependency_repository(dep.repository)
         if repository is None:
             dep.status, dep.message = Status.UNKNOWN, "local or aliased dependency"
@@ -169,15 +236,20 @@ class ChartChecker:
             log.warning("cannot check subchart %s %s (%s): %s", dep.name, dep.version, dep.repository, dep.message)
             return
         log.debug("subchart %s %s: %s (latest %s)", dep.name, dep.version, dep.status.value, dep.latest_version)
+        if not dep.deployed:
+            log.debug("subchart %s %s: not deployed (%s)", dep.name, dep.version, dep.not_deployed)
+            return  # nor are its own subcharts
         if depth >= MAX_DEPENDENCY_DEPTH:
             return
         try:
-            metadata = await self._metadata(repository, dep.name, dep.version)
+            files = await self._files(repository, dep.name, dep.version)
         except Exception as exc:  # noqa: BLE001 - the subchart itself is checked, only its tree is missing
             log.debug("cannot read subcharts of %s %s: %s", dep.name, dep.version, explain(exc))
             return
-        dep.dependencies = _dependencies(metadata)
-        await asyncio.gather(*(self.check_dependency(d, depth + 1) for d in dep.dependencies))
+        dep.dependencies = _dependencies(files.metadata)
+        values = None if parent is None else subchart_values(dep, parent, files.values)
+        _mark_deployed(dep.dependencies, values, tags or {})
+        await asyncio.gather(*(self.check_dependency(d, depth + 1, values, tags) for d in dep.dependencies))
 
     async def check(self, report: ChartReport) -> None:
         await self._check(report)
@@ -195,11 +267,15 @@ class ChartChecker:
 
     async def _check(self, report: ChartReport) -> None:
         metadata: dict | None = None
+        defaults: dict = {}
+        chart_files: dict[str, str] = {}
         try:
             if report.source_type == "git":
                 # `chart` holds the path until Chart.yaml is read, then the chart name (rescans use `path`).
                 path = report.path if report.path is not None else report.chart
                 metadata = await self._git_metadata(report.repository, report.git_ref or "HEAD", path)
+                if self.settings.check_dependencies and metadata.get("dependencies"):
+                    defaults = await self._git_values(report.repository, report.git_ref or "HEAD", path)
                 report.chart = metadata.get("name", report.chart)
                 report.version = str(metadata.get("version", ""))
                 # Charts deployed from git follow the git revision: only subcharts can be outdated.
@@ -211,7 +287,9 @@ class ChartChecker:
                 else:
                     report.status = Status.OUTDATED if is_newer(report.latest_version, report.version) else Status.UP_TO_DATE
                     if self.settings.check_dependencies:
-                        metadata = await self._metadata(report.repository, report.chart, report.version)
+                        extra = tuple(vf.path for vf in report.value_files if vf.in_chart)
+                        files = await self._files(report.repository, report.chart, report.version, extra)
+                        metadata, defaults, chart_files = files.metadata, files.values, files.files
         except Exception as exc:  # noqa: BLE001
             report.status, report.message = Status.ERROR, explain(exc)
             log.warning(
@@ -225,7 +303,10 @@ class ChartChecker:
             return
         if metadata and self.settings.check_dependencies:
             report.dependencies = _dependencies(metadata)
-            await asyncio.gather(*(self.check_dependency(d) for d in report.dependencies))
+            values = await self._release_values(report, defaults, chart_files) if report.dependencies else None
+            tags = values.get("tags") if values and isinstance(values.get("tags"), dict) else {}
+            _mark_deployed(report.dependencies, values, tags)
+            await asyncio.gather(*(self.check_dependency(d, 1, values, tags) for d in report.dependencies))
 
     async def check_all(self, reports: list[ChartReport]) -> None:
         log.info("checking %d Helm chart(s) against their repositories", len(reports))

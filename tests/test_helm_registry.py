@@ -12,6 +12,7 @@ from kube_tower.registry.helm import (
     HELM_CHART_LAYER,
     HelmClient,
     IndexCache,
+    chart_files_from_archive,
     chart_yaml_from_archive,
     is_oci,
     normalize_dependency_repository,
@@ -20,12 +21,14 @@ from kube_tower.registry.helm import (
 from kube_tower.registry.oci import OCIClient, RegistryError
 
 
-def _archive(chart: dict) -> bytes:
+def _archive(chart: dict, files: dict | None = None) -> bytes:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for name, content in [
             (f"{chart['name']}/Chart.yaml", chart),
             (f"{chart['name']}/charts/sub/Chart.yaml", {"name": "sub"}),
+            (f"{chart['name']}/charts/sub/values.yaml", {"sub": True}),
+            *((f"{chart['name']}/{path}", content) for path, content in (files or {}).items()),
         ]:
             data = yaml.safe_dump(content).encode()
             info = tarfile.TarInfo(name)
@@ -239,3 +242,33 @@ async def test_index_without_validators_not_kept():
             await HelmClient(http, OCIClient(http), GitSettings(), cache).list_versions("https://charts.example.com", "app")
     assert route.call_count == 2 and "If-None-Match" not in route.calls[1].request.headers
     assert cache.get("https://charts.example.com") is None
+
+
+def test_chart_files_from_archive():
+    data = _archive({"name": "app"}, {"values.yaml": {"redis": {"enabled": False}}, "values-prod.yaml": {"a": 1}})
+    files = chart_files_from_archive(data, ("values-prod.yaml", "missing.yaml"))
+    assert files.metadata == {"name": "app"} and files.values == {"redis": {"enabled": False}}
+    assert list(files.files) == ["values-prod.yaml"] and yaml.safe_load(files.files["values-prod.yaml"]) == {"a": 1}
+    assert chart_files_from_archive(_archive({"name": "app"})).values == {}  # no values.yaml
+
+
+@respx.mock
+async def test_chart_files_and_git_files():
+    respx.get("https://charts.example.com/index.yaml").respond(200, text=INDEX)
+    respx.get("https://charts.example.com/app-1.1.0.tgz").respond(
+        200, content=_archive({"name": "app", "version": "1.1.0"}, {"values.yaml": {"x": True}})
+    )
+    raw = "https://raw.githubusercontent.com/o/r/main"
+    respx.get(f"{raw}/apps/eso/values.yaml").respond(200, text="a: true\n")
+    respx.get(f"{raw}/mon/values.yaml").respond(404)
+    respx.get(f"{raw}/denied.yaml").respond(403)
+    async with httpx.AsyncClient() as http:
+        helm = HelmClient(http, OCIClient(http), GitSettings())
+        assert (await helm.chart_files("https://charts.example.com", "app", "1.1.0")).values == {"x": True}
+        assert await helm.git_file("https://github.com/o/r.git", "main", "/apps/eso/values.yaml") == "a: true\n"
+        assert await helm.git_file("https://github.com/o/r.git", "main", "mon/values.yaml", missing_ok=True) is None
+        assert await helm.git_chart_values("https://github.com/o/r.git", "main", "mon") == {}
+        with pytest.raises(RegistryError, match="cannot read mon/values.yaml at main in https://github.com/o/r.git"):
+            await helm.git_file("https://github.com/o/r.git", "main", "mon/values.yaml")
+        with pytest.raises(RegistryError, match="403"):
+            await helm.git_file("https://github.com/o/r.git", "main", "denied.yaml", missing_ok=True)
