@@ -6,7 +6,7 @@ import yaml
 
 from kube_tower.checkers import ChartChecker, ImageChecker
 from kube_tower.config import GitSettings, HelmSettings, ImagesSettings
-from kube_tower.models import ChartReport, ImageRef, ImageReport, Status, ValueFile
+from kube_tower.models import ChartDependency, ChartReport, ImageRef, ImageReport, Status, ValueFile
 from kube_tower.registry.helm import ChartFiles, chart_yaml_from_archive, split_oci
 from kube_tower.registry.oci import RegistryError
 
@@ -327,6 +327,35 @@ async def test_subcharts_left_out_by_the_values_are_not_deployed(caplog):
     report = _eso(inline_values={"bitwarden-sdk-server": {"enabled": True}})
     await ChartChecker(DeploymentHelm(), HelmSettings()).check(report)
     assert report.dependencies[0].deployed and report.dependencies[0].dependencies[0].name == "common"
+
+
+async def test_only_the_values_leave_the_subchart_out():
+    # the same external-secrets report without values (no value file, no defaults turning it off):
+    # bitwarden-sdk-server is deployed and outdated, so the chart is outdated
+    class Helm(DeploymentHelm):
+        values = {}
+
+    report = _eso()
+    await ChartChecker(Helm(), HelmSettings()).check(report)
+    assert all(d.deployed for _, d in report.walk())
+    assert report.dependencies[0].status == Status.OUTDATED
+    assert (report.status, report.worst_status) == (Status.UP_TO_DATE, Status.OUTDATED)
+    # with the values of test_subcharts_left_out_by_the_values_are_not_deployed, the chart is up to date
+    values = ValueFile("apps/external-secrets/values.yaml", "https://github.com/freuds/mediaserver.git", "main")
+    report = _eso(value_files=[values, ValueFile("values-prod.yaml", in_chart=True)])
+    await ChartChecker(DeploymentHelm(), HelmSettings()).check(report)
+    assert not report.dependencies[0].deployed and report.worst_status == Status.UP_TO_DATE
+
+
+def test_not_deployed_subchart_in_error_leaves_the_chart_up_to_date():
+    report = _eso(status=Status.UP_TO_DATE)
+    report.dependencies = [
+        ChartDependency("bitwarden-sdk-server", "v0.6.0", "oci://x", status=Status.ERROR, not_deployed="condition false"),
+        ChartDependency("redis", "19.0.0", "https://x", status=Status.UP_TO_DATE),
+    ]
+    assert report.worst_status == Status.UP_TO_DATE
+    report.dependencies[0].not_deployed = None  # deployed: its error counts again
+    assert report.worst_status == Status.ERROR
 
 
 async def test_unreadable_values_leave_every_subchart_deployed(caplog):

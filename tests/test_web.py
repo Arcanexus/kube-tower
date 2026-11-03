@@ -595,6 +595,26 @@ def test_summary_folds_small_registries():
     assert registries[-1] == ("other", 6) and len(registries) == 3
 
 
+def test_summary_counts_not_deployed_subcharts():
+    from kube_tower.web.summary import summarize
+
+    def chart(name, *dependencies):
+        return ChartReport(
+            "c1", name, "argocd", name, "https://r", "1.0.0", "helm", status=Status.UP_TO_DATE, dependencies=list(dependencies)
+        )
+
+    left_out = ChartDependency("bitwarden-sdk-server", "v0.6.0", "oci://x", status=Status.OUTDATED, not_deployed="off")
+    snap = Snapshot(
+        charts=[
+            chart("eso", left_out, ChartDependency("redis", "19.0.0", "https://x", status=Status.UP_TO_DATE)),
+            chart("loki", ChartDependency("minio", "4.0.0", "https://x", status=Status.OUTDATED)),
+        ]
+    )
+    s = summarize(snap)
+    assert s.subcharts == {"not-deployed": 1, "up-to-date": 1, "outdated": 1}
+    assert s.charts_subchart_outdated == 1  # loki only: the outdated subchart of eso is not deployed
+
+
 def test_version_comes_from_the_image(monkeypatch):
     import importlib
 

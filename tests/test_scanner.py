@@ -200,6 +200,17 @@ def test_check_errors():
     ]
 
 
+def test_check_errors_skips_not_deployed_subcharts():
+    # a subchart left out of the release by the Helm values is not a scan error, a deployed one still is
+    chart = ChartReport("c1", "eso", "argocd", "external-secrets", "https://x", "2.14.0", "helm", status=Status.UP_TO_DATE)
+    chart.dependencies = [
+        ChartDependency("bitwarden-sdk-server", "v0.6.0", "oci://x", status=Status.ERROR, message="403"),
+        ChartDependency("redis", "19.0.0", "https://x", status=Status.ERROR, message="timeout"),
+    ]
+    chart.dependencies[0].not_deployed = "bitwarden-sdk-server.enabled is false"
+    assert scanner_module.check_errors(Snapshot(charts=[chart])) == ["[c1] subchart redis 19.0.0 of application eso: timeout"]
+
+
 async def test_scan_logs_each_step(fakes, caplog):
     caplog.set_level(logging.DEBUG, logger="kube_tower")
     await Scanner(Settings(), FakeRegistry()).scan()
