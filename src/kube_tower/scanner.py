@@ -631,10 +631,14 @@ class Scanner:
         await asyncio.to_thread(self.store.load)  # this process is the active controller from now on
         self.revision += 1
         snap = self.snapshot
-        if snap.finished_at is not None and snap.vulnerabilities_finished_at is None and self.settings.vulnerabilities.enabled:
+        unfinished = snap.finished_at is not None and snap.vulnerabilities_finished_at is None
+        if unfinished and self.settings.vulnerabilities.enabled and not snap.vulnerabilities_resumed:
             # The previous controller stopped during the Trivy phase (restart, upgrade, standby taking
             # over): its images without a Trivy Operator report would stay "not scanned" until the next scan.
+            # Once only: stored first, so a controller stopped again by this phase does not run it again.
             log.info("the vulnerability scan of the stored snapshot did not finish: running it now")
+            snap.vulnerabilities_resumed = True
+            self._changed()
             try:
                 await self._vulnerability_phase(snap)
             except Exception:  # noqa: BLE001 - the images got the reason, the loop goes on

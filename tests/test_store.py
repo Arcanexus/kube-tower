@@ -208,7 +208,15 @@ async def test_scanner_resumes_the_unfinished_vulnerability_scan_of_a_stored_sna
     monkeypatch.setattr("kube_tower.scanner.asyncio.sleep", sleep)
     with pytest.raises(RuntimeError, match="stop"):
         await scanner.run_forever()
-    assert scanned == [snap] and not scanner.running
+    assert scanned == [snap] and not scanner.running and snap.vulnerabilities_resumed
+
+    scanned.clear()  # stopped again during the resumed phase: not resumed a second time (no restart loop)
+    snap.vulnerabilities_finished_at = None
+    with pytest.raises(RuntimeError, match="stop"):
+        await scanner.run_forever()
+    assert scanned == []
+    snap.vulnerabilities_resumed = False
+    snap.vulnerabilities_finished_at = datetime.now(UTC)
 
     scanned.clear()  # finished: not scanned again before the next scan
     with pytest.raises(RuntimeError, match="stop"):
