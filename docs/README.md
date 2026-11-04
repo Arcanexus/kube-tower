@@ -12,6 +12,7 @@ dashboard: which ones have a newer version, what is urgent, where each one runs.
 | --- | --- |
 | Try it in a few minutes | [Quick start](quick-start.md) |
 | Know how it differs from Renovate, watchtower, version-checker... | [Comparison](comparison.md) |
+| Size the cluster, check what is needed | [Prerequisites](prerequisites.md) |
 | Install it for real (ingress, ArgoCD) | [Installation](installation.md) |
 | Scan other clusters, private registries, add single sign-on | [Configure](#configure) |
 | Understand a page or a status | [Usage](usage.md), [Statuses and versions](statuses.md) |
@@ -23,7 +24,8 @@ dashboard: which ones have a newer version, what is urgent, where each one runs.
 | Page | Content |
 | --- | --- |
 | [Quick start](quick-start.md) | install, first login, first scan, next steps |
-| [Installation](installation.md) | requirements, Helm, ArgoCD (complete example, distributed mode), uninstalling |
+| [Prerequisites](prerequisites.md) | Kubernetes, tools, optional components, network, hardware guidelines by size of inventory |
+| [Installation](installation.md) | Helm, ArgoCD (complete example, distributed mode), uninstalling |
 | [Upgrading](upgrading.md) | upgrade commands and what changes between versions |
 | [Comparison](comparison.md) | kube-tower next to watchtower, Renovate, version-checker, Nova, Argo CD Image Updater, Trivy Operator |
 

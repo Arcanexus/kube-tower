@@ -4,26 +4,12 @@ kube-tower is installed with its Helm chart, directly or through an ArgoCD Appli
 try in a few commands, see the [quick start](quick-start.md); to update an installation, see
 [upgrading](upgrading.md).
 
-## Requirements
+## Before you start
 
-- Kubernetes 1.25+ (any distribution: k3s, kubeadm, GKE, EKS, AKS…).
-- Outbound HTTPS from the kube-tower pod to the registries, Helm repositories and git hosts your
-  workloads use, and to the API servers of the remote clusters you register.
-- [ArgoCD](https://argo-cd.readthedocs.io/) only if you want the Helm charts dashboard (charts are
-  discovered from ArgoCD `Application` objects).
-
-kube-tower runs as a single stateless pod (requests: 50m CPU, 256Mi memory; 1536Mi memory limit),
-or as several Deployments scaled apart (see [scaling](scaling.md)).
-The vulnerability scans with Trivy (on by default) also need:
-
-- an outbound access to the Trivy database registries (`mirror.gcr.io`, `ghcr.io`) and to the
-  registries of the scanned images;
-- up to 3 GiB of ephemeral storage for the database (`trivy.cacheSizeLimit`), unless you use the
-  [Trivy server](vulnerabilities.md#trivy-setups) of the chart;
-- nodes able to pull `ghcr.io/aquasecurity/trivy` (amd64 or arm64).
-
-See [Trivy setups](vulnerabilities.md#trivy-setups) to change or disable this, and
-[network and ports](network.md) for every outbound connection.
+Check the [prerequisites](prerequisites.md): Kubernetes 1.25+, Helm 3.8+, the network access to the
+registries, and the CPU, memory and disk to plan for your inventory. In short, the defaults run one
+stateless pod (50m CPU and 256Mi of memory requested, 1536Mi memory limit, up to 3Gi of ephemeral storage
+for the Trivy database), or several Deployments scaled apart (see [scaling](scaling.md)).
 
 ## With Helm
 

@@ -1,6 +1,7 @@
 # Quick start
 
-From nothing to the first dashboard in a few minutes, on any Kubernetes 1.25+ cluster. kube-tower
+From nothing to the first dashboard in a few minutes, on any Kubernetes 1.25+ cluster with about
+0.5 CPU core and 2 GiB of memory free (see [prerequisites](prerequisites.md)). kube-tower
 only reads: it never changes anything in the cluster.
 
 ## 1. Install

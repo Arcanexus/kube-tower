@@ -28,6 +28,7 @@ REPO_URL = "https://github.com/Arcanexus/kube-tower"
 PAGES: list[tuple[str, list[tuple[str, str]]]] = [
     ("Getting started", [
         ("quick-start.md", "Quick-start"),
+        ("prerequisites.md", "Prerequisites"),
         ("installation.md", "Installation"),
         ("upgrading.md", "Upgrading"),
         ("comparison.md", "Comparison"),
