@@ -6,22 +6,40 @@ Kubernetes status, and what to do; the Logs tab of the Administration page and t
 (`kubectl -n kube-tower logs deploy/kube-tower`) give the details (set `logs.level: DEBUG` to see
 every request).
 
+## Startup and configuration
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `unknown setting 'xxx'` at startup | Typo in `config` | Keys are camelCase, see [configuration](configuration.md) |
+
+## Login
+
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | The login page says *kube-tower is creating its auth Secret* | First start: the controller creates the Secret `<release>-auth`, the ui pods see it once the kubelet has mounted it (about a minute) | Wait a minute. If it lasts, check the controller logs: `rbac.create: false` needs a Role with `get` on that Secret and `create` on Secrets, or bring one with `auth.existingSecret` |
 | Lost password of `admin` | | Read it: `kubectl -n kube-tower get secret kube-tower-auth -o jsonpath='{.data.admin\.password}' \| base64 -d`; or change its `admin.password` key (the open sessions of `admin` close) |
 | Scripts get `401` from the API after an upgrade to 1.1 | The login is on by default | Call the API with the Basic auth of a local account (`curl -u admin:$PASSWORD`), or set `auth.enabled: false` |
+
+## Clusters
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
 | `cannot list pods: 403 Forbidden` | The ServiceAccount used for that cluster lacks a permission | Apply `deploy/remote-cluster-rbac.yaml` on remote clusters; check `rbac.create` locally |
-| `… uses http://…: refused, only https:// is allowed` | A registry token service or redirect, a Helm repository with credentials, or a git raw URL template (with a git token) uses plain `http://`: the credentials would travel in clear text | Use the `https://` URL of the repository (or of `git.rawUrlTemplates`); for an internal Helm repository without TLS, remove its credentials |
 | A cluster Secret is ignored (cluster missing from the Clusters tab) | Cluster Secrets are read by name: a labelled Secret created outside the chart is not listed | Reference it with `clusters[].existingSecret` or `config.clusters.secretNames`, or set `config.clusters.listSecrets: true` (see [clusters](clusters.md#finding-cluster-secrets-by-label-optional)) |
 | `cannot list secret cluster secrets in namespace …: 403` | `config.clusters.listSecrets` (or `useArgocdSecrets` without `argocdSecretNames`) is set but the Role does not allow `list` | Set it in the Helm values (the chart grants `list`), not only in the ConfigMap |
 | Cluster `unreachable` | Wrong `server`, network policy or firewall, expired token, bad CA | Test from the pod: `kubectl -n kube-tower exec deploy/kube-tower -- python -c "import urllib.request,ssl;print(urllib.request.urlopen('https://<server>/version', context=ssl._create_unverified_context()).read())"` |
 | `exec / AWS auth is not supported in the ArgoCD format` | The ArgoCD-format cluster Secret uses `execProviderConfig` or `awsAuthConfig` | Use a ServiceAccount token (`bearerToken`), or a `kubeconfig` key with an allowed exec plugin, see [managed clusters](clusters.md#managed-clusters-eks-gke-aks-exec-plugins) |
 | `exec command '…' is not allowed` | The kubeconfig of the cluster Secret runs an exec plugin not listed in `clusters.execCommands` | Add the command, exactly as written in the kubeconfig, to `config.clusters.execCommands`, or use a ServiceAccount token |
 | `… (a file path) is not supported` / `auth-provider is not supported` | The kubeconfig points to files of the pod or uses a legacy auth provider | Put the content inline (`token`, `*-data` keys), or use an exec plugin |
-| Images in `error` with `cannot get a pull token …: HTTP 401` or `cannot list the tags of …: HTTP 401/403` | Private repository or wrong credentials | Add [registry credentials](configuration.md#registry-authentication); check the Administration page shows them as `loaded` and `accepted` (`refused` gives the registry's answer) |
+
+## Registries and images
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Images in `error` with `cannot get a pull token …: HTTP 401` or `cannot list the tags of …: HTTP 401/403` | Private repository or wrong credentials | Add [registry credentials](registries.md); check the Administration page shows them as `loaded` and `accepted` (`refused` gives the registry's answer) |
 | Images in `error` with `… did not answer before registries.timeout` | Slow or throttling registry (often Docker Hub with many anonymous requests) | Add Docker Hub credentials, lower `registries.concurrency`, increase `registries.timeout`; requests are already retried `registries.retries` times |
 | Images in `error` with `cannot open a connection to … before registries.timeout` | No route from the pod to the registry: egress network policy, firewall, proxy, or IPv6 without connectivity | Test from the pod: `kubectl -n kube-tower exec deploy/kube-tower -- python -c "import httpx;print(httpx.get('https://registry-1.docker.io/v2/').status_code)"` (401 means reachable) |
+| `… uses http://…: refused, only https:// is allowed` | A registry token service or redirect, a Helm repository with credentials, or a git raw URL template (with a git token) uses plain `http://`: the credentials would travel in clear text | Use the `https://` URL of the repository (or of `git.rawUrlTemplates`); for an internal Helm repository without TLS, remove its credentials |
 | `no AWS identity for provider aws` / `no Azure identity for provider azure` | A registry has a cloud `provider` but the pod has no such identity | Annotate the ServiceAccount (IRSA role, Azure client id) and, for Azure, add the pod label `azure.workload.identity/use: "true"`, see [registries](registries.md#cloud-registries-tokens-from-the-identity-of-the-pod) |
 | `cannot get an Amazon ECR token … (ecr:GetAuthorizationToken): HTTP 400/403` | The IAM role lacks `ecr:GetAuthorizationToken` | Attach `AmazonEC2ContainerRegistryReadOnly` to the role |
 | `cannot reach the GKE metadata server …` | `provider: gcp` outside GKE, or the NetworkPolicy blocks `169.254.169.254:80` | Enable Workload Identity, allow the metadata server, or use a JSON key as static credentials |
@@ -31,13 +49,46 @@ every request).
 | `ghcr.io` images in `error` with `HTTP 429` | ghcr.io limits the tags listed per minute (44000 tags): a few repositories with tens of thousands of tags (CI builds, e.g. `immich-app/immich-server`) use it up | Handled: requests to ghcr.io wait and are retried (up to 4 times); credentials for ghcr.io (a GitHub token with `read:packages`) may get a higher limit; ignore unneeded repositories with `images.ignore` |
 | Log `… has more than N tags: only the first … pages were read` | Repository with more tags than `images.maxTagPages` × 1000 | Raise `images.maxTagPages`, else the latest version can be missed |
 | Log `registry-1.docker.io: no pulls left in the current window` | Docker Hub pull quota used up (it counts image pulls: Trivy's vulnerability scans pull the images it scans; kube-tower's own version checks only read tags and digests, which are not counted) | Credentials of an account with a higher limit, or a higher `vulnerabilities.trivy.rescanInterval` (images are scanned again less often) |
+
+## Helm charts
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
 | A chart in `error` with `cannot read the index.yaml of the Helm repository …: HTTP 401` | Private Helm repository | Add credentials for the repository host |
 | A git chart in `error` with `cannot read <path>/Chart.yaml at <ref> in <repo>: HTTP 404` | Private git repository, wrong `path`, or the Application is not a Helm chart | Set `git.existingSecret` with a token; for non GitHub/GitLab hosts add a `git.rawUrlTemplates` entry |
 | `no raw URL template for git host …` | Self-hosted git (Gitea, Bitbucket…) | Add a template, e.g. `gitea.example.com: https://gitea.example.com/{owner}/{repo}/raw/{ref}/{path}` |
-| A tag reported `up-to-date` although a newer version exists | The newer version has a different tag shape (`1.2.3` vs `1.3.0-alpine`), another [versioning scheme](usage.md#versioning-schemes) (`7` vs `4521`) or is a pre-release | Expected: kube-tower only compares tags of the same shape and scheme; enable `includePrerelease` for pre-releases |
-| Floating tag (`latest`) always `unknown` | No running digest known (workload not running, image not on nodes) | Expected; it becomes checkable once the image runs |
 | No Helm charts at all | ArgoCD Applications live in another namespace, or ArgoCD is not installed | Set `config.helm.applicationNamespaces` (`[]` = all namespaces) |
-| `unknown setting 'xxx'` at startup | Typo in `config` | Keys are camelCase, see [configuration](configuration.md) |
+
+## Versions
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| A tag reported `up-to-date` although a newer version exists | The newer version has a different tag shape (`1.2.3` vs `1.3.0-alpine`), another [versioning scheme](statuses.md#versioning-schemes) (`7` vs `4521`) or is a pre-release | Expected: kube-tower only compares tags of the same shape and scheme; enable `includePrerelease` for pre-releases |
+| Floating tag (`latest`) always `unknown` | No running digest known (workload not running, image not on nodes) | Expected; it becomes checkable once the image runs |
+
+## Vulnerabilities
+
+- **`trivy binary 'trivy' not found`**: Trivy is not installed: with the chart, set `trivy.enabled: true`;
+  otherwise install it and set `vulnerabilities.trivy.binary`.
+- **The pod stays in `Init` (`ImagePullBackOff` on the `trivy` init container)**: the node cannot pull
+  `trivy.image` (no `arm/v7` variant, registry not reachable): use a mirror or set `trivy.enabled: false`.
+- **`cannot download the Trivy database`**: the pod cannot reach `mirror.gcr.io` / `ghcr.io`
+  (database registries). Allow them, or use a Trivy server that can.
+- **`remote error: ... UNAUTHORIZED` / `DENIED`**: private image: add credentials for its registry.
+- **The pod is OOMKilled or evicted**: standalone mode needs memory and disk for the database. Raise
+  `resources.limits.memory` / `trivy.cacheSizeLimit`, lower `concurrency`, or enable `trivy.server`.
+- **An image stays `not scanned`**: it has no report at all. Either it matches `vulnerabilities.ignore`,
+  or `vulnerabilities.trivy.enabled` is `false` and Trivy Operator has no `VulnerabilityReport` for it
+  (`kubectl get vulnerabilityreports -A | grep <image>`: the operator may not have scanned it yet, or its
+  scan job failed), or the vulnerability phase of the last scan did not finish. A controller that
+  starts with a stored snapshot whose vulnerability phase did not finish (it was restarted during
+  that phase) runs it at once, once only (no loop if that phase stops the controller again); a vulnerability phase that fails gives the images it did not scan
+  `scan failed` with the reason (retried by *Retry what failed* on the Administration page).
+
+## Performance and distributed mode
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
 | Scan takes long | Many images or slow registries | Increase `registries.concurrency`, ignore irrelevant images with `images.ignore` |
 | Log `the web server was blocked for …s` and pages slow during scans | The scan threads share the CPU (the Python GIL) with the web server | Give the pod more CPU (`resources`), or use the [distributed mode](scaling.md) so the scans run in other pods; if it persists, open an issue with the logs around the warning |
 | Distributed mode: log `Valkey cannot be reached` or `cannot read the tasks from Valkey`, pages frozen on an old state | The pods talk through Valkey only: it is down, its password is wrong, or a NetworkPolicy blocks it | `kubectl -n kube-tower get pods -l app.kubernetes.io/component=valkey`, check `redis.url` / `redis.existingSecret`; the pods try again with growing delays and catch up once it answers |

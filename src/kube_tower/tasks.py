@@ -1,4 +1,4 @@
-"""The units of work of a scan, which a worker or trivy role runs (ADR 0002).
+"""The units of work of a scan, which a worker or trivy role runs.
 
 A full scan is split in tasks: collect one cluster, check the versions of images or charts, scan
 images with Trivy. Each task and each result is a dataclass made of models, so it can be sent to
@@ -7,7 +7,7 @@ another kube-tower process as JSON (encode_task / decode_task, encode_result / d
 When every role runs in the process, the LocalRunner hands the tasks to the Worker of the process,
 without encoding them (the reports are updated in place, so the UI shows the results as they come).
 In the distributed mode, the QueueRunner queues the tasks of the roles that run elsewhere in Valkey
-(bus.py, ADR 0003): worker and trivy processes read them there (internal.TaskPuller) and send the results back.
+(bus.py): worker and trivy processes read them there (internal.TaskPuller) and send the results back.
 """
 
 from __future__ import annotations
@@ -205,7 +205,7 @@ def task_stream(role: str) -> str:
 
 class QueueRunner:
     """The distributed mode: the tasks of the roles of this process run here; the others go through Valkey
-    (bus.py, ADR 0003) to the processes with their role, and this controller waits for their results.
+    (bus.py) to the processes with their role, and this controller waits for their results.
 
     A task is a message of the stream of its role (`tasks:worker`, `tasks:trivy`), read by one process of
     the role (consumer group), which acknowledges it once it sent the result to the `results` stream. A task

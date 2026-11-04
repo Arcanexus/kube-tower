@@ -1,4 +1,4 @@
-"""Runs the tasks of a scan (see tasks.py): what the worker and trivy roles do (ADR 0002).
+"""Runs the tasks of a scan (see tasks.py): what the worker and trivy roles do.
 
 The Worker keeps what makes the next tasks faster or safer, from one scan to the next: cloud registry
 tokens, registries that answered 429, Helm indexes, the Trivy results cache, and whether each registry

@@ -1,4 +1,4 @@
-"""Controller election (ADR 0002): one active controller, the other replicas wait as standbys.
+"""Controller election: one active controller, the other replicas wait as standbys.
 
 The replicas share a Kubernetes Lease. The holder renews it every few seconds; another replica takes it once
 it expired (the holder stopped or lost the API server). A controller that cannot renew its Lease in time

@@ -3,7 +3,7 @@
 The rescans (all, failed items, one item) are run by the Scanner; this module holds the
 other actions and their last results, in memory like everything else.
 
-When the trivy role runs in other processes (ADR 0002), the Trivy actions go to them: the status is
+When the trivy role runs in other processes, the Trivy actions go to them: the status is
 read from one of them (a task), a database update runs in one of them and the others refresh theirs
 before their next task, a cleared cache is forgotten by each one at its next task (the generations
 sent with the tasks, see TaskPuller).

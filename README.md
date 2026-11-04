@@ -67,64 +67,36 @@ never updates anything, you stay in control of your GitOps workflow.
 ```sh
 helm install kube-tower oci://ghcr.io/arcanexus/charts/kube-tower \
   --namespace kube-tower --create-namespace
-
 kubectl -n kube-tower port-forward svc/kube-tower 8080:80
-
 # Password of the admin account, generated at the first start
 kubectl -n kube-tower get secret kube-tower-auth -o jsonpath='{.data.admin\.password}' | base64 -d; echo
 ```
 
 Open http://localhost:8080 and log in as `admin`: the first scan of the local cluster starts right away.
-
-Then, as needed:
-
-- [register other clusters](https://github.com/Arcanexus/kube-tower/wiki/Clusters),
-- [connect private registries](https://github.com/Arcanexus/kube-tower/wiki/Registries),
-- [expose the UI with an ingress or deploy with ArgoCD](https://github.com/Arcanexus/kube-tower/wiki/Installation),
-- [add accounts, single sign-on or Dex](https://github.com/Arcanexus/kube-tower/wiki/Authentication), or turn the login off (`auth.enabled=false`).
+The [quick start](https://github.com/Arcanexus/kube-tower/wiki/Quick-start) goes on with the next steps: other clusters, private registries,
+an ingress or ArgoCD, single sign-on.
 
 ## How it works
 
-```
- cluster Secrets ─┐
-                  ▼
- ┌───────────────────────── kube-tower ─────────────────────────┐
- │ discover clusters → collect images & ArgoCD charts →         │
- │ check versions → scan vulnerabilities                        │──► UI · /api · /metrics
- └──────────────────────────────────────────────────┬───────────┘
-                                                    ▼
-     OCI registries · Helm repositories · git (Chart.yaml) · Trivy Operator reports / Trivy
-```
-
-Every `refreshInterval` (6h by default), kube-tower lists the workloads, nodes and ArgoCD
-Applications of every reachable cluster with a read-only ServiceAccount, asks each registry for
-its published versions (each repository once per scan), then reads or scans the vulnerabilities
-of every image, and keeps the result in memory.
-The [architecture](https://github.com/Arcanexus/kube-tower/wiki/Architecture) page draws the parts of kube-tower and how they talk to
-each other; design choices are explained in [ADR 0001](https://github.com/Arcanexus/kube-tower/wiki/ADR-0001-kube-tower-architecture). For large inventories,
-the chart can split kube-tower in UI, controller, worker and Trivy Deployments scaled apart, with
-Valkey (or Redis) between them: see [scaling](https://github.com/Arcanexus/kube-tower/wiki/Scaling), [ADR 0002](https://github.com/Arcanexus/kube-tower/wiki/ADR-0002-horizontal-scaling-with-roles) and [ADR 0003](https://github.com/Arcanexus/kube-tower/wiki/ADR-0003-the-processes-talk-through-Valkey).
+Every `refreshInterval` (6h by default), kube-tower lists the workloads, nodes and ArgoCD Applications
+of every cluster with a read-only ServiceAccount, asks each registry for its published versions, reads
+or scans the vulnerabilities of every image, and keeps the result in memory: no database. One pod does
+it all, or the chart splits it in UI, controller, worker and Trivy pods for large inventories. See the
+[architecture](https://github.com/Arcanexus/kube-tower/wiki/Architecture) and [scaling](https://github.com/Arcanexus/kube-tower/wiki/Scaling).
 
 ## Documentation
 
-The documentation is in the **[wiki](https://github.com/Arcanexus/kube-tower/wiki)**. It is written in [`docs/`](docs/) next to the code and
-published to the wiki after every merge to `main`, so both always show the same pages. The [product website](https://arcanexus.github.io/kube-tower/) gives a tour of kube-tower.
+The documentation is in the **[wiki](https://github.com/Arcanexus/kube-tower/wiki)**, written in [`docs/`](docs/) next to the code and
+published after every merge to `main`. The [product website](https://arcanexus.github.io/kube-tower/)
+gives a tour of kube-tower.
 
-| Guide | Content |
+| Section | Pages |
 | --- | --- |
-| [Installation](https://github.com/Arcanexus/kube-tower/wiki/Installation) | Helm, ArgoCD, ingress, upgrades, requirements |
-| [Configuration](https://github.com/Arcanexus/kube-tower/wiki/Configuration) | every setting, registry authentication, secrets |
-| [Authentication](https://github.com/Arcanexus/kube-tower/wiki/Authentication) | login, admin password, local accounts, SSO with OIDC (Authentik, Dex, Keycloak), readonly and admin roles, API with Basic auth |
-| [Architecture](https://github.com/Arcanexus/kube-tower/wiki/Architecture) | diagrams of the roles, the single and distributed modes, a scan step by step |
-| [Scaling](https://github.com/Arcanexus/kube-tower/wiki/Scaling) | distributed mode: UI, controller, worker and Trivy pods, standby controller, Redis / Valkey |
-| [Clusters](https://github.com/Arcanexus/kube-tower/wiki/Clusters) | registering remote clusters, reusing ArgoCD clusters |
-| [Registries](https://github.com/Arcanexus/kube-tower/wiki/Registries) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: authentication, private CAs |
-| [Usage](https://github.com/Arcanexus/kube-tower/wiki/Usage) | the pages, filters and sorting, rescans, administration, statuses, JSON API |
-| [Vulnerabilities](https://github.com/Arcanexus/kube-tower/wiki/Vulnerabilities) | CVE detection with Trivy Operator reports or Trivy |
-| [Security](https://github.com/Arcanexus/kube-tower/wiki/Security) | Trivy Operator config audit, exposed secrets, RBAC, infrastructure and compliance reports |
-| [Metrics and Grafana](https://github.com/Arcanexus/kube-tower/wiki/Metrics-and-Grafana) | Prometheus exporter, PromQL examples, alerts, Grafana dashboard |
-| [Development](https://github.com/Arcanexus/kube-tower/wiki/Development) | run locally, tests and coverage, project layout, releases |
-| [Troubleshooting](https://github.com/Arcanexus/kube-tower/wiki/Troubleshooting) | common errors and how to fix them |
+| Getting started | [Quick start](https://github.com/Arcanexus/kube-tower/wiki/Quick-start) · [Installation](https://github.com/Arcanexus/kube-tower/wiki/Installation) · [Upgrading](https://github.com/Arcanexus/kube-tower/wiki/Upgrading) · [Comparison](https://github.com/Arcanexus/kube-tower/wiki/Comparison) |
+| Configure | [Clusters](https://github.com/Arcanexus/kube-tower/wiki/Clusters) · [Registries](https://github.com/Arcanexus/kube-tower/wiki/Registries) · [Authentication](https://github.com/Arcanexus/kube-tower/wiki/Authentication) · [Vulnerabilities](https://github.com/Arcanexus/kube-tower/wiki/Vulnerabilities) · [Security](https://github.com/Arcanexus/kube-tower/wiki/Security) · [Scaling](https://github.com/Arcanexus/kube-tower/wiki/Scaling) · [Metrics and Grafana](https://github.com/Arcanexus/kube-tower/wiki/Metrics-and-Grafana) |
+| Use the UI | [Usage](https://github.com/Arcanexus/kube-tower/wiki/Usage) · [Statuses and versions](https://github.com/Arcanexus/kube-tower/wiki/Statuses-and-versions) |
+| Reference | [Configuration](https://github.com/Arcanexus/kube-tower/wiki/Configuration) · [Chart values](https://github.com/Arcanexus/kube-tower/wiki/Chart-values) · [API](https://github.com/Arcanexus/kube-tower/wiki/API) · [Permissions](https://github.com/Arcanexus/kube-tower/wiki/Permissions) · [Network and ports](https://github.com/Arcanexus/kube-tower/wiki/Network-and-ports) |
+| Help | [Troubleshooting](https://github.com/Arcanexus/kube-tower/wiki/Troubleshooting) · [Architecture](https://github.com/Arcanexus/kube-tower/wiki/Architecture) · [Development](https://github.com/Arcanexus/kube-tower/wiki/Development) |
 
 ## Compared to similar tools
 
@@ -137,6 +109,9 @@ published to the wiki after every merge to `main`, so both always show the same 
 | Misconfigurations, secrets, compliance | ✅ Trivy Operator reports | ❌ | ❌ | ❌ |
 | Several clusters in one view | ✅ | ❌ | n/a | ❌ one per cluster |
 | Web UI | ✅ | ❌ | ❌ | ❌ (Grafana) |
+
+More tools (Nova, Argo CD Image Updater, Trivy Operator) and how they work together with kube-tower:
+see the [comparison](https://github.com/Arcanexus/kube-tower/wiki/Comparison).
 
 ## Contributing
 

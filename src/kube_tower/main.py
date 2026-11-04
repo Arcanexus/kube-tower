@@ -122,7 +122,7 @@ def create_app(
     logger.addHandler(log_buffer)
     runs: list = []  # what the process runs in the background: coroutine functions
     backend: LocalBackend | RemoteBackend | None = None
-    # Distributed mode: every exchange with the other processes goes through Valkey (ADR 0003).
+    # Distributed mode: every exchange with the other processes goes through Valkey.
     bus = (bus or connect(settings)) if settings.distributed else None
     auth = Authenticator(settings.auth) if settings.auth.enabled and "ui" in roles else None
     if "controller" in roles:

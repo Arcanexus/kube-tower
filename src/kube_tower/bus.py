@@ -1,4 +1,4 @@
-"""The Valkey (or Redis) keys through which the processes of the distributed mode talk (ADR 0003).
+"""The Valkey (or Redis) keys through which the processes of the distributed mode talk.
 
 Every exchange between roles goes through Valkey, and only the active controller orchestrates: it
 queues the tasks, gives a task lost with its process to another one, reads the results and the actions

@@ -3,8 +3,7 @@
 docs/ stays the only source of the documentation: it is versioned and reviewed with the code. This
 script turns it into wiki pages (run by .github/workflows/wiki.yml on every push to main):
 
-- docs/README.md becomes Home, every other page gets the name given in PAGES (ADRs are found in
-  docs/adr/ and named after their title),
+- docs/README.md becomes Home, every other page gets the name given in PAGES,
 - links between pages become wiki links (`installation.md#x` -> `Installation#x`), links to other
   files of the repository become links to GitHub (`../deploy/x.yaml` -> .../blob/main/deploy/x.yaml),
 - docs/images/ is copied into the wiki, image links keep working,
@@ -23,26 +22,41 @@ from pathlib import Path
 
 REPO_URL = "https://github.com/Arcanexus/kube-tower"
 
-# Sidebar sections: (title, [(file in docs/, wiki page name), ...]). A page of docs/ missing here is
-# an error, so that a new page is never left out of the wiki. ADRs are added to the last section.
+# Sidebar sections: (title, [(file in docs/, wiki page name), ...]), sorted by what the reader wants to do.
+# A page of docs/ missing here is an error, so that a new page is never left out of the wiki. Keep the page
+# names: the website, the README and the UI link to them.
 PAGES: list[tuple[str, list[tuple[str, str]]]] = [
     ("Getting started", [
+        ("quick-start.md", "Quick-start"),
         ("installation.md", "Installation"),
-        ("configuration.md", "Configuration"),
-        ("authentication.md", "Authentication"),
+        ("upgrading.md", "Upgrading"),
+        ("comparison.md", "Comparison"),
+    ]),
+    ("Configure", [
         ("clusters.md", "Clusters"),
         ("registries.md", "Registries"),
-    ]),
-    ("Using kube-tower", [
-        ("usage.md", "Usage"),
+        ("authentication.md", "Authentication"),
         ("vulnerabilities.md", "Vulnerabilities"),
         ("security.md", "Security"),
+        ("scaling.md", "Scaling"),
         ("metrics.md", "Metrics-and-Grafana"),
+    ]),
+    ("Use the UI", [
+        ("usage.md", "Usage"),
+        ("statuses.md", "Statuses-and-versions"),
+    ]),
+    ("Reference", [
+        ("configuration.md", "Configuration"),
+        ("chart-values.md", "Chart-values"),
+        ("api.md", "API"),
+        ("permissions.md", "Permissions"),
+        ("network.md", "Network-and-ports"),
+    ]),
+    ("Help", [
         ("troubleshooting.md", "Troubleshooting"),
     ]),
     ("Inside kube-tower", [
         ("architecture.md", "Architecture"),
-        ("scaling.md", "Scaling"),
         ("development.md", "Development"),
     ]),
 ]  # fmt: skip
@@ -59,27 +73,11 @@ class DocsError(Exception):
     pass
 
 
-def page_title(text: str) -> str:
-    for line in text.splitlines():
-        if m := H1.match(line):
-            return m.group(1)
-    return ""
-
-
-def wiki_name(title: str) -> str:
-    """Wiki page name from a title: `ADR 0001: kube-tower architecture` -> `ADR-0001-kube-tower-architecture`."""
-    name = re.sub(r"[\\/:*?\"<>|#()\[\]]", "", title)
-    return re.sub(r"\s+", "-", name.strip())
-
-
 def page_map(docs: Path) -> dict[str, str]:
     """docs-relative path (posix) -> wiki page name, for every page of docs/."""
     pages = {HOME[0]: HOME[1]}
     for _, entries in PAGES:
         pages.update(entries)
-    for adr in sorted((docs / "adr").glob("*.md")):
-        title = page_title(adr.read_text(encoding="utf-8")) or adr.stem
-        pages[f"adr/{adr.name}"] = wiki_name(title)
     found = {p.relative_to(docs).as_posix() for p in docs.rglob("*.md")}
     if missing := sorted(found - pages.keys()):
         raise DocsError(f"pages of docs/ not in the wiki sidebar, add them to PAGES in {Path(__file__).name}: {missing}")
@@ -131,12 +129,9 @@ def convert(text: str, source: str, pages: dict[str, str], repo_url: str, ref: s
     return f"{body}\n\n---\n\n_This page is generated from [docs/{source}]({source_url}): edit it there._\n"
 
 
-def sidebar(docs: Path, pages: dict[str, str]) -> str:
+def sidebar() -> str:
     lines = [f"**[Home]({HOME[1]})**", ""]
     sections = [(title, [(name, name.replace("-", " ")) for _, name in entries]) for title, entries in PAGES]
-    for source, name in pages.items():
-        if source.startswith("adr/"):  # the full title: `ADR 0001: kube-tower architecture`
-            sections[-1][1].append((name, page_title((docs / source).read_text(encoding="utf-8")) or name))
     for title, entries in sections:
         lines += [f"**{title}**", ""]
         lines += [f"- [{label}]({name})" for name, label in entries]
@@ -155,7 +150,7 @@ def build(docs: Path, wiki: Path, repo_url: str = REPO_URL, ref: str = "main") -
     for source, name in pages.items():
         text = (docs / source).read_text(encoding="utf-8")
         (wiki / f"{name}.md").write_text(convert(text, source, pages, repo_url, ref), encoding="utf-8")
-    (wiki / "_Sidebar.md").write_text(sidebar(docs, pages), encoding="utf-8")
+    (wiki / "_Sidebar.md").write_text(sidebar(), encoding="utf-8")
     if (docs / "images").is_dir():
         shutil.copytree(docs / "images", wiki / "images")
     return sorted(pages.values())

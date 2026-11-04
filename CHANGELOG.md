@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation and wiki reorganized** by what the reader wants to do, in six sections of the wiki
+  sidebar: Getting started, Configure, Use the UI, Reference, Help, Inside kube-tower. New pages:
+  [Quick start](docs/quick-start.md), [Upgrading](docs/upgrading.md) (with the steps each version needs),
+  [Comparison](docs/comparison.md) (watchtower, Renovate, version-checker, Nova, Argo CD Image Updater,
+  Trivy Operator), [Statuses and versions](docs/statuses.md), [Chart values](docs/chart-values.md),
+  [API](docs/api.md), [Permissions](docs/permissions.md) and [Network and ports](docs/network.md). Each
+  subject is written once: the Trivy settings, registry credentials, RBAC rules, network policies and
+  metrics no longer appear on two or three pages. Troubleshooting is grouped by topic and holds the Trivy
+  problems too. The guides show a screenshot of their page (new: the Pods tab of the distributed mode).
+  The README is shorter and links to the wiki sections. The existing wiki page names are kept.
+
+### Removed
+
+- The ADRs (`docs/adr/`): their decisions are summed up in the
+  [design choices](docs/architecture.md#design-choices) of the architecture page.
+
 ## [1.1.0] - 2026-11-04
 
 ### Added
@@ -100,7 +118,7 @@ All notable changes to this project are documented here. The format follows
   (asked to GitHub by the browser, never by kube-tower), links to the repository, the documentation,
   the changelog and to report a problem, what the instance runs (mode, roles, uptime, clusters, scan
   interval, configuration file) and the versions of its components.
-- Groundwork for horizontal scaling ([ADR 0002](docs/adr/0002-horizontal-scaling.md)): `roles`
+- Groundwork for horizontal scaling ([design](docs/architecture.md#horizontal-scaling)): `roles`
   setting (`KUBE_TOWER_ROLES`) and `Snapshot.from_dict`, the inverse of the JSON
   encoding of `/api/snapshot`. The UI, the API and the metrics go through a `Backend` interface
   (`backend.py`) instead of the scanner, ready for `ui` pods that ask the controller. A full scan is
@@ -230,7 +248,7 @@ All notable changes to this project are documented here. The format follows
 - UI: Synthesis home page (status distributions, pending updates, registries, most used outdated images,
   per cluster figures); the version shown by the UI and `kube_tower_build_info` comes from the image tag.
 
-- Valkey bus of the distributed mode ([ADR 0003](docs/adr/0003-valkey-bus.md), first step): `bus.py`
+- Valkey bus of the distributed mode ([design](docs/architecture.md#the-processes-talk-through-valkey), first step): `bus.py`
   holds the Valkey keys through which the processes will talk instead of the internal HTTP API (task
   and result streams read by consumer groups, pending tasks given to another process, the published
   state and its revision, replies to the actions, one expiring key per process, capped log streams).
@@ -257,7 +275,7 @@ All notable changes to this project are documented here. The format follows
   `vulnerabilities`, `clusters`, `settings`, `logs`) redirect to the new pages.
 
 - Distributed mode: every exchange between the pods goes through Valkey, and only the active controller
-  orchestrates ([ADR 0003](docs/adr/0003-valkey-bus.md)). The controller queues the tasks in a Valkey
+  orchestrates ([design](docs/architecture.md#the-processes-talk-through-valkey)). The controller queues the tasks in a Valkey
   stream per role, worker and trivy pods read them there and send their results back; a task not
   answered within `internal.taskTimeout` is given to another pod, three times at most, and a
   controller taking over empties the queues of the previous one. The controller publishes the state

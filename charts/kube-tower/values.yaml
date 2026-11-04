@@ -90,7 +90,7 @@ distributed:
         limits:
           memory: 1536Mi
 
-# Redis / Valkey. Required by mode distributed: the pods talk through it (ADR 0003). In both modes the
+# Redis / Valkey. Required by mode distributed: the pods talk through it. In both modes the
 # controller keeps a copy of the inventory there: a restarted controller (or a standby taking over) shows
 # it at once instead of scanning first.
 redis:

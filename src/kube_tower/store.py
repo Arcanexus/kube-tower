@@ -1,4 +1,4 @@
-"""Where the controller keeps the Snapshot (ADR 0002): in memory by default, Redis / Valkey as an option."""
+"""Where the controller keeps the Snapshot: in memory by default, Redis / Valkey as an option."""
 
 from __future__ import annotations
 

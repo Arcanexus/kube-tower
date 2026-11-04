@@ -12,8 +12,7 @@ that work together (`mode: distributed`). The image is the same: each pod runs s
 | `worker` | Collects the clusters, checks the versions in registries and Helm repositories | any, autoscaling | read-only ClusterRole, cluster Secrets |
 | `trivy` | Scans the images with Trivy, keeps the Trivy databases and results | always 1 | none needed |
 
-See [architecture](architecture.md) for the diagrams, [ADR 0002](adr/0002-horizontal-scaling.md) and
-[ADR 0003](adr/0003-valkey-bus.md) for the design.
+See [architecture](architecture.md) for the diagrams and the [design choices](architecture.md#design-choices).
 
 ```
        ui (×N) ◄─── Ingress / Service
@@ -26,7 +25,7 @@ worker (×N)        trivy (×1)
 ```
 
 The pods never call each other: every exchange goes through Valkey, and only the active controller
-orchestrates ([ADR 0003](adr/0003-valkey-bus.md)).
+orchestrates.
 
 ## Distributed mode
 
@@ -94,17 +93,16 @@ ArgoCD wait for it). To scale the pages, run `ui` in a group of its own.
 Every pod writes every 5 seconds a key in Valkey that expires unless written again (standby
 controllers too), and ships its log lines there: the **Administration** page shows the state of each
 role and pod, and the **Logs** page gathers the lines of every pod, filtered by role (see
-[usage](usage.md#administration)).
+[usage](usage.md#pods)).
+
+![Pods tab of the Administration page in distributed mode](images/pods.png)
 
 The scans are split in batches of `config.internal.batchSize` images or charts (50) shared by the
 worker and trivy pods. A task that is not answered within `config.internal.taskTimeout` (30m) is given
 to another pod, e.g. when a worker was stopped in the middle of it, three times at most.
 
-### Network policies
-
-With `networkPolicy.enabled`, the kube-tower pods reach Valkey, which accepts the kube-tower pods only.
-The tasks carry registry credentials (image pull secrets): a Valkey password is recommended
-(`redis.password` or `redis.existingSecret`).
+With `networkPolicy.enabled`, the kube-tower pods reach Valkey, which accepts the kube-tower pods only
+(see [network policies](network.md#distributed-mode)).
 
 ### Sizing
 
@@ -154,80 +152,54 @@ is never kept: a new controller empties the task queues of the previous one and 
 when one is due. Several installations can share one Redis: each uses its own `keyPrefix` (and
 `config.redis.key` for the snapshot).
 
-### From 1.0.0-rc.3
+## Without the chart: the roles in config.yaml
 
-Up to rc.3 the pods talked over an internal API of the controller (port 8081) with a shared token. From
-rc.4 they talk through Valkey only:
+The chart sets all of this from `mode: distributed`. What it does, for a deployment of your own (every
+key is listed in [configuration](configuration.md)):
 
-1. keep (or set) `redis.valkey.enabled: true`, or `redis.url`: the chart refuses to render without one;
-2. remove `distributed.internal` from your values (ignored, the chart notes say so), then delete the
-   Secret of the token (and its ExternalSecret);
-3. sync: during the rollout, the pods of rc.3 lose the controller for less than a minute, the time the
-   new ones replace them. The inventory kept in Valkey is shown at once.
+`roles` is the horizontal scaling: one image whose pods run any combination of the `ui`,
+`controller`, `worker` and `trivy` roles, all in one pod or apart and scaled independently. By default
+a process runs every role (`all`). The chart sets all of this with `mode: distributed`; when the roles
+run apart:
 
-## With ArgoCD
+- every process talks through Redis or Valkey (`redis.url`, required), never to another process; the process with `controller` schedules
+  the scans and queues there the tasks of the roles it does not run;
+- processes with `worker` and/or `trivy` (and no `controller`) read these tasks from Valkey, run them
+  and send the results back there; a `worker` reads the cluster list itself. A task not answered
+  within `internal.taskTimeout` (its process stopped) is queued again, three times at most.
+  The version checks and Trivy scans of a scan are split in tasks of `internal.batchSize` images or
+  charts (the tags of one image stay together), so several processes share them;
+- a process with `ui` and no `controller` shows the state that the controller publishes in Valkey
+  (its revision read every second), and sends it the actions of the users there; any number of them can
+  serve the pages. The metrics of the snapshot are served by the process with `controller` only;
+- with `internal.leaderElection: true`, several replicas can run the `controller` role: they share
+  the `internal.leaseName` Lease of their namespace (RBAC: get, create and update `leases` in
+  `coordination.k8s.io`). The holder schedules the scans and publishes the state; the others wait,
+  answer 503 on `/leaderz` (and on `/readyz`), and take over about 15 seconds after the active one
+  stopped. With `internal.labelPod: true`, the active controller labels its own pod
+  `kube-tower.arcanexus.com/active-controller=true` (and a standby `false`; RBAC: patch `pods`), for a
+  Service selecting the active one while every controller pod stays ready; otherwise use `/leaderz`
+  as readiness probe. A controller that cannot renew its Lease in time stops and is restarted as a standby.
+  The new controller empties the task queues of the previous one and starts a full scan, unless the
+  stored snapshot is recent (below);
+- with `redis.url`, the controller also writes the snapshot to Redis or Valkey (compressed, at each
+  change, the last version only) and reads it back when it becomes the active controller: a restarted
+  controller, or a standby taking over, shows the last inventory at once and waits for the rest of
+  `refreshInterval` before scanning. A scan in progress is not kept: it starts again. The tasks carry
+  the registry credentials of image pull secrets: protect Redis with a password (`passwordEnv`).
 
-One pod per role and the chart's Valkey, its password in a Secret created beforehand (or synced by
-ExternalSecrets like the registry credentials):
+Every process but the active controller writes every 5 seconds a key that expires in Valkey (standby
+controllers included), and every process ships its log lines there: the Pods tab of the Administration
+page shows the state of each role and process, and its Logs tab the lines of every process with its pod name,
+filtered by role. When Trivy runs in trivy processes, the Administration
+page reads the status of one of them; a database update runs in one of them and the others refresh
+theirs before their next task, and a cleared cache is forgotten by each one at its next task. The
+connectivity test runs in the controller.
 
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: kube-tower
-  namespace: argocd
-spec:
-  destination:
-    name: in-cluster
-    namespace: kube-tower
-  project: default
-  source:
-    repoURL: ghcr.io/arcanexus/charts
-    chart: kube-tower
-    targetRevision: 1.0.0-rc.4
-    helm:
-      valuesObject:
-        mode: distributed
-        distributed:
-          groups:
-            controller:
-              replicas: 1   # 2: a standby takes over in about 15 s if the active one stops
-            ui:
-              replicas: 1
-            worker:
-              replicas: 1
-        redis:
-          valkey:
-            enabled: true
-          existingSecret: kube-tower-valkey   # key: password
-        config:
-          clusters:
-            useArgocdSecrets: true
-        ingress:
-          enabled: true
-          hosts:
-            - host: kube-tower.example.com
-              paths:
-                - path: /
-                  pathType: Prefix
-        serviceMonitor:
-          enabled: true   # scrapes the active controller
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-```
+## With ArgoCD, permissions, network
 
-Every pod becomes ready (standby controllers too), so ArgoCD shows the Application healthy once the
-pods started. See [installation](installation.md#with-argocd) for the other values (registry
-credentials, TLS, authentication middleware).
-
-## Permissions
-
-The pods running `controller` or `worker` (and `trivy`, for the cloud identities of
-[registries](registries.md)) use the ServiceAccount of the chart, with the usual
-[permissions](installation.md#permissions), plus `create` on `leases`, `get` / `update` on the
-`<release>-controller` Lease and `patch` on the pods of the release namespace (the active controller
-labels its own pod) in distributed mode.
+- An ArgoCD Application for the distributed mode is in [installation](installation.md#distributed-mode-with-argocd).
+- The extra RBAC of the distributed mode (the `Lease` of the controller, the label of its pod) is in
+  [permissions](permissions.md#distributed-mode).
+- The ports, and the NetworkPolicy of Valkey, are in [network and ports](network.md).
+- Upgrading from 1.0.0-rc.3 or earlier: see [upgrading](upgrading.md#100-rc4-the-pods-talk-through-valkey).

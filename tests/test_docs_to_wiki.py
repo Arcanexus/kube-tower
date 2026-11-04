@@ -11,7 +11,7 @@ wiki = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(wiki)
 
 REPO = "https://github.com/Arcanexus/kube-tower"
-PAGES = {"README.md": "Home", "usage.md": "Usage", "adr/0001-architecture.md": "ADR-0001-kube-tower-architecture"}
+PAGES = {"README.md": "Home", "usage.md": "Usage", "guides/clusters.md": "Clusters"}
 
 
 def rewrite(target: str, source: str = "usage.md") -> str:
@@ -23,10 +23,10 @@ def rewrite(target: str, source: str = "usage.md") -> str:
     [
         ("usage.md", "README.md", "Usage"),
         ("usage.md#images", "README.md", "Usage#images"),
-        ("../usage.md#x", "adr/0001-architecture.md", "Usage#x"),
-        ("adr/0001-architecture.md", "usage.md", "ADR-0001-kube-tower-architecture"),
+        ("../usage.md#x", "guides/clusters.md", "Usage#x"),
+        ("guides/clusters.md", "usage.md", "Clusters"),
         ("images/a.png", "usage.md", "images/a.png"),
-        ("../images/a.png", "adr/0001-architecture.md", "images/a.png"),
+        ("../images/a.png", "guides/clusters.md", "images/a.png"),
         ("../deploy/rbac.yaml", "usage.md", f"{REPO}/blob/main/deploy/rbac.yaml"),
         ("../CHANGELOG.md", "usage.md", f"{REPO}/blob/main/CHANGELOG.md"),
         ("../README.md#quick-start", "usage.md", f"{REPO}/blob/main/README.md#quick-start"),
@@ -66,20 +66,14 @@ def test_convert_rewrites_links_but_not_code_and_drops_the_title():
     assert out.endswith(f"_This page is generated from [docs/usage.md]({REPO}/blob/main/docs/usage.md): edit it there._\n")
 
 
-def test_wiki_name():
-    assert wiki.wiki_name("ADR 0002: horizontal scaling (roles)") == "ADR-0002-horizontal-scaling-roles"
-
-
 def make_docs(tmp_path: Path, extra: str | None = None) -> Path:
     docs = tmp_path / "docs"
-    (docs / "adr").mkdir(parents=True)
-    (docs / "images").mkdir()
+    (docs / "images").mkdir(parents=True)
     (docs / "images" / "a.png").write_bytes(b"png")
     (docs / "README.md").write_text("# Docs\n\n[Usage](usage.md)\n")
     for _, entries in wiki.PAGES:
         for source, _ in entries:
             (docs / source).write_text(f"# {source}\n\n![a](images/a.png)\n")
-    (docs / "adr" / "0001-x.md").write_text("# ADR 0001: the first choice\n\n[back](../README.md)\n")
     if extra:
         (docs / extra).write_text("# Extra\n")
     return docs
@@ -92,22 +86,30 @@ def test_build_writes_pages_sidebar_and_images(tmp_path):
     (out / "Old-page.md").write_text("removed from docs/")
     (out / "old-dir").mkdir()
     names = wiki.build(docs, out, REPO, "main")
-    assert "Home" in names and "ADR-0001-the-first-choice" in names
+    assert "Home" in names and "Quick-start" in names and "Network-and-ports" in names
     assert (out / ".git").is_dir()
     assert not (out / "Old-page.md").exists() and not (out / "old-dir").exists()
     assert (out / "images" / "a.png").read_bytes() == b"png"
     assert "[Usage](Usage)" in (out / "Home.md").read_text()
-    assert "[back](Home)" in (out / "ADR-0001-the-first-choice.md").read_text()
     side = (out / "_Sidebar.md").read_text()
     assert "**[Home](Home)**" in side
     assert "- [Metrics and Grafana](Metrics-and-Grafana)" in side
-    assert "- [ADR 0001: the first choice](ADR-0001-the-first-choice)" in side
+    assert "**Reference**" in side and "- [Chart values](Chart-values)" in side
+    assert side.index("**Getting started**") < side.index("**Configure**") < side.index("**Inside kube-tower**")
 
 
 def test_a_page_missing_from_the_sidebar_is_an_error(tmp_path, capsys):
     docs = make_docs(tmp_path, extra="new-page.md")
     assert wiki.main([str(docs), str(tmp_path / "wiki")]) == 1
     assert "new-page.md" in capsys.readouterr().err
+
+
+def test_a_page_in_a_subdirectory_must_be_listed_too(tmp_path, capsys):
+    docs = make_docs(tmp_path)
+    (docs / "guides").mkdir()
+    (docs / "guides" / "x.md").write_text("# X\n")
+    assert wiki.main([str(docs), str(tmp_path / "wiki")]) == 1
+    assert "guides/x.md" in capsys.readouterr().err
 
 
 def test_a_listed_page_missing_from_docs_is_an_error(tmp_path):
