@@ -7,7 +7,7 @@ How to find your way in kube-tower: what every page has in common. Each page has
 | **Overview** | What to act on first, figures of the whole inventory | [Overview page](ui-overview.md) |
 | **Images** | Every image, its versions and its vulnerabilities | [Images page](ui-images.md) |
 | **Helm charts** | Every chart of the ArgoCD Applications and its subcharts | [Helm charts page](ui-charts.md) |
-| **Security** | The reports of Trivy Operator | [Security](security.md) |
+| **Security** | The reports of Trivy Operator | [Security page](ui-security.md) |
 | **Administration** | Scans, Trivy, clusters, pods, credentials, settings, API, logs | [Administration page](ui-administration.md) |
 | **About** | Version, latest release, what this instance runs | [below](#about) |
 
