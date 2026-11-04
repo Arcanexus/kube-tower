@@ -16,7 +16,7 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - **Usage page split** into one page per screen of the UI: [Overview](docs/ui-overview.md),
-  [Images](docs/ui-images.md), [Helm charts](docs/ui-charts.md) and
+  [Images](docs/ui-images.md), [Helm charts](docs/ui-charts.md), [Security](docs/ui-security.md) and
   [Administration](docs/ui-administration.md). [Usage](docs/usage.md) keeps what all pages share
   (sidebar, top bar, lists, detail panels, theme, keyboard, About), with shorter text and tables.
 - **Documentation and wiki reorganized** by what the reader wants to do, in six sections of the wiki

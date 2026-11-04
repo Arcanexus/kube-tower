@@ -17,40 +17,8 @@ kube-tower only reads these reports: it never runs the checks itself and never c
 Clusters without Trivy Operator are simply skipped (the CRDs are not found). The reports are read at
 each scan, like the rest of the inventory.
 
-![Security](images/security.png)
-
-Without Trivy Operator on any cluster, the page says so, with the Helm command to install it and a link
-to its [installation guide](https://aquasecurity.github.io/trivy-operator/latest/getting-started/installation/).
-Its reports show up after the next scan.
-
-![Security page without Trivy Operator](images/security-empty.png)
-
-## The page
-
-- **One tile per type of report**: the share of checked resources that pass every check, and how
-  many have findings. Click a tile to list only that type, again to show every type.
-- **Compliance tiles**, one per framework and cluster: the share of controls passed. Click one for
-  its failed controls, most severe first. A framework not evaluated yet says so (Trivy Operator fills
-  them on its own schedule, `compliance.cron`).
-- **The list**: one line per resource with failed checks (a Deployment, a ClusterRole, a node, the
-  container of an image with secrets), its namespace, the type of report, the number of findings per
-  severity, the cluster and when it was checked. Most severe first; the headers sort it.
-- **Severity chips** keep the resources with at least one finding of that severity; **passing too**
-  also lists the resources that pass every check (*none* in the Findings column).
-- **The search** looks in the resource names, namespaces, containers, images, and the IDs and titles
-  of the checks: `KSV017`, `privileged`, `billing`...
-- The **Cluster** filter of the top bar applies; *Running only* does not (reports are about
-  resources, not images).
-
-Click a line for its detail panel: every failed check with its severity, the message of Trivy (which
-container, which field), the description, how to fix it and a link to the check in the Aqua
-vulnerability database (`KSV…`, `KCV…`). For exposed secrets: the rule, the file in the image and the
-masked line. Rotate a secret found in an image: anyone who can pull the image can read it.
-
-![Failed checks of a resource](images/security-detail.png)
-
-The **Overview** gets a Security card too: the findings per severity and the most exposed
-namespaces.
+The [Security page](ui-security.md) shows them: tiles per type of report and compliance framework,
+the list of resources with failed checks, and the detail of each check.
 
 ## Settings
 
