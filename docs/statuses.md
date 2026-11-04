@@ -84,4 +84,4 @@ Charts are read from ArgoCD Applications (single and multi-source) and compared 
 - The status of a chart is the worst status of the chart and of its subcharts that are deployed: a chart
   can be `outdated` only because a subchart is behind.
 - A subchart that the Helm values leave out of the release is `not deployed`, see
-  [Helm charts](usage.md#helm-charts).
+  [Helm charts](ui-charts.md).

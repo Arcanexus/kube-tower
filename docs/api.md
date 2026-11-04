@@ -2,7 +2,7 @@
 
 Everything the pages show is also available as JSON, for scripts and other tools. The interactive
 OpenAPI documentation is served by kube-tower itself on `/api/docs`; the API tab of the
-[Administration](usage.md#api) page links to it. Prometheus metrics are on `/metrics`, see
+[Administration](ui-administration.md#api) page links to it. Prometheus metrics are on `/metrics`, see
 [Metrics and Grafana](metrics.md).
 
 ## Endpoints

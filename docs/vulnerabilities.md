@@ -30,7 +30,7 @@ every tag of the image, including the new ones found on the clusters (see [Resca
 
 ## On the Images page
 
-The vulnerabilities are shown with the versions, on the [Images](usage.md#images) page: one line per
+The vulnerabilities are shown with the versions, on the [Images](ui-images.md) page: one line per
 image, with its counts per severity (`C`ritical, `H`igh, `M`edium, `L`ow, `U`nknown). The list starts
 with the images that have critical vulnerabilities with a fix in a newer package version. The **CVE**
 chips show only the images with critical or high vulnerabilities, or with vulnerabilities that have a

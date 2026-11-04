@@ -256,7 +256,7 @@ clusters:
 
 ## Checking the clusters
 
-The **Clusters** tab of the [Administration](usage.md#clusters) page lists every cluster kube-tower
+The **Clusters** tab of the [Administration](ui-administration.md#clusters) page lists every cluster kube-tower
 knows, where it comes from (`in-cluster`, `secret`, `argocd-secret`), its Kubernetes version and whether
 it answered, with its images and charts. An unreachable cluster shows the connection error. **Test the
 connectivity**, in the Scans and Trivy tab, reads the cluster Secrets again and calls the API server of

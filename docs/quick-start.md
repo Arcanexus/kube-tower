@@ -1,6 +1,7 @@
 # Quick start
 
-From nothing to the first dashboard in a few minutes, on any Kubernetes 1.25+ cluster. kube-tower
+From nothing to the first dashboard in a few minutes, on any Kubernetes 1.25+ cluster with about
+0.5 CPU core and 2 GiB of memory free (see [prerequisites](prerequisites.md)). kube-tower
 only reads: it never changes anything in the cluster.
 
 ## 1. Install
@@ -41,7 +42,7 @@ unreachable clusters, critical vulnerabilities with a fix, major updates.
 - **Security**: the reports of Trivy Operator, when it is installed.
 - **Administration**: scans, clusters, credentials, logs.
 
-The [usage](usage.md) page tours every page, [statuses and versions](statuses.md) explains what
+The [usage](usage.md) page tours the UI and links to one page per screen, [statuses and versions](statuses.md) explains what
 `outdated`, `unknown` and the update types mean.
 
 ## 4. Next steps
