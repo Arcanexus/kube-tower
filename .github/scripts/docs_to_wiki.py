@@ -44,6 +44,10 @@ PAGES: list[tuple[str, list[tuple[str, str]]]] = [
     ]),
     ("Use the UI", [
         ("usage.md", "Usage"),
+        ("ui-overview.md", "Overview-page"),
+        ("ui-images.md", "Images-page"),
+        ("ui-charts.md", "Helm-charts-page"),
+        ("ui-administration.md", "Administration-page"),
         ("statuses.md", "Statuses-and-versions"),
     ]),
     ("Reference", [

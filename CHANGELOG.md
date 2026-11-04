@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Usage page split** into one page per screen of the UI: [Overview](docs/ui-overview.md),
+  [Images](docs/ui-images.md), [Helm charts](docs/ui-charts.md) and
+  [Administration](docs/ui-administration.md). [Usage](docs/usage.md) keeps what all pages share
+  (sidebar, top bar, lists, detail panels, theme, keyboard, About), with shorter text and tables.
 - **Documentation and wiki reorganized** by what the reader wants to do, in six sections of the wiki
   sidebar: Getting started, Configure, Use the UI, Reference, Help, Inside kube-tower. New pages:
   [Quick start](docs/quick-start.md), [Upgrading](docs/upgrading.md) (with the steps each version needs),

@@ -129,7 +129,7 @@ The pages are sorted by what the reader wants to do, as in the sidebar of the wi
 | --- | --- | --- |
 | Getting started | Quick start, Prerequisites, Installation, Upgrading, Comparison | installing and evaluating kube-tower |
 | Configure | Clusters, Registries, Authentication, Vulnerabilities, Security, Scaling, Metrics and Grafana | one guide per feature: what it does, how to set it up, with examples and a screenshot |
-| Use the UI | Usage, Statuses and versions | the pages of the UI, how the versions are compared |
+| Use the UI | Usage, Overview page, Images page, Helm charts page, Administration page, Statuses and versions | the pages of the UI, how the versions are compared |
 | Reference | Configuration, Chart values, API, Permissions, Network and ports | complete tables, without the explanations of the guides |
 | Help | Troubleshooting | symptom, cause and fix, grouped by topic |
 | Inside kube-tower | Architecture, Development | how kube-tower is built, design choices, contributing |

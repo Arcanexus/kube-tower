@@ -65,7 +65,7 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
   `latest` and `update` describe the chart itself: a chart can be `outdated` with an empty `update`
   when only a subchart is behind.
 - On `kube_tower_chart_dependency_outdated`, `status` is `not-deployed` (and the value 0) for a subchart
-  that the Helm values of the Application leave out of the release (see [usage](usage.md#helm-charts)).
+  that the Helm values of the Application leave out of the release (see [Helm charts page](ui-charts.md)).
 
 ### Vulnerabilities
 

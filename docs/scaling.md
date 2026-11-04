@@ -93,7 +93,7 @@ ArgoCD wait for it). To scale the pages, run `ui` in a group of its own.
 Every pod writes every 5 seconds a key in Valkey that expires unless written again (standby
 controllers too), and ships its log lines there: the **Administration** page shows the state of each
 role and pod, and the **Logs** page gathers the lines of every pod, filtered by role (see
-[usage](usage.md#pods)).
+[Pods tab](ui-administration.md#pods)).
 
 ![Pods tab of the Administration page in distributed mode](images/pods.png)
 

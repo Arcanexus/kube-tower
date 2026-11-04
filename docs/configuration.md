@@ -119,14 +119,14 @@ Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `K
 | Section | Guide |
 | --- | --- |
 | `clusters` | [clusters](clusters.md) |
-| `images`, `helm` | [statuses and versions](statuses.md), [usage](usage.md) |
+| `images`, `helm` | [statuses and versions](statuses.md), [Images page](ui-images.md), [Helm charts page](ui-charts.md) |
 | `registries` | [registries](registries.md) |
-| `git` | [Helm charts read from git](usage.md#helm-charts), [troubleshooting](troubleshooting.md#helm-charts) |
+| `git` | [Helm charts read from git](ui-charts.md), [troubleshooting](troubleshooting.md#helm-charts) |
 | `vulnerabilities` | [vulnerabilities](vulnerabilities.md), and the table below |
 | `security` | [security](security.md) |
 | `auth` | [authentication](authentication.md) |
 | `roles`, `internal`, `redis` | [scaling](scaling.md) |
-| `logs` | [Logs tab](usage.md#logs) |
+| `logs` | [Logs tab](ui-administration.md#logs) |
 
 ## Vulnerabilities (Trivy)
 

@@ -15,7 +15,7 @@ dashboard: which ones have a newer version, what is urgent, where each one runs.
 | Size the cluster, check what is needed | [Prerequisites](prerequisites.md) |
 | Install it for real (ingress, ArgoCD) | [Installation](installation.md) |
 | Scan other clusters, private registries, add single sign-on | [Configure](#configure) |
-| Understand a page or a status | [Usage](usage.md), [Statuses and versions](statuses.md) |
+| Understand a page or a status | [Usage](usage.md) and one page per screen, [Statuses and versions](statuses.md) |
 | Look up a setting, a chart value, an endpoint, a metric | [Reference](#reference) |
 | Fix an error | [Troubleshooting](troubleshooting.md) |
 
@@ -45,7 +45,11 @@ dashboard: which ones have a newer version, what is urgent, where each one runs.
 
 | Page | Content |
 | --- | --- |
-| [Usage](usage.md) | every page: Overview, Images, Helm charts, Security, Administration, About |
+| [Usage](usage.md) | what all pages share: sidebar, top bar, lists, detail panels, About |
+| [Overview page](ui-overview.md) | tiles, the to do list, charts |
+| [Images page](ui-images.md) | versions and vulnerabilities of every image, detail panel |
+| [Helm charts page](ui-charts.md) | charts and subcharts, detail panel |
+| [Administration page](ui-administration.md) | scans, clusters, pods, settings, API, logs |
 | [Statuses and versions](statuses.md) | statuses, how tags are compared, versioning schemes, floating tags, charts |
 
 ## Reference

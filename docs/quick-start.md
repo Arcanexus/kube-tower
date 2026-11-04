@@ -42,7 +42,7 @@ unreachable clusters, critical vulnerabilities with a fix, major updates.
 - **Security**: the reports of Trivy Operator, when it is installed.
 - **Administration**: scans, clusters, credentials, logs.
 
-The [usage](usage.md) page tours every page, [statuses and versions](statuses.md) explains what
+The [usage](usage.md) page tours the UI and links to one page per screen, [statuses and versions](statuses.md) explains what
 `outdated`, `unknown` and the update types mean.
 
 ## 4. Next steps

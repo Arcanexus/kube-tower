@@ -220,7 +220,7 @@ With the NetworkPolicy enabled, add the ports of such registries to `networkPoli
 
 ## Checking the credentials
 
-The **Credentials and settings** tab of the [Administration](usage.md#credentials-and-settings) page
+The **Credentials and settings** tab of the [Administration](ui-administration.md#credentials-and-settings) page
 lists the loaded credentials (never their values), where they come from, flags invalid ones and tells
 whether each registry accepted them at its last request: **accepted**, **refused** (with the answer of
 the registry) or **not tried yet**. **Test the connectivity**, in its Scans and Trivy tab, asks every
