@@ -144,13 +144,17 @@ class OidcClient:
         }
         return f"{metadata['authorization_endpoint']}?{urlencode(query)}"
 
-    def role(self, groups: list[str]) -> str:
-        """The role of a user in these groups, "" when none."""
-        if set(groups) & set(self.oidc.admin_groups):
-            return "admin"
-        if set(groups) & set(self.oidc.readonly_groups):
-            return "readonly"
-        return self.oidc.default_role
+    def roles(self, groups: list[str]) -> list[str]:
+        """The roles of a user in these groups (adminGroups, readonlyGroups, roleGroups), else defaultRole; empty
+        when none (the user is refused)."""
+        member = set(groups)
+        mapping = {"admin": self.oidc.admin_groups, "readonly": self.oidc.readonly_groups}
+        for role, role_groups in self.oidc.role_groups.items():
+            mapping[role] = [*mapping.get(role, []), *role_groups]
+        roles = [role for role, role_groups in mapping.items() if member & set(role_groups)]
+        if not roles and self.oidc.default_role:
+            roles = [self.oidc.default_role]
+        return roles
 
     async def user(self, code: str, verifier: str, nonce: str) -> User:
         """The user who logged in: exchanges the code for the tokens, checks the ID token, maps the groups."""
@@ -176,11 +180,13 @@ class OidcClient:
         name = str(claims.get(self.oidc.username_claim) or claims.get("email") or claims.get("sub") or "")
         groups = claims.get(self.oidc.groups_claim) or []
         groups = [groups] if isinstance(groups, str) else [str(g) for g in groups]
-        role = self.role(groups)
-        if not role:
-            raise OidcError(f"{name} is in none of the groups allowed in kube-tower (auth.oidc.adminGroups, readonlyGroups)")
-        log.debug("OIDC user %s, groups %s: role %s", name, ", ".join(groups) or "none", role)
-        return User(name, role, "oidc")
+        roles = self.roles(groups)
+        if not roles:
+            raise OidcError(
+                f"{name} is in none of the groups allowed in kube-tower (auth.oidc.adminGroups, readonlyGroups, roleGroups)"
+            )
+        log.debug("OIDC user %s, groups %s: roles %s", name, ", ".join(groups) or "none", ", ".join(roles))
+        return User(name, tuple(roles), "oidc", self.settings.permissions(roles))
 
     def _check(self, claims: dict, metadata: dict, nonce: str) -> dict:
         if claims.get("iss", "").rstrip("/") != metadata["issuer"].rstrip("/"):

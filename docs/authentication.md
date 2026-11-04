@@ -61,18 +61,55 @@ auth:
 
 ## Roles
 
-| Role | Can |
-| --- | --- |
-| `readonly` | see every page, open the detail panels, follow the logs, read the API (`GET`) |
-| `admin` | also start a scan, rescan an image or a chart, retry what failed, test the connectivity, update the Trivy database or clear its cache: every request that changes something (`POST`, `DELETE`) |
+Every logged-in user sees every page, opens the detail panels and reads the API (`GET`). A role adds
+**permissions**. Each action needs one, and so do two tabs of the Administration:
 
-A `readonly` user does not see the *Scan now* and rescan buttons, and the actions of the
-Administration page are greyed out. The user and the *Log out* button are at the bottom of the sidebar.
+| Permission | Allows |
+| --- | --- |
+| `scan` | *Scan now* (`POST /api/refresh`) |
+| `rescan` | rescan an image or a chart from its detail panel (`POST /api/rescan/…`) |
+| `retry` | *Retry what failed* |
+| `trivy` | update the Trivy database, read its status again, clear its cache (*Clear and scan now* needs `scan` too) |
+| `connectivity` | test the connectivity to the clusters and registries |
+| `logs` | the Logs tab of the Administration (and its live tail) |
+| `settings` | the Settings tab of the Administration |
+
+Two roles are built in:
+
+| Role | Permissions |
+| --- | --- |
+| `readonly` | `logs`, `settings`: sees everything, runs nothing |
+| `admin` | all of them |
+
+Define more roles in `auth.roles`, with a list of permissions (`*` gives them all):
+
+```yaml
+auth:
+  roles:
+    team-prod:
+      permissions: [rescan, connectivity]
+    security:
+      permissions: [rescan, trivy, logs]
+```
+
+Give them to local accounts (`users[].role`) or to OIDC groups (`auth.oidc.roleGroups`). A user in
+the groups of several roles gets the permissions of all of them.
+
+Without a permission, its buttons are hidden or greyed out, with the reason in their tooltip. A tab
+the role may not open is hidden. The API answers `403` with the permission missing, for example
+`{"detail": "permission scan needed"}`. The user, their roles and the *Log out* button are at the
+bottom of the sidebar.
 
 ![Administration page for a readonly user](images/readonly.png)
- The API answers `403` to the requests of that role that change
-something. Every action of a user is logged with its name, for example
-`alice (admin): POST /api/refresh`.
+
+A role with some permissions, here `rescan` and `connectivity`: the other actions are greyed out,
+and the Logs and Settings tabs are hidden.
+
+![Administration page for a custom role](images/custom-role.png)
+
+Every action is logged with the user's name and roles, for example
+`alice (admin): POST /api/refresh`. Every refusal is logged too, with the permission missing:
+`bob (team-prod) not allowed to POST /api/refresh: permission scan needed`.
 
 ## Local accounts
 
@@ -86,7 +123,7 @@ auth:
       existingSecret: kube-tower-alice   # Secret holding the password
       passwordKey: password              # key in that Secret (default password)
     - name: ops
-      role: admin
+      role: admin                        # readonly, admin or a role of auth.roles
       existingSecret: kube-tower-ops
 ```
 
@@ -100,7 +137,7 @@ opened with the old one. A change of role applies to the open sessions too.
 ## Single sign-on (OIDC)
 
 kube-tower logs users in with an OpenID Connect provider (authorization code flow with PKCE, as a
-confidential client). Their role comes from their groups.
+confidential client). Their roles come from their groups.
 
 1. In the provider, create a client (an *application*) for kube-tower: confidential, with the
    redirect URI `<auth.url>auth/callback`, for example `https://kube-tower.example.com/auth/callback`,
@@ -124,6 +161,8 @@ confidential client). Their role comes from their groups.
        existingSecret: kube-tower-oidc     # keys clientId and clientSecret
        adminGroups: [kube-tower-admins]     # admin role
        readonlyGroups: []                   # readonly role
+       roleGroups:                          # roles of auth.roles
+         team-prod: [k8s-prod-team]
        defaultRole: readonly                # everyone else; "" refuses them
    ```
 
@@ -138,10 +177,12 @@ as a way in when the provider is down, or set `admin: false` (and no `users`) to
 | `scopes` | `openid profile email groups` | Scopes asked for (Dex needs `groups` for the groups) |
 | `usernameClaim` | `preferred_username` | Claim naming the user (else `email`, else `sub`) |
 | `groupsClaim` | `groups` | Claim listing the groups, read from the ID token, else from the userinfo endpoint |
-| `adminGroups` / `readonlyGroups` / `defaultRole` | `[]` / `[]` / `readonly` | Role from the groups: admin first, then readonly, then the default (`""` refuses the user) |
+| `adminGroups` / `readonlyGroups` | `[]` / `[]` | Groups given the `admin` / `readonly` role |
+| `roleGroups` | `{}` | Groups of each other role, `{role: [groups]}` (any role of `auth.roles`, or `readonly` / `admin`) |
+| `defaultRole` | `readonly` | Role of a user in none of these groups; `""` refuses them |
 | `caFile` | `""` | PEM file of a private CA of the provider (mount it with `extraVolumes`) |
 
-The role is decided at login: a change of groups applies at the next login (sessions last
+The roles are decided at login: a change of groups applies at the next login (sessions last
 `sessionDuration`). *Log out* closes the kube-tower session, not the one of the provider.
 
 The ID token comes straight from the token endpoint of the provider, over a connection kube-tower
@@ -236,7 +277,7 @@ The issuer is `https://keycloak.example.com/realms/<realm>`. Keycloak refuses un
 ```yaml
 auth:
   enabled: true
-  anonymousRole: readonly   # "" (default): they must log in
+  anonymousRole: readonly   # "" (default): they must log in; or a role of auth.roles (not admin)
 ```
 
 With `anonymousRole: readonly`, everyone sees kube-tower as with the `readonly` role, and logs in to
@@ -276,9 +317,10 @@ auth:
   admin: true                  # built-in admin account, password in the auth Secret (admin.password)
   users:                       # local accounts
     - name: alice
-      role: readonly           # readonly | admin
+      role: readonly           # readonly | admin | a role of roles
       passwordFile: /etc/kube-tower/users/0/password   # or passwordEnv: ALICE_PASSWORD
-  anonymousRole: ""            # "" (login required) | readonly
+  roles: {}                    # other roles: {name: {permissions: [scan, rescan, retry, trivy, connectivity, logs, settings] or [*]}}
+  anonymousRole: ""            # "" (login required) | readonly | a role of roles (not admin)
   sessionDuration: 24h
   secretName: kube-tower-auth  # created with random values when missing (needs get and create on it)
   secretDir: /etc/kube-tower/auth   # where the ui pods find it mounted
@@ -296,6 +338,7 @@ auth:
     groupsClaim: groups
     adminGroups: []
     readonlyGroups: []
+    roleGroups: {}             # {role: [groups]}
     defaultRole: readonly
     caFile: ""
     providerUrl: ""            # where kube-tower reaches the provider when not at the issuer (the chart's Dex)

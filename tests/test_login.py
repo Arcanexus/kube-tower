@@ -9,11 +9,16 @@ from kubernetes import client
 
 from kube_tower import main as main_module
 from kube_tower.auth import COOKIE, Authenticator, User, ensure_secret
-from kube_tower.config import AuthSettings, LocalUser, Settings, check_auth, load_settings
+from kube_tower.config import PERMISSIONS, AuthSettings, LocalUser, RoleSettings, Settings, check_auth, load_settings
 from kube_tower.main import create_app, keep_auth_secret
 from kube_tower.web import login as login_module
 from kube_tower.web.login import safe_next
 from test_web import FakeScanner
+
+
+def user(name: str, role: str, source: str = "local") -> User:
+    """A user with one built-in role and its permissions."""
+    return User(name, (role,), source, AuthSettings().permissions([role]))
 
 
 @pytest.fixture
@@ -70,15 +75,15 @@ def test_authenticator(secret_dir, monkeypatch):
         )
     )
     assert auth.ready()
-    assert auth.check_password("admin", "s3cret") == User("admin", "admin")
+    assert auth.check_password("admin", "s3cret") == user("admin", "admin")
     assert auth.check_password("admin", "wrong") is None
-    assert auth.check_password("bob", "bobpw") == User("bob", "readonly")
-    assert auth.check_password("carol", "carolpw") == User("carol", "admin")
+    assert auth.check_password("bob", "bobpw") == user("bob", "readonly")
+    assert auth.check_password("carol", "carolpw") == user("carol", "admin")
     assert auth.check_password("dave", "") is None and auth.check_password("erin", "") is None
     assert auth.check_password("nobody", "s3cret") is None
 
-    cookie = auth.session(User("bob", "readonly"), now=1000)
-    assert auth.from_session(cookie, now=1000) == User("bob", "readonly")
+    cookie = auth.session(user("bob", "readonly"), now=1000)
+    assert auth.from_session(cookie, now=1000) == user("bob", "readonly")
     assert auth.from_session(cookie, now=1000 + 24 * 3600 + 1) is None  # expired
     body, _, signature = cookie.partition(".")
     assert auth.from_session(f"{body}x.{signature}", now=1000) is None  # tampered
@@ -86,21 +91,21 @@ def test_authenticator(secret_dir, monkeypatch):
     assert auth.from_session(body + ".", now=1000) is None
     # The role of now applies to the open sessions
     auth.settings.users[0].role = "admin"
-    assert auth.from_session(cookie, now=1000) == User("bob", "admin")
+    assert auth.from_session(cookie, now=1000) == user("bob", "admin")
     # A new password closes the sessions opened with the old one
     (secret_dir / "bob").write_text("newpw")
     assert auth.from_session(cookie, now=1000) is None
     # A session of a removed user is refused
-    gone = auth.session(User("carol", "admin"), now=1000)
+    gone = auth.session(user("carol", "admin"), now=1000)
     auth.settings.users = auth.settings.users[:1]
     assert auth.from_session(gone, now=1000) is None
 
     basic = "Basic " + base64.b64encode(b"admin:s3cret").decode()
-    assert auth.from_basic(basic) == User("admin", "admin")
+    assert auth.from_basic(basic) == user("admin", "admin")
     assert auth.from_basic("Bearer x") is None and auth.from_basic("Basic !!!") is None
     assert auth.anonymous is None
     auth.settings.anonymous_role = "readonly"
-    assert auth.anonymous == User("anonymous", "readonly", "anonymous")
+    assert auth.anonymous == user("anonymous", "readonly", "anonymous")
 
 
 def test_authenticator_without_secret(tmp_path):
@@ -108,7 +113,7 @@ def test_authenticator_without_secret(tmp_path):
     assert not auth.ready() and auth.check_password("admin", "") is None
     # The values read by the controller of the process, until the kubelet mounts the Secret
     auth.fallback = {"admin.password": "pw", "session.key": "key"}
-    assert auth.ready() and auth.check_password("admin", "pw") == User("admin", "admin")
+    assert auth.ready() and auth.check_password("admin", "pw") == user("admin", "admin")
     auth.settings.admin = False
     assert auth.check_password("admin", "pw") is None
 
@@ -220,7 +225,7 @@ def test_login_flow(secret_dir, monkeypatch, caplog):
     with caplog.at_level(logging.INFO):
         assert c.post("/api/refresh").status_code == 202
     assert scanner.triggered == 1 and "admin (admin): POST /api/refresh" in caplog.text
-    assert "Rescans need the admin role" not in c.get("/images/detail?ref=docker.io/library/nginx:1.25").text
+    assert "Your role does not allow rescans" not in c.get("/images/detail?ref=docker.io/library/nginx:1.25").text
 
     # Log out
     r = c.post("/logout", follow_redirects=False)
@@ -235,11 +240,14 @@ def test_readonly_user(secret_dir, monkeypatch):
     assert _login(c, "bob", "bobpw").status_code == 303
     page = c.get("/").text
     assert "bob <small>readonly</small>" in page and "Scan now" not in page
-    assert "Rescans need the admin role" in c.get("/images/detail?ref=docker.io/library/nginx:1.25").text
+    assert "Your role does not allow rescans" in c.get("/images/detail?ref=docker.io/library/nginx:1.25").text
     page = c.get("/administration").text
-    assert 'disabled title="The admin role is needed"' in page and "Read-only: the actions of this page" in page
+    assert 'disabled title="Your role does not allow it (permission scan)"' in page
+    assert "Read-only: your role does not allow the actions of this page" in page
+    assert "tab=logs" in page and "tab=settings" in page  # readonly sees the logs and the settings
+    assert c.get("/administration?tab=logs").status_code == 200
     r = c.post("/api/refresh")
-    assert r.status_code == 403 and r.json() == {"detail": "the admin role is needed"}
+    assert r.status_code == 403 and r.json() == {"detail": "permission scan needed"}
     assert c.post("/administration/scan").status_code == 403 and scanner.triggered == 0
     assert c.get("/api/snapshot").status_code == 200  # reading is allowed
 
@@ -270,3 +278,58 @@ def test_auth_off_by_default():
     assert c.get("/").status_code == 200 and 'action="logout"' not in c.get("/").text
     assert c.post("/api/refresh").status_code == 202
     assert c.get("/login").status_code == 404
+
+
+def test_custom_roles(secret_dir, monkeypatch, caplog):
+    monkeypatch.setenv("BOB_PASSWORD", "bobpw")
+    roles = {"team": RoleSettings(["rescan", "connectivity"]), "ops": RoleSettings(["*"])}
+    c, scanner = _client(_settings(secret_dir, roles=roles, users=[LocalUser("bob", "team", password_env="BOB_PASSWORD")]))
+    assert _login(c, "bob", "bobpw").status_code == 303
+    page = c.get("/").text
+    assert "bob <small>team</small>" in page and "Scan now" not in page
+    # Rescans and connectivity tests allowed, the rest refused and logged with the permission missing
+    assert "Your role does not allow rescans" not in c.get("/images/detail?ref=docker.io/library/nginx:1.25").text
+    assert c.post("/api/rescan/image", params={"ref": "docker.io/library/nginx:1.25"}).status_code != 403
+    assert c.post("/administration/connectivity").status_code == 200
+    with caplog.at_level(logging.INFO):
+        assert c.post("/api/refresh").status_code == 403
+        assert c.post("/administration/trivy-cache-scan").status_code == 403
+        assert c.post("/administration/unknown").status_code == 403  # an action not listed needs every permission
+    assert "bob (team) not allowed to POST /api/refresh: permission scan needed" in caplog.text
+    assert "permission trivy, scan needed" in caplog.text and scanner.triggered == 0
+    # The Logs and Settings tabs are hidden and refused without their permission
+    page = c.get("/administration").text
+    assert "tab=logs" not in page and "tab=settings" not in page
+    assert "Your role allows only some of the actions of this page" in page
+    assert 'disabled title="Your role does not allow it (permission scan)"' in page
+    assert c.get("/administration?tab=logs").status_code == 403 and c.get("/logs/tail").status_code == 403
+    assert c.get("/administration?tab=settings").status_code == 403
+    assert c.get("/administration?tab=clusters").status_code == 200
+
+
+def test_role_permissions():
+    auth = AuthSettings(roles={"team": RoleSettings(["rescan"]), "all": RoleSettings(["*", "rescan"])})
+    assert auth.role_names == ["readonly", "admin", "team", "all"]
+    assert auth.permissions(["readonly"]) == {"logs", "settings"}
+    assert auth.permissions(["admin"]) == set(PERMISSIONS) == auth.permissions(["all"])
+    assert auth.permissions(["readonly", "team"]) == {"logs", "settings", "rescan"}  # the union of the roles
+    assert auth.permissions(["gone"]) == set()
+    u = Authenticator(auth).user("x", ["all"])
+    assert u.admin and u.role == "all" and u.can("trivy")
+    assert not Authenticator(auth).user("y", ["team", "readonly"]).admin
+
+
+def test_check_custom_roles(tmp_path):
+    with pytest.raises(ValueError, match="readonly and admin are built-in roles"):
+        check_auth(AuthSettings(roles={"admin": RoleSettings(["*"])}))
+    with pytest.raises(ValueError, match="auth.roles.team.permissions 'delete': expected"):
+        check_auth(AuthSettings(roles={"team": RoleSettings(["scan", "delete"])}))
+    with pytest.raises(ValueError, match="role must be one of readonly, admin, team"):
+        check_auth(AuthSettings(roles={"team": RoleSettings()}, users=[LocalUser("bob", "ops")]))
+    check_auth(AuthSettings(roles={"team": RoleSettings()}, users=[LocalUser("bob", "team")], anonymous_role="team"))
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "auth:\n  roles:\n    team_a:\n      permissions: [rescan]\n  users:\n    - name: bob\n      role: team_a\n"
+    )
+    settings = load_settings(str(config))
+    assert settings.auth.roles == {"team_a": RoleSettings(["rescan"])} and settings.auth.users[0].role == "team_a"

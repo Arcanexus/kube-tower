@@ -219,9 +219,18 @@ class RedisSettings:
     key_prefix: str = "kube-tower"
 
 
-# What a logged in user may do: `readonly` sees everything, `admin` also starts scans, rescans, retries,
-# connectivity tests and the Trivy actions (every request that changes something).
-USER_ROLES = ("readonly", "admin")
+# What a role may do besides looking at the pages: each action of the UI and the API needs one permission,
+# the Logs and Settings tabs of the Administration need theirs. `*` gives every permission.
+PERMISSIONS = ("scan", "rescan", "retry", "trivy", "connectivity", "logs", "settings")
+# Built-in roles: `readonly` sees everything and runs nothing, `admin` may do everything. auth.roles adds others.
+BUILTIN_ROLES: dict[str, tuple[str, ...]] = {"readonly": ("logs", "settings"), "admin": PERMISSIONS}
+
+
+@dataclass
+class RoleSettings:
+    """A role of auth.roles: what its users may do besides looking at the pages."""
+
+    permissions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -251,10 +260,13 @@ class OidcSettings:
     # Claims of the ID token (or of the userinfo endpoint) naming the user and listing their groups.
     username_claim: str = "preferred_username"
     groups_claim: str = "groups"
-    # Role from the groups: admin when in adminGroups, else readonly when in readonlyGroups, else
+    # Roles from the groups: admin for adminGroups, readonly for readonlyGroups, the roles of roleGroups, else
     # defaultRole ("" refuses the users in none of these groups).
     admin_groups: list[str] = field(default_factory=list)
     readonly_groups: list[str] = field(default_factory=list)
+    # Any role (built-in or of auth.roles) from the groups: {role: [groups]}. A user in the groups of several
+    # roles gets the permissions of all of them.
+    role_groups: dict[str, list[str]] = field(default_factory=dict)
     default_role: str = "readonly"
     # CA certificates (PEM file) of a provider with a private CA, in addition to the public ones.
     ca_file: str = ""
@@ -271,7 +283,9 @@ class AuthSettings:
     # Built-in `admin` account, its password in the auth Secret (`admin.password`, generated when missing).
     admin: bool = True
     users: list[LocalUser] = field(default_factory=list)
-    # Role of the visitors who are not logged in: "" (they must log in) or readonly.
+    # Roles besides readonly and admin, by name: given to local users (users[].role) and OIDC groups (roleGroups).
+    roles: dict[str, RoleSettings] = field(default_factory=dict)
+    # Role of the visitors who are not logged in: "" (they must log in), readonly or a role of `roles`.
     anonymous_role: str = ""
     session_duration: int = 24 * 3600
     # Secret holding `admin.password` and `session.key` (the key signing the sessions, shared by every ui pod),
@@ -288,6 +302,19 @@ class AuthSettings:
     # Dex served by kube-tower on <url>api/dex, like ArgoCD (Helm chart: dex.enabled): the address of the Dex
     # Service, e.g. http://kube-tower-dex:5556. Empty: no Dex behind kube-tower.
     dex_url: str = ""
+
+    @property
+    def role_names(self) -> list[str]:
+        return [*BUILTIN_ROLES, *self.roles]
+
+    def permissions(self, roles: list[str] | tuple[str, ...]) -> frozenset[str]:
+        """What users with these roles may do: the permissions of all of them (unknown roles give nothing)."""
+        granted: set[str] = set()
+        for role in roles:
+            granted |= set(
+                BUILTIN_ROLES[role] if role in BUILTIN_ROLES else self.roles[role].permissions if role in self.roles else ()
+            )
+        return frozenset(PERMISSIONS) if "*" in granted else frozenset(granted)
 
 
 @dataclass
@@ -329,6 +356,8 @@ def _build(cls: type, data: dict[str, Any]) -> Any:
             kwargs[attr] = _build(hint, value)
         elif get_origin(hint) is list and get_args(hint) and is_dataclass(get_args(hint)[0]):
             kwargs[attr] = [_build(get_args(hint)[0], item) for item in value or []]
+        elif get_origin(hint) is dict and is_dataclass(get_args(hint)[1]):  # keys are names, kept as they are
+            kwargs[attr] = {str(k): _build(get_args(hint)[1], item) for k, item in (value or {}).items()}
         elif hint is int and isinstance(value, str):  # durations: refreshInterval: 6h, timeout: 10m
             kwargs[attr] = parse_duration(value)
         else:
@@ -382,10 +411,20 @@ def check_internal(settings: Settings) -> None:
 
 def check_auth(auth: AuthSettings) -> None:
     """Roles of the users known, and someone able to log in when the login is on."""
-    if bad := [u.name for u in auth.users if u.role not in USER_ROLES]:
-        raise ValueError(f"auth.users {', '.join(map(repr, bad))}: role must be one of {', '.join(USER_ROLES)}")
-    if auth.anonymous_role not in ("", "readonly"):
-        raise ValueError(f"auth.anonymousRole {auth.anonymous_role!r}: expected readonly or empty (login required)")
+    if clash := [r for r in auth.roles if r in BUILTIN_ROLES]:
+        raise ValueError(f"auth.roles {', '.join(map(repr, clash))}: readonly and admin are built-in roles, choose another name")
+    for name, role in auth.roles.items():
+        if bad := [p for p in role.permissions if p != "*" and p not in PERMISSIONS]:
+            raise ValueError(
+                f"auth.roles.{name}.permissions {', '.join(map(repr, bad))}: expected * or some of {', '.join(PERMISSIONS)}"
+            )
+    roles = auth.role_names
+    if bad := [u.name for u in auth.users if u.role not in roles]:
+        raise ValueError(f"auth.users {', '.join(map(repr, bad))}: role must be one of {', '.join(roles)}")
+    if auth.anonymous_role not in ("", *roles) or auth.anonymous_role == "admin":
+        raise ValueError(
+            f"auth.anonymousRole {auth.anonymous_role!r}: expected empty (login required), readonly or a role of auth.roles"
+        )
     names = [u.name for u in auth.users] + (["admin"] if auth.admin else [])
     if len(set(names)) != len(names):
         raise ValueError("auth.users: each name once (admin is the built-in account unless auth.admin is false)")
@@ -401,8 +440,10 @@ def check_auth(auth: AuthSettings) -> None:
                 "auth.url is required with auth.oidc.issuer: the URL users open kube-tower with "
                 "(e.g. https://kube-tower.example.com/), the provider sends them back to <url>auth/callback"
             )
-        if oidc.default_role not in ("", *USER_ROLES):
-            raise ValueError(f"auth.oidc.defaultRole {oidc.default_role!r}: expected readonly, admin or empty")
+        if oidc.default_role not in ("", *roles):
+            raise ValueError(f"auth.oidc.defaultRole {oidc.default_role!r}: expected empty or one of {', '.join(roles)}")
+        if bad := [r for r in oidc.role_groups if r not in roles]:
+            raise ValueError(f"auth.oidc.roleGroups {', '.join(map(repr, bad))}: expected one of {', '.join(roles)}")
     if auth.dex_url and not oidc.issuer:
         raise ValueError("auth.dexUrl: set auth.oidc.issuer to <auth.url>api/dex, the issuer of that Dex")
     if auth.enabled and not names and not oidc.issuer:

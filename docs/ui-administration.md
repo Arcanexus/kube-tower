@@ -1,7 +1,8 @@
 # Administration page
 
-Six tabs to run and check kube-tower; Logs is the last one. Users with the `readonly` role see them but
-cannot run the actions (see [authentication](authentication.md)).
+Six tabs to run and check kube-tower; Logs is the last one. Each action needs a permission of
+the user's role: without it, its button is greyed out. The Logs and Settings tabs are hidden for roles
+without the `logs` or `settings` permission (see [roles](authentication.md#roles)).
 
 ![Administration](images/administration.png)
 
