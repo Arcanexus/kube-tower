@@ -69,14 +69,25 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
 
 ### Vulnerabilities
 
-See [vulnerabilities](vulnerabilities.md#metrics): `kube_tower_image_vulnerabilities`,
-`kube_tower_image_vulnerabilities_fixable`, `kube_tower_image_os_eosl`,
-`kube_tower_image_vulnerability_scan_failed` and `kube_tower_last_vulnerability_scan_timestamp_seconds`.
+See [vulnerabilities](vulnerabilities.md) for where they come from.
+
+| Metric | Labels | Value |
+| --- | --- | --- |
+| `kube_tower_image_vulnerabilities` | `image`, `tag`, `severity`, `source` | number of vulnerabilities of that severity |
+| `kube_tower_image_vulnerabilities_fixable` | `image`, `tag`, `severity` | those with a fixed version |
+| `kube_tower_image_os_eosl` | `image`, `tag`, `os` | 1 if the OS of the image is end of life |
+| `kube_tower_image_vulnerability_scan_failed` | `image`, `tag` | 1 if the scan failed |
+| `kube_tower_last_vulnerability_scan_timestamp_seconds` | | end of the last vulnerability scan |
 
 ### Security (Trivy Operator)
 
-See [security](security.md#metrics): `kube_tower_security_findings` (failed checks by cluster,
-namespace, type and severity), `kube_tower_security_resources` and `kube_tower_compliance_controls`.
+The reports of the [Security](security.md) page.
+
+| Metric | Labels | Value |
+| --- | --- | --- |
+| `kube_tower_security_findings` | `cluster`, `namespace`, `type`, `severity` | Failed checks and exposed secrets |
+| `kube_tower_security_resources` | `cluster`, `type`, `result` (`pass` / `fail`) | Resources checked |
+| `kube_tower_compliance_controls` | `cluster`, `compliance`, `title`, `result` (`pass` / `fail`) | Controls of each compliance framework |
 
 ### Clusters and scans
 
@@ -86,7 +97,7 @@ namespace, type and severity), `kube_tower_security_resources` and `kube_tower_c
 | `kube_tower_cluster_info` | `cluster`, `source`, `version` | always 1 (`source`: `in-cluster`, `secret`, `argocd-secret`; `version`: Kubernetes version) |
 | `kube_tower_last_scan_timestamp_seconds` | | end of the last scan (Unix time) |
 | `kube_tower_last_scan_duration_seconds` | | duration of the last scan |
-| `kube_tower_last_scan_errors` | | non fatal errors of the last scan (e.g. a resource kube-tower may not list, a registry that cannot be queried), detailed on the Status page |
+| `kube_tower_last_scan_errors` | | non fatal errors of the last scan (e.g. a resource kube-tower may not list, a registry that cannot be queried), detailed under the scan status of the top bar |
 | `kube_tower_scan_in_progress` | | 1 while a scan is running |
 | `kube_tower_scans_total` | `result` (`success`, `failure`) | scans since kube-tower started (counter) |
 | `kube_tower_build_info` | `version` (image tag: `1.2.3` for a release, the branch name otherwise) | always 1 |
@@ -133,6 +144,12 @@ count by (cluster) (kube_tower_chart_outdated == 1)
 kube_tower_chart_dependency_outdated == 1
 ```
 
+```promql
+# Images with critical vulnerabilities that have a fix, in cluster "prod"
+kube_tower_image_vulnerabilities_fixable{severity="critical"} > 0
+  and on (image, tag) kube_tower_image_workload_info{cluster="prod"}
+```
+
 ## Alerts
 
 Example `PrometheusRule` (or plain Prometheus rules):
@@ -150,7 +167,7 @@ groups:
         expr: kube_tower_last_scan_errors > 0
         for: 1h
         annotations:
-          summary: "The last kube-tower scan had {{ $value }} error(s), see its Status page"
+          summary: "The last kube-tower scan had {{ $value }} error(s), see the scan errors on its pages"
       - alert: KubeTowerClusterUnreachable
         expr: kube_tower_cluster_reachable == 0
         for: 1h

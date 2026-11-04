@@ -1,5 +1,9 @@
 # Usage
 
+A tour of the pages of kube-tower. How the statuses and the update types are decided is explained in
+[statuses and versions](statuses.md); everything shown here is also available from the [API](api.md)
+and the [metrics](metrics.md).
+
 ## The dashboards
 
 The left sidebar gives access to five pages: **Overview**, **Images**, **Helm charts**, **Security**
@@ -133,15 +137,15 @@ life OS release says so under its name.
 | --- | --- |
 | Image | Normalized name: `nginx` becomes `docker.io/library/nginx` |
 | Current | Tag used by the workloads, with the start of its digest below (the digest pinned in the manifest, else the one reported by the running pods, else the one published for the tag) |
-| Latest | Highest tag of the same shape and [versioning scheme](#versioning-schemes) published in the registry (the current tag again for a floating tag pushed again, or when up to date), with the start of its digest below, in orange when it differs from the current one; `unknown` when the registry could not tell |
-| Update | The kind of update when the image is outdated (`major`, `minor`, `patch`, `newer`, `new digest`), else its [status](#statuses) |
-| Vulnerabilities | Number of vulnerabilities by severity (C critical, H high, M medium, L low), `scan failed` (reason on hover), `pending` while the vulnerability scan runs, or `not scanned` (no report: ignored, or no Trivy and no Trivy Operator report, see [troubleshooting](vulnerabilities.md#troubleshooting)) |
+| Latest | Highest tag of the same shape and [versioning scheme](statuses.md#versioning-schemes) published in the registry (the current tag again for a floating tag pushed again, or when up to date), with the start of its digest below, in orange when it differs from the current one; `unknown` when the registry could not tell |
+| Update | The kind of update when the image is outdated (`major`, `minor`, `patch`, `newer`, `new digest`), else its [status](statuses.md) |
+| Vulnerabilities | Number of vulnerabilities by severity (C critical, H high, M medium, L low), `scan failed` (reason on hover), `pending` while the vulnerability scan runs, or `not scanned` (no report: ignored, or no Trivy and no Trivy Operator report, see [troubleshooting](troubleshooting.md#vulnerabilities)) |
 | Used by | Number of workloads using the image (or `cached on nodes`), and their clusters (hidden on phones) |
 
 The detail panel of an image starts with its update and "current → latest" (with their digests),
 then:
 
-- **Versions**: the reference, the [versioning scheme](#versioning-schemes), the latest tag, the
+- **Versions**: the reference, the [versioning scheme](statuses.md#versioning-schemes), the latest tag, the
   upgrade target and the **size** of the image, with links to the image page on its registry (Docker
   Hub, GitHub Packages, Quay, ECR Public, Microsoft Artifact Registry). The size is the one reported by
   the nodes that pulled the image (`node.status.images`, read even with `images.includeNodeImages:
@@ -166,23 +170,6 @@ then:
 ![Image details](images/image-detail.png)
 
 See [vulnerabilities](vulnerabilities.md) for where the vulnerabilities come from.
-
-#### Versioning schemes
-
-kube-tower tells from the current tag how the image is versioned, shows it in the detail panel
-(**Versioning**) and only compares the tag with tags of the same scheme, on top of the same shape
-(prefix, number of components, suffix):
-
-| Scheme | Tags | Update type |
-| --- | --- | --- |
-| `semver` | `1.25.3`, `v2.1`, `7` | `major`, `minor`, `patch` |
-| `calver` | `2024.10.1`, `2024.10` (a year from 1990 to 2100, then more numbers) | `newer` |
-| `date` | `20241024`, `20241024.1`, `202410241530` (a date, then optional hours, minutes, seconds) | `newer` |
-| `build` | `4521` (a single number from 1000) | `newer` |
-
-So `redis:7` is not reported outdated because of a `4521` CI build tag, and `1.2` is not compared
-with `2024.10`. A single number below 1000 counts as `semver`: a build number `999` is not compared
-with `1000` and above.
 
 ### Helm charts
 
@@ -216,11 +203,8 @@ tree of the images.
 
 ![Chart details](images/chart-detail.png)
 
-| Source type | Current version | Latest version |
-| --- | --- | --- |
-| `helm` (HTTP repository) | Application `targetRevision` | from the repository `index.yaml` |
-| `oci` | Application `targetRevision` | from the registry tags |
-| `git` (chart in a git path) | `version` of `Chart.yaml` at `targetRevision` | n/a: the chart follows git, only its subcharts are checked |
+How the current and latest versions of each kind of source are found: see
+[statuses and versions](statuses.md#helm-charts).
 
 ### Security
 
@@ -270,6 +254,8 @@ the distributed mode each pod writes a presence key in Valkey every 5 seconds, r
 a stopped pod (e.g. replaced by a rollout) leaves the list at once, a lost one after 15 minutes. With
 one pod running every role, it is the only line.
 
+![Pods](images/pods.png)
+
 #### Credentials and settings
 
 ![Credentials and settings](images/settings.png)
@@ -291,7 +277,7 @@ referenced (Secret name, file, environment variable), never displayed.
 #### API
 
 Links to the API documentation (`api/docs`), the last scan as JSON (`api/snapshot`) and the Prometheus
-metrics (`metrics`), and the main endpoints (see [API](#api)). The images cached on nodes that no
+metrics (`metrics`), and the main endpoints (see [API](api.md)). The images cached on nodes that no
 workload uses are listed by `api/administration/unused-images`; the UI shows them with the grey icon of
 the Images page.
 
@@ -325,53 +311,3 @@ itself makes no call to GitHub), links to the repository, the documentation, the
 report a problem; what this instance runs (one pod or the distributed mode, its roles, since when, the
 clusters, the interval of the automatic scan, the configuration file), and the versions of its
 components (Trivy and its database, Python, FastAPI, htmx) and its license.
-
-## Statuses
-
-| Status | Meaning |
-| --- | --- |
-| 🟢 `up-to-date` | Nothing newer is published (or, for floating tags, the running digest is the published one) |
-| 🟠 `outdated` | A newer version, or a newer image under the same floating tag, is available |
-| ⚪ `unknown` | Cannot be compared: image pinned by digest only, floating tag without known digest, version constraint (`1.x`), local subchart (`file://`) |
-| 🔴 `error` | The registry or repository could not be queried: the message tells why (authentication, not found, timeout…) |
-| `not deployed` | Subcharts only: left out of the release by the Helm values (`condition` or `tags` false). Ignored in the status of the chart |
-
-## API
-
-| Endpoint | Description |
-| --- | --- |
-| `GET /api/snapshot` | The last scan: images, charts, clusters, errors, timestamps |
-| `POST /api/refresh` | Start a scan now (`{"started": false}` if one is already running) |
-| `POST /api/rescan/image?ref=…` | Check an image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`): every image with its name is checked (all tags, including the new ones found on the clusters); `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
-| `POST /api/rescan/chart?cluster=…&namespace=…&app=…&chart=…` | Check one Helm chart and its subcharts again (`namespace` is the Application's namespace) |
-| `POST /api/administration/retry-failed` | Check again everything that failed in the last scan (202, or 409 with a `reason`) |
-| `POST /api/administration/trivy-db` | Update the Trivy databases when a newer one is published (standalone mode) |
-| `DELETE /api/administration/trivy-cache` | Forget the cached Trivy results (`{"cleared": n}`) |
-| `POST /api/administration/connectivity` | Start a connectivity test; results with `GET /api/administration/connectivity` |
-| `GET /api/administration/unused-images` | Images cached on nodes that no workload of their cluster uses |
-| `GET /healthz` | Liveness |
-| `GET /readyz` | 200 once the first scan has finished |
-| `GET /api/docs` | Interactive OpenAPI documentation |
-
-With the login on (the default), the API needs a session or the Basic auth of a local account: `GET`
-for every role, `POST` and `DELETE` for the `admin` role only (others get a 403). `/healthz`,
-`/readyz` and `/metrics` stay open (see [authentication](authentication.md#api-and-metrics)).
-
-Requests that change something (`POST`, `DELETE`) are refused with a 403 when a browser says they come
-from another site (`Sec-Fetch-Site`, else `Origin` compared with the host, or `X-Forwarded-Host` behind a
-proxy): a page on another site cannot start scans through the browser of someone who can reach
-kube-tower. The UI itself and clients that are not browsers (curl, scripts) are not affected.
-
-```sh
-# Outdated images, as "image current -> latest"
-curl -s -u admin:$PASSWORD http://kube-tower/api/snapshot \
-  | jq -r '.images[] | select(.status=="outdated") | "\(.image.ref) -> \(.latest_tag // .latest_digest)"'
-```
-
-## Prometheus metrics and Grafana
-
-`GET /metrics` is a Prometheus exporter for the result of the last scan: current and latest
-version of every image and chart, update type (major, minor, patch), workloads and clusters,
-scan duration and errors. A ready-made Grafana dashboard ships with the chart.
-
-See [Metrics and Grafana](metrics.md) for the metric reference, PromQL examples, alerts and the dashboard.

@@ -53,7 +53,7 @@ src/kube_tower/
   store.py             where the snapshot is kept (memory, or memory + Redis / Valkey)
   election.py          controller election with a Kubernetes Lease, active controller pod label
   processes.py         the processes (pods) known to the controller and their state (Administration page)
-  bus.py               Valkey keys through which the processes of the distributed mode talk (ADR 0003)
+  bus.py               Valkey keys through which the processes of the distributed mode talk
   internal.py          exchanges of the distributed mode: task puller, publisher of the controller, reporter
   administration.py    Administration actions (Trivy database, connectivity tests, unused node images for the API)
   backend.py           Backend interface: all the web layer may use of the scans and the administration
@@ -63,7 +63,7 @@ src/kube_tower/
                        metrics.py, static/ (htmx, kube-tower.css/.js, icons; cached with asset())
 charts/kube-tower/     Helm chart
 deploy/                manifests for remote clusters
-docs/                  documentation and ADRs, published to the wiki
+docs/                  documentation, published to the wiki
 .github/scripts/       docs_to_wiki.py (builds the wiki from docs/)
 site/                  product website (plain HTML, CSS and JS), published on GitHub Pages
 ```
@@ -84,7 +84,7 @@ site/                  product website (plain HTML, CSS and JS), published on Gi
   `icon("name")`).
 - Pages, API and metrics read and act through `request.app.state.backend` (`backend.py`), never
   the scanner or the administration directly (see `test_web_layer_only_talks_to_the_backend`): in the
-  distributed mode of [ADR 0002](adr/0002-horizontal-scaling.md) the `ui` pods get a backend that asks
+  [distributed mode](architecture.md#distributed-mode) the `ui` pods get a backend that asks
   the controller. Something new the web needs from the scans is added to the `Backend` interface.
 - List page: add `{% block layout %}list-page{% endblock %}` and wrap the table in
   `<div class="overflow-auto table-wrap">`: only the table scrolls, its header stays. Add
@@ -118,18 +118,34 @@ site/                  product website (plain HTML, CSS and JS), published on Gi
 
 ## Documentation
 
-The documentation is written in `docs/` (Markdown, images in `docs/images/`, ADRs in `docs/adr/`) and
-changes in the same pull request as the code. After every merge to `main`, `wiki.yml` publishes it to
-the [wiki](https://github.com/Arcanexus/kube-tower/wiki) with `.github/scripts/docs_to_wiki.py`:
+The documentation is written in `docs/` (Markdown, images in `docs/images/`) and changes in the same
+pull request as the code: every change reviews and updates the README, the pages concerned and the
+screenshots. After every merge to `main`, `wiki.yml` publishes it to the
+[wiki](https://github.com/Arcanexus/kube-tower/wiki) with `.github/scripts/docs_to_wiki.py`.
+
+The pages are sorted by what the reader wants to do, as in the sidebar of the wiki:
+
+| Section | Pages | What goes there |
+| --- | --- | --- |
+| Getting started | Quick start, Installation, Upgrading, Comparison | installing and evaluating kube-tower |
+| Configure | Clusters, Registries, Authentication, Vulnerabilities, Security, Scaling, Metrics and Grafana | one guide per feature: what it does, how to set it up, with examples and a screenshot |
+| Use the UI | Usage, Statuses and versions | the pages of the UI, how the versions are compared |
+| Reference | Configuration, Chart values, API, Permissions, Network and ports | complete tables, without the explanations of the guides |
+| Help | Troubleshooting | symptom, cause and fix, grouped by topic |
+| Inside kube-tower | Architecture, Development | how kube-tower is built, design choices, contributing |
+
+Each subject is written once: a guide links to the reference instead of copying its tables (every
+setting in Configuration, every chart value in Chart values, every metric in Metrics and Grafana, every
+RBAC rule in Permissions), and a reference links back to its guide.
 
 - `docs/README.md` becomes the Home page, the other pages get the names listed in `PAGES` of the
-  script, which also orders the sidebar (`_Sidebar.md`). ADRs are added on their own, named after
-  their title.
+  script, which also sorts the sidebar (`_Sidebar.md`) in the sections above.
 - Links between pages and to images are written as usual relative links (`clusters.md#x`,
   `images/a.png`) and work both on GitHub and in the wiki. Links to other files of the repository
   (`../deploy/x.yaml`) become links to the `main` branch on GitHub.
 - Each wiki page ends with a link to its source: never edit the wiki itself, the next publication
   replaces it.
+- Keep the wiki page names: the product website, the README and the UI link to them.
 
 A new page must be added to `PAGES`, else the tests (`tests/test_docs_to_wiki.py`) and the
 publication fail. To preview the wiki locally:
@@ -165,4 +181,4 @@ GitHub Pages must be enabled once with **Settings › Pages › Source: GitHub A
 ## Conventions
 
 Pull request titles start with `[ADD]` or `[FIX]` and are written in English. Design decisions
-are recorded as ADRs in `docs/adr/`.
+are explained in the [design choices](architecture.md#design-choices) of the architecture page.

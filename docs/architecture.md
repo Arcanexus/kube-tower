@@ -1,9 +1,8 @@
 # Architecture
 
-How kube-tower is built and how its parts talk to each other. The design choices are explained in
-[ADR 0001](adr/0001-architecture.md) (application) and [ADR 0002](adr/0002-horizontal-scaling.md)
-(horizontal scaling), [ADR 0003](adr/0003-valkey-bus.md) (the processes talk through Valkey);
-[scaling](scaling.md) tells how to deploy the distributed mode.
+How kube-tower is built and how its parts talk to each other, and why it is built that way
+([design choices](#design-choices)). [Scaling](scaling.md) tells how to deploy the distributed mode,
+[network and ports](network.md) lists the ports and the connections.
 
 ## Overview
 
@@ -60,7 +59,7 @@ flowchart LR
 
 With `mode: distributed`, the chart renders one Deployment per group of roles (by default one per
 role). The pods never call each other: every exchange goes through **Valkey** (required), and only the
-active controller orchestrates ([ADR 0003](adr/0003-valkey-bus.md)).
+active controller orchestrates.
 
 ```mermaid
 flowchart TB
@@ -144,17 +143,68 @@ sequenceDiagram
 Each repository is asked once per scan, whatever the number of clusters using it. Rescans of one
 image or chart, and the retry of failed items, are the same tasks on a few items.
 
-## Ports and endpoints
+## Design choices
 
-| Port | Served by | Paths |
+kube-tower is meant to be simple to run and to maintain: one image, no database, no JavaScript
+toolchain.
+
+| Choice | Why | Not chosen |
 | --- | --- | --- |
-| `8080` (`http`) | every pod | pages, `/api/...`, `/metrics` (controller), `/healthz`, `/readyz`, `/leaderz` |
-| `6379` | Valkey | Redis protocol: every pod in distributed mode, the controller only in single mode |
-| `5556` | Dex (`dex.enabled`) | Dex, reached only by the pods with the `ui` role, which serve it on `/api/dex/` |
+| Read-only, never updates anything | A view of versions, lifecycle and vulnerabilities across every cluster; the updates stay in your GitOps workflow (ArgoCD, Renovate pull requests) | Automatic updates, as watchtower does |
+| Python 3.13, FastAPI, uvicorn; one multi-arch image (amd64, arm64, arm/v7) | A language the maintainer knows; asyncio fits the many HTTP requests to registries | Go |
+| Server-rendered pages: Jinja2, [htmx](https://htmx.org), one hand-written stylesheet, a few lines of plain JavaScript | A page is an HTML file with placeholders, maintainable without frontend skills; no build step, about 35 KB of compressed static files | A React or Vue single page app (a JS toolchain), Streamlit or NiceGUI (harder behind an ingress and to customize) |
+| Stateless: the inventory is rebuilt at startup and every `refreshInterval`, kept in memory | Nothing to back up or migrate; a restart costs one scan | A database |
+| Settings in a YAML file rendered by the chart into a ConfigMap, secrets only from Kubernetes Secrets | The usual Helm and ArgoCD workflow; unknown keys are refused at startup | Settings edited in the UI |
+| Clusters registered with Secrets, ArgoCD style, or the ArgoCD cluster Secrets reused | No new format to learn, no cluster registered twice | A CRD of its own |
+| The latest version asked to the registry referenced by the image, each repository once per scan; tags compared only with tags of the same shape and versioning scheme, floating tags by digest | The registry is the source of truth; `1.25.3-alpine` must not be "outdated" because of `1.27.0` (see [statuses and versions](statuses.md)) | A central version database |
+| Vulnerabilities from Trivy Operator reports when they exist, else the Trivy CLI copied into the pod by the chart | No scan twice; Trivy upgraded with a tag, without a kube-tower release | Trivy in the image (+170 MB) |
 
-No other port: the pods never call each other. The tasks carry registry credentials (image pull
-secrets) through Valkey: set a Valkey password. With `networkPolicy.enabled`, only the kube-tower pods
-reach Valkey.
+### Horizontal scaling
+
+One image whose processes run any combination of four roles (`ui`, `controller`, `worker`, `trivy`),
+chosen with `roles` or `KUBE_TOWER_ROLES`. `all`, the default, keeps one pod that does everything; the
+chart's `mode: distributed` puts the roles in Deployments scaled apart.
+
+- **Trivy is a role of its own**: it is the heavy part (CPU, memory, a database of about 1.6 GB,
+  minutes per image) while the version checks are many light HTTP requests. Apart, each is sized on its
+  own, only the trivy pod holds the Trivy binary and cache, and slow scans never hold back the version
+  checks. One trivy pod only, so the databases are downloaded once and the results cache is shared.
+- **The ui pods hold no state and no rights**: no ServiceAccount token, no registry credential. Sessions
+  are signed cookies, so any ui pod serves any request and the ui Deployment can autoscale.
+- **One active controller**, elected with a Kubernetes `Lease`; standbys take over in about 15 seconds.
+  The snapshot metrics come from the active controller only, so no series is duplicated.
+- **The snapshot is not stored in Kubernetes objects** (ConfigMap or CRD): etcd limits an object to
+  1 MiB, which a snapshot with vulnerabilities outgrows, and frequent writes would load the API server.
+
+### The processes talk through Valkey
+
+In the distributed mode every exchange goes through Valkey (or Redis), required there; the single mode
+talks in memory and Valkey stays optional (a copy of the snapshot). The processes only know the address
+of Valkey, none of them calls another one, and only the active controller orchestrates: it writes the
+tasks and the state, the others write their results, the actions of the users, their presence and their
+log lines.
+
+| Keys (after `redis.keyPrefix`) | Valkey type | Written by | Read by |
+| --- | --- | --- | --- |
+| `tasks:worker`, `tasks:trivy` | stream + consumer group | controller | worker, trivy |
+| `results` | stream + consumer group | worker, trivy | controller |
+| `actions`, `reply:<id>` | stream + consumer group, list with a TTL | ui / controller | controller / ui |
+| `state`, `state:snapshot`, `state:rev` | strings + counter | controller | ui |
+| `pods:<name>` | string with a TTL | every process | controller |
+| `logs` | capped stream | every process | ui |
+
+- A task read and never acknowledged stays pending: when the key of its process expired, or the task is
+  older than `internal.taskTimeout`, the controller queues it again (three attempts at most).
+- Each task carries the epoch of the controller that queued it: a controller taking over drops the
+  tasks and results of another epoch, reads the snapshot and starts a scan.
+- The tasks carry the registry credentials of image pull secrets: messages are deleted once
+  acknowledged, a Valkey password is recommended and the chart NetworkPolicy keeps Valkey to the
+  kube-tower pods.
+- When Valkey cannot be reached, the processes try again with growing delays and the ui pods show their
+  last copy of the state.
+- Until 1.0.0-rc.3 the processes talked over an internal HTTP API of the controller, with a shared
+  token: every pod depended on a Service following the active controller, the task queue was lost with
+  it, and each ui pod copied the whole state every 2 seconds.
 
 ## Code
 

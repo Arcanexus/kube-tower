@@ -112,7 +112,7 @@ spec:
             - name: KUBE_TOWER_ROLES
               value: {{ join "," $roles | quote }}
             {{- end }}
-            {{- /* Distributed mode: every pod talks through Valkey (ADR 0003); single mode: the snapshot */ -}}
+            {{- /* Distributed mode: every pod talks through Valkey; single mode: the snapshot */ -}}
             {{- if or $distributed (and $controller $redisUrl) }}
             - name: KUBE_TOWER_REDIS_URL
               value: {{ $redisUrl | quote }}

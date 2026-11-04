@@ -1,5 +1,8 @@
 # Configuration
 
+The reference of every setting of kube-tower. The guides explain what each section is for and give
+examples (see the table below); the values of the Helm chart are in [chart values](chart-values.md).
+
 kube-tower reads `/etc/kube-tower/config.yaml` (override with `KUBE_TOWER_CONFIG`). With the Helm
 chart, this file is rendered from `.Values.config`. Keys are camelCase; unknown keys are rejected
 at startup so typos are caught early.
@@ -84,7 +87,7 @@ redis:                         # Redis / Valkey: required when the roles are apa
   url: ""                      # redis://host:6379/0 or rediss:// (TLS); empty: the snapshot stays in memory
   passwordEnv: KUBE_TOWER_REDIS_PASSWORD
   key: kube-tower:snapshot     # change it when several installations share one Redis
-  keyPrefix: kube-tower        # prefix of the keys of the distributed mode (ADR 0003); change it likewise
+  keyPrefix: kube-tower        # prefix of the keys of the distributed mode; change it likewise
 auth:                          # login on the UI and the API, see authentication.md
   enabled: false               # the chart sets true (auth.enabled, on by default)
   admin: true                  # built-in admin account, password in the auth Secret (admin.password)
@@ -108,52 +111,28 @@ Durations (`refreshInterval`, `timeout`, `rescanInterval`…) accept `30s`, `15m
 Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `KUBE_TOWER_ROLES`
 (comma-separated), `KUBE_TOWER_REDIS_URL`, `KUBE_TOWER_REDIS_KEY_PREFIX`.
 
-`roles` is the horizontal scaling (see [scaling](scaling.md) and
-[ADR 0002](adr/0002-horizontal-scaling.md)): one image whose pods run any combination of the `ui`,
-`controller`, `worker` and `trivy` roles, all in one pod or apart and scaled independently. By default
-a process runs every role (`all`). The chart sets all of this with `mode: distributed`; when the roles
-run apart:
+`roles` and the `internal` and `redis` sections split kube-tower in processes: see
+[scaling](scaling.md#without-the-chart-the-roles-in-configyaml).
 
-- every process talks through Redis or Valkey (`redis.url`, required, see
-  [ADR 0003](adr/0003-valkey-bus.md)), never to another process; the process with `controller` schedules
-  the scans and queues there the tasks of the roles it does not run;
-- processes with `worker` and/or `trivy` (and no `controller`) read these tasks from Valkey, run them
-  and send the results back there; a `worker` reads the cluster list itself. A task not answered
-  within `internal.taskTimeout` (its process stopped) is queued again, three times at most.
-  The version checks and Trivy scans of a scan are split in tasks of `internal.batchSize` images or
-  charts (the tags of one image stay together), so several processes share them;
-- a process with `ui` and no `controller` shows the state that the controller publishes in Valkey
-  (its revision read every second), and sends it the actions of the users there; any number of them can
-  serve the pages. The metrics of the snapshot are served by the process with `controller` only;
-- with `internal.leaderElection: true`, several replicas can run the `controller` role: they share
-  the `internal.leaseName` Lease of their namespace (RBAC: get, create and update `leases` in
-  `coordination.k8s.io`). The holder schedules the scans and publishes the state; the others wait,
-  answer 503 on `/leaderz` (and on `/readyz`), and take over about 15 seconds after the active one
-  stopped. With `internal.labelPod: true`, the active controller labels its own pod
-  `kube-tower.arcanexus.com/active-controller=true` (and a standby `false`; RBAC: patch `pods`), for a
-  Service selecting the active one while every controller pod stays ready; otherwise use `/leaderz`
-  as readiness probe. A controller that cannot renew its Lease in time stops and is restarted as a standby.
-  The new controller empties the task queues of the previous one and starts a full scan, unless the
-  stored snapshot is recent (below);
-- with `redis.url`, the controller also writes the snapshot to Redis or Valkey (compressed, at each
-  change, the last version only) and reads it back when it becomes the active controller: a restarted
-  controller, or a standby taking over, shows the last inventory at once and waits for the rest of
-  `refreshInterval` before scanning. A scan in progress is not kept: it starts again. The tasks carry
-  the registry credentials of image pull secrets: protect Redis with a password (`passwordEnv`).
+## Where each section is explained
 
-Every process but the active controller writes every 5 seconds a key that expires in Valkey (standby
-controllers included), and every process ships its log lines there: the Pods tab of the Administration
-page shows the state of each role and process, and its Logs tab the lines of every process with its pod name,
-filtered by role. When Trivy runs in trivy processes, the Administration
-page reads the status of one of them; a database update runs in one of them and the others refresh
-theirs before their next task, and a cleared cache is forgotten by each one at its next task. The
-connectivity test runs in the controller.
+| Section | Guide |
+| --- | --- |
+| `clusters` | [clusters](clusters.md) |
+| `images`, `helm` | [statuses and versions](statuses.md), [usage](usage.md) |
+| `registries` | [registries](registries.md) |
+| `git` | [Helm charts read from git](usage.md#helm-charts), [troubleshooting](troubleshooting.md#helm-charts) |
+| `vulnerabilities` | [vulnerabilities](vulnerabilities.md), and the table below |
+| `security` | [security](security.md) |
+| `auth` | [authentication](authentication.md) |
+| `roles`, `internal`, `redis` | [scaling](scaling.md) |
+| `logs` | [Logs tab](usage.md#logs) |
 
 ## Vulnerabilities (Trivy)
 
 kube-tower reads the reports of [Trivy Operator](https://aquasecurity.github.io/trivy-operator/)
 when it runs in a cluster, and scans the other images with the [Trivy](https://trivy.dev) CLI. See
-[Vulnerabilities](vulnerabilities.md) for how it works.
+[vulnerabilities](vulnerabilities.md) for how it works and examples.
 
 | Key | Default | Description |
 | --- | --- | --- |
@@ -170,88 +149,6 @@ when it runs in a cluster, and scans the other images with the [Trivy](https://t
 | `vulnerabilities.trivy.ignoreUnfixed` | `false` | Only report the vulnerabilities that have a fixed version |
 | `vulnerabilities.trivy.javaDb` | `false` | Download the Java DB (~1.5 GB) and scan Java archives (`.jar`, `.war`, `.ear`, `.par`). When `false`, they are skipped |
 | `vulnerabilities.trivy.extraArgs` | `[]` | Extra `trivy image` arguments, e.g. `["--db-repository", "registry.example.com/aquasec/trivy-db"]` for a mirror of the database |
-
-The Trivy CLI uses the [registry credentials](#registry-authentication) of kube-tower to pull the
-layers of private images. In standalone mode, the pod must reach the database registries
-(`mirror.gcr.io` and `ghcr.io`, or the mirror given in `extraArgs`); in client/server mode, only the
-Trivy server needs them.
-
-Examples:
-
-```yaml
-# Only report what can be fixed, scan once a week, skip some images
-vulnerabilities:
-  ignore:
-    - registry.k8s.io/pause*
-    - docker.io/library/busybox*
-  trivy:
-    ignoreUnfixed: true
-    rescanInterval: 7d
-```
-
-```yaml
-# Trivy Operator already scans every workload: do not run Trivy in kube-tower
-# (node images without an operator report are then not scanned)
-vulnerabilities:
-  trivy:
-    enabled: false
-```
-
-## Registry authentication
-
-Each registry can have its own credentials, used for private images, private Helm charts and to
-raise the Docker Hub rate limits, which are much lower for anonymous clients. Cloud registries (ECR,
-Artifact Registry, ACR) can use the identity of the pod instead, and the image pull secrets of the
-clusters can be reused: [registries.md](registries.md) explains the method for each kind of registry
-(Harbor, Artifactory, Nexus, private CAs...). Credentials apply to:
-
-- container registries and OCI Helm registries (token exchange or basic auth),
-- classic HTTP Helm repositories (`index.yaml` and chart downloads, basic auth). Chart versions that
-  an `index.yaml` lists with an `oci://` URL (Bitnami) are downloaded from that registry, with its credentials.
-
-With the Helm chart, each registry gets one Secret, either an existing one or one the chart
-creates from the values. The chart mounts it read-only and writes only the file paths in the
-ConfigMap:
-
-```yaml
-registries:
-  credentials:
-    - registry: docker.io            # docker.io, ghcr.io, quay.io, harbor.example.com, charts.example.com...
-      existingSecret: dockerhub-credentials
-      usernameKey: username          # omit for token-only registries
-      passwordKey: password          # password or access token (default key: password)
-    - registry: ghcr.io
-      existingSecret: ghcr-token
-      passwordKey: token
-    - registry: quay.io              # no existingSecret: the chart creates the Secret
-      username: robot                # optional, written in the ConfigMap
-      password: <token>
-```
-
-`existingSecret` wins when both are set.
-
-```sh
-kubectl -n kube-tower create secret generic dockerhub-credentials \
-  --from-literal=username=<user> --from-literal=password=<access token>
-```
-
-A `kubernetes.io/dockerconfigjson` Secret (`registries.existingSecret`) is also supported, e.g. an
-existing image pull secret, or its content in `registries.dockerConfigJson` (an object or a JSON
-string) for the chart to create it; per registry entries win when both define the same host.
-The Credentials and settings tab of the Administration page lists the loaded credentials (never their
-values), flags invalid ones and tells whether each registry accepted them.
-
-Credentials and tokens are only sent over `https://`. kube-tower refuses a registry token service
-(`realm`) or a registry redirect in `http://`, an `http://` Helm repository that has credentials,
-and an `http://` git raw URL template when a git token is set: the check fails with a message
-saying what was refused. Public `http://` Helm repositories (no credentials) still work.
-
-Credentials are chosen by the host that asks for them, like Docker and containerd do: a registry's
-credentials only go to that registry (or its mirror in `registries.mirrors`) and to the token
-service it names. When a registry redirects to another host (e.g. `registry.k8s.io` to Artifact
-Registry), that host gets the credentials configured for it, or anonymous access: if a private
-registry redirects to another private host, add an entry for that host in
-`registries.credentials`.
 
 ## Secrets
 

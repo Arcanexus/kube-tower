@@ -3,7 +3,7 @@
 The pages and the API only go through a Backend, never through the Scanner or the Administration
 directly. A process with the controller role uses the LocalBackend (the Scanner and the Administration
 of the process). A `ui` process without the controller uses the RemoteBackend, which reads the state
-that the controller publishes in Valkey and sends it the actions there (ADR 0003): the web layer does
+that the controller publishes in Valkey and sends it the actions there: the web layer does
 not change.
 """
 

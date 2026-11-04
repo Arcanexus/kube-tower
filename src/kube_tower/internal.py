@@ -1,4 +1,4 @@
-"""The exchanges between the processes of the distributed mode, all through Valkey (bus.py, ADR 0003).
+"""The exchanges between the processes of the distributed mode, all through Valkey (bus.py).
 
 - Worker and trivy processes read their tasks from Valkey and send their results back there (TaskPuller;
   the controller side is tasks.QueueRunner).
@@ -154,7 +154,7 @@ class Publisher:
 
 
 class TaskPuller:
-    """A worker or trivy process: runs the tasks of its roles, read one at a time from Valkey (ADR 0003)."""
+    """A worker or trivy process: runs the tasks of its roles, read one at a time from Valkey."""
 
     def __init__(
         self,

@@ -180,7 +180,7 @@ class GitSettings:
 
 # What one kube-tower process runs: any combination of the roles, `all` meaning every role (UI, API,
 # scans, as before). Pods with different roles split the work for horizontal scaling, see
-# docs/adr/0002-horizontal-scaling.md.
+# docs/scaling.md and the design choices of docs/architecture.md.
 ROLES = ("ui", "controller", "worker", "trivy")
 
 
@@ -204,7 +204,7 @@ class InternalSettings:
 
 @dataclass
 class RedisSettings:
-    """Redis / Valkey: required in the distributed mode, where the processes talk through it (ADR 0003).
+    """Redis / Valkey: required in the distributed mode, where the processes talk through it.
     The controller also keeps the snapshot there: a new controller (restart, or a standby taking over) starts
     with it instead of an empty inventory. Optional when one process runs every role."""
 
@@ -308,7 +308,7 @@ class Settings:
 
     @property
     def distributed(self) -> bool:
-        """Some roles run in other processes: every exchange goes through Valkey (ADR 0003)."""
+        """Some roles run in other processes: every exchange goes through Valkey."""
         return set(self.roles) != set(ROLES) and "all" not in self.roles
 
 

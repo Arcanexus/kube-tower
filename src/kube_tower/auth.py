@@ -1,7 +1,7 @@
 """Login: local accounts and sessions kept in signed cookies.
 
 A session is a cookie signed with a key shared by every `ui` process (HMAC-SHA256): no session is stored,
-any ui replica serves any request (ADR 0002). The built-in `admin` password and the signing key live in
+any ui replica serves any request. The built-in `admin` password and the signing key live in
 one Secret, created with random values by the controller when it is missing, like the
 `argocd-initial-admin-secret` of ArgoCD. The chart mounts it in every pod with the ui role.
 """

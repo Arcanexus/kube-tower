@@ -1,43 +1,68 @@
 # kube-tower documentation
 
 kube-tower connects to all your Kubernetes clusters, inventories every container image and every Helm
-chart (with its subcharts), and tells you which ones have a newer version available, as a read-only
-dashboard: it never updates anything.
+chart (with its subcharts), and shows their versions, their lifecycle and their vulnerabilities in one
+dashboard: which ones have a newer version, what is urgent, where each one runs.
 
 ![Overview](images/overview.png)
 
-New here? Install it with the [quick start](../README.md#quick-start), then follow the guides below.
+## Where to start
+
+| I want to | Read |
+| --- | --- |
+| Try it in a few minutes | [Quick start](quick-start.md) |
+| Know how it differs from Renovate, watchtower, version-checker... | [Comparison](comparison.md) |
+| Install it for real (ingress, ArgoCD) | [Installation](installation.md) |
+| Scan other clusters, private registries, add single sign-on | [Configure](#configure) |
+| Understand a page or a status | [Usage](usage.md), [Statuses and versions](statuses.md) |
+| Look up a setting, a chart value, an endpoint, a metric | [Reference](#reference) |
+| Fix an error | [Troubleshooting](troubleshooting.md) |
 
 ## Getting started
 
-| Guide | Content |
+| Page | Content |
 | --- | --- |
-| [Installation](installation.md) | Helm, ArgoCD, ingress, upgrades, requirements |
-| [Configuration](configuration.md) | every setting, registry authentication, secrets |
-| [Authentication](authentication.md) | login, admin password, local accounts, SSO with OIDC (Authentik, Dex, Keycloak), readonly and admin roles, API with Basic auth |
-| [Clusters](clusters.md) | registering remote clusters, reusing ArgoCD clusters |
-| [Registries](registries.md) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: authentication, private CAs |
+| [Quick start](quick-start.md) | install, first login, first scan, next steps |
+| [Installation](installation.md) | requirements, Helm, ArgoCD (complete example, distributed mode), uninstalling |
+| [Upgrading](upgrading.md) | upgrade commands and what changes between versions |
+| [Comparison](comparison.md) | kube-tower next to watchtower, Renovate, version-checker, Nova, Argo CD Image Updater, Trivy Operator |
 
-## Using kube-tower
+## Configure
 
-| Guide | Content |
+| Page | Content |
 | --- | --- |
-| [Usage](usage.md) | the pages, filters and sorting, rescans, administration, statuses, JSON API |
-| [Vulnerabilities](vulnerabilities.md) | CVE detection with Trivy Operator reports or Trivy |
+| [Clusters](clusters.md) | registering remote clusters, reusing ArgoCD clusters, EKS, GKE and AKS |
+| [Registries](registries.md) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: credentials, cloud identities, private CAs |
+| [Authentication](authentication.md) | admin account, local accounts, single sign-on with OIDC (Authentik, Dex, Keycloak), roles |
+| [Vulnerabilities](vulnerabilities.md) | CVEs from Trivy Operator reports or Trivy, the Trivy setups |
 | [Security](security.md) | Trivy Operator config audit, exposed secrets, RBAC, infrastructure and compliance reports |
-| [Metrics and Grafana](metrics.md) | Prometheus exporter, PromQL examples, alerts, Grafana dashboard |
-| [Troubleshooting](troubleshooting.md) | common errors and how to fix them |
+| [Scaling](scaling.md) | distributed mode: UI, controller, worker and Trivy pods, Valkey, sizing |
+| [Metrics and Grafana](metrics.md) | Prometheus metrics, PromQL examples, alerts, Grafana dashboard |
 
-## Inside kube-tower
+## Use the UI
 
-| Guide | Content |
+| Page | Content |
 | --- | --- |
-| [Architecture](architecture.md) | diagrams of the roles, the single and distributed modes, a scan step by step |
-| [Scaling](scaling.md) | distributed mode: UI, controller, worker and Trivy pods, standby controller, Redis / Valkey |
-| [Development](development.md) | run locally, tests and coverage, project layout, releases |
-| [ADR 0001](adr/0001-architecture.md) | architecture decisions |
-| [ADR 0002](adr/0002-horizontal-scaling.md) | horizontal scaling with roles |
-| [ADR 0003](adr/0003-valkey-bus.md) | the processes talk through Valkey |
+| [Usage](usage.md) | every page: Overview, Images, Helm charts, Security, Administration, About |
+| [Statuses and versions](statuses.md) | statuses, how tags are compared, versioning schemes, floating tags, charts |
+
+## Reference
+
+| Page | Content |
+| --- | --- |
+| [Configuration](configuration.md) | every setting of `config.yaml` |
+| [Chart values](chart-values.md) | every value of the Helm chart |
+| [API](api.md) | JSON endpoints, authentication, examples |
+| [Permissions](permissions.md) | every Kubernetes permission, and the options that widen them |
+| [Network and ports](network.md) | ports, endpoints, outbound connections, network policies |
+
+## Help and internals
+
+| Page | Content |
+| --- | --- |
+| [Troubleshooting](troubleshooting.md) | common errors and how to fix them, by topic |
+| [Architecture](architecture.md) | the roles, single and distributed modes, a scan step by step, design choices |
+| [Development](development.md) | run locally, tests, project layout, documentation, releases |
 
 The [changelog](../CHANGELOG.md) lists what changed in each version.
 

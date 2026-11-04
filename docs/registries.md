@@ -4,8 +4,8 @@ kube-tower talks to registries with the standard OCI distribution API (`/v2/`): 
 Kubernetes can pull from works, public or private. The same credentials are used for the version
 checks (tag lists, digests), the OCI Helm charts and the Trivy scans.
 
-This page lists how to authenticate to each kind of registry. The options themselves are described
-in [configuration](configuration.md#registry-authentication).
+This page lists how to authenticate to each kind of registry. Every setting is listed in
+[configuration](configuration.md) (`registries` section) and [chart values](chart-values.md).
 
 ## Which method for which registry
 
@@ -27,7 +27,45 @@ Internal registries with a private CA or no TLS at all: see [TLS](#tls-private-c
 
 ## Static credentials
 
-A username and a password or token, from a Secret mounted by the chart (or a docker `config.json`).
+Each registry can have its own credentials, used for private images, private Helm charts and to
+raise the Docker Hub rate limits, which are much lower for anonymous clients. Credentials apply to:
+
+- container registries and OCI Helm registries (token exchange or basic auth),
+- classic HTTP Helm repositories (`index.yaml` and chart downloads, basic auth). Chart versions that
+  an `index.yaml` lists with an `oci://` URL (Bitnami) are downloaded from that registry, with its credentials.
+
+With the Helm chart, each registry gets one Secret, either an existing one or one the chart
+creates from the values. The chart mounts it read-only and writes only the file paths in the
+ConfigMap:
+
+```yaml
+registries:
+  credentials:
+    - registry: docker.io            # docker.io, ghcr.io, quay.io, harbor.example.com, charts.example.com...
+      existingSecret: dockerhub-credentials
+      usernameKey: username          # omit for token-only registries
+      passwordKey: password          # password or access token (default key: password)
+    - registry: ghcr.io
+      existingSecret: ghcr-token
+      passwordKey: token
+    - registry: quay.io              # no existingSecret: the chart creates the Secret
+      username: robot                # optional, written in the ConfigMap
+      password: <token>
+```
+
+`existingSecret` wins when both are set.
+
+```sh
+kubectl -n kube-tower create secret generic dockerhub-credentials \
+  --from-literal=username=<user> --from-literal=password=<access token>
+```
+
+A `kubernetes.io/dockerconfigjson` Secret (`registries.existingSecret`) is also supported, e.g. an
+existing image pull secret, or its content in `registries.dockerConfigJson` (an object or a JSON
+string) for the chart to create it; per registry entries win when both define the same host.
+
+### Hosts and patterns
+
 `registry` is a host, or an fnmatch pattern of hosts:
 
 ```yaml
@@ -139,7 +177,7 @@ config:
     useImagePullSecrets: true
 ```
 
-- It needs `get` on Secrets in every namespace: Kubernetes RBAC cannot restrict it to some names in
+- It needs `get` on Secrets in every namespace (see [permissions](permissions.md#options-that-widen-the-permissions)): Kubernetes RBAC cannot restrict it to some names in
   all namespaces, so kube-tower can then read any Secret whose name it knows. The chart adds this
   rule to the ClusterRole of the local cluster; remote clusters need it in their own RBAC
   (`deploy/remote-cluster-rbac.yaml` has it commented out).
@@ -177,7 +215,32 @@ config:
       - registry.local:5000
 ```
 
-With the NetworkPolicy enabled, add the ports of such registries to `networkPolicy.egress.ports`.
+With the NetworkPolicy enabled, add the ports of such registries to `networkPolicy.egress.ports` (see
+[network policies](network.md#network-policies)).
+
+## Checking the credentials
+
+The **Credentials and settings** tab of the [Administration](usage.md#credentials-and-settings) page
+lists the loaded credentials (never their values), where they come from, flags invalid ones and tells
+whether each registry accepted them at its last request: **accepted**, **refused** (with the answer of
+the registry) or **not tried yet**. **Test the connectivity**, in its Scans and Trivy tab, asks every
+registry for a pull token with these credentials.
+
+![Credentials and settings](images/settings.png)
+
+## How credentials are sent
+
+Credentials and tokens are only sent over `https://`. kube-tower refuses a registry token service
+(`realm`) or a registry redirect in `http://`, an `http://` Helm repository that has credentials,
+and an `http://` git raw URL template when a git token is set: the check fails with a message
+saying what was refused. Public `http://` Helm repositories (no credentials) still work.
+
+Credentials are chosen by the host that asks for them, like Docker and containerd do: a registry's
+credentials only go to that registry (or its mirror in `registries.mirrors`) and to the token
+service it names. When a registry redirects to another host (e.g. `registry.k8s.io` to Artifact
+Registry), that host gets the credentials configured for it, or anonymous access: if a private
+registry redirects to another private host, add an entry for that host in
+`registries.credentials`.
 
 ## Not supported
 

@@ -64,30 +64,16 @@ security:
 
 ## Permissions
 
-kube-tower needs `get` and `list` on the report CRDs. The chart's ClusterRole has them; for a
+kube-tower needs `get` and `list` on the report CRDs: the chart's ClusterRole has them; on a
 [remote cluster](clusters.md), apply [`deploy/remote-cluster-rbac.yaml`](../deploy/remote-cluster-rbac.yaml)
-again:
-
-```yaml
-- apiGroups: ["aquasecurity.github.io"]
-  resources: [vulnerabilityreports, configauditreports, clusterconfigauditreports, exposedsecretreports,
-              rbacassessmentreports, clusterrbacassessmentreports, infraassessmentreports,
-              clusterinfraassessmentreports, clustercompliancereports]
-  verbs: ["get", "list"]
-```
-
-A `403` on one of them is shown in the scan errors (status pill) with the CRD that could not be listed;
-the other types are still shown.
+again (see [permissions](permissions.md#trivy-operator-reports)). A `403` on one of them is shown in the
+scan errors (status pill) with the CRD that could not be listed; the other types are still shown.
 
 ## Metrics
 
-| Metric | Labels | Value |
-| --- | --- | --- |
-| `kube_tower_security_findings` | `cluster`, `namespace`, `type`, `severity` | Failed checks and exposed secrets |
-| `kube_tower_security_resources` | `cluster`, `type`, `result` (`pass` / `fail`) | Resources checked |
-| `kube_tower_compliance_controls` | `cluster`, `compliance`, `title`, `result` (`pass` / `fail`) | Controls of each compliance framework |
-
-See [Metrics](metrics.md) for PromQL examples.
+`kube_tower_security_findings`, `kube_tower_security_resources` and `kube_tower_compliance_controls` give
+the findings, the resources checked and the compliance controls per cluster: see
+[metrics](metrics.md#security-trivy-operator).
 
 ## Not covered
 

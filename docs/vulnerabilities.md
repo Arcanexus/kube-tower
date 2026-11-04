@@ -1,7 +1,7 @@
 # Vulnerabilities (CVE)
 
 kube-tower lists the known vulnerabilities of every image it found (workloads and node images) on
-the **Vulnerabilities** page, in the image details and in the Prometheus metrics. It reads them
+the **Images** page, in the image details and in the Prometheus metrics. It reads them
 from two sources, for each image:
 
 1. **Trivy Operator reports**: when [Trivy Operator](https://aquasecurity.github.io/trivy-operator/)
@@ -11,7 +11,7 @@ from two sources, for each image:
 2. **Trivy, run by kube-tower**: the other images (no operator, images only cached on nodes, a
    workload the operator has not scanned yet) are scanned with the [Trivy](https://trivy.dev) CLI.
    Trivy pulls the image layers from the registry itself (no container runtime needed), with the
-   [registry credentials](configuration.md#registry-authentication) of kube-tower.
+   [registry credentials](registries.md) of kube-tower.
 
 ![Images and their vulnerabilities](images/images.png)
 
@@ -49,7 +49,72 @@ list of its vulnerabilities at the end: ID (linked to its advisory), severity an
 installed version and the version that fixes it. With a CVE in the search, the matching vulnerabilities
 are listed first and highlighted.
 
-## Where the Trivy CLI comes from
+![Image details and its vulnerabilities](images/image-detail.png)
+
+## Trivy setups
+
+| Mode | When | Database |
+| --- | --- | --- |
+| **Standalone** (default) | `trivy.server.enabled: false` | Downloaded by kube-tower at each scan into an `emptyDir` (~1.6 GB, 3 GiB limit by default) |
+| **Client/server** | `trivy.server.enabled: true` | Held and refreshed by a Trivy server Deployment of the chart; the kube-tower pod stays small |
+
+Choose one of these setups in the values of the chart:
+
+**Standalone (default)**: kube-tower downloads the vulnerability database (~1.6 GB) into an
+`emptyDir` and scans the images itself. Nothing to set; size the pod if needed:
+
+```yaml
+trivy:
+  cacheSizeLimit: 3Gi            # emptyDir of the database
+resources:
+  limits:
+    memory: 1536Mi               # raise it, or lower config.vulnerabilities.trivy.concurrency, if OOMKilled
+```
+
+**Client/server**: the chart deploys a Trivy server that holds and refreshes the database;
+kube-tower scans in client mode and its pod stays small. `config.vulnerabilities.trivy.serverUrl` is
+set automatically.
+
+```yaml
+trivy:
+  server:
+    enabled: true
+    resources:
+      limits:
+        memory: 1Gi
+    nodeSelector:
+      kubernetes.io/arch: amd64
+```
+
+To use a Trivy server you already run, keep `trivy.server.enabled: false` and set
+`config.vulnerabilities.trivy.serverUrl: http://trivy.trivy-system:4954`.
+
+**Which one?** Standalone suits a few dozen images. Beyond that, prefer client/server. In standalone
+mode each scan keeps the image layers in memory only (`--cache-backend memory`, so that concurrent scans
+do not fail with "cache may be in use"): the base layers shared by many images (Debian, Alpine,
+distroless…) are downloaded and analysed again for every image, at every scan. The Trivy server keeps
+the analysis of each layer: a layer already seen, in another image or in a previous scan, is neither
+downloaded nor analysed again, so scans are faster and pull much less from the registries (rate
+limits). The database is also downloaded once by the server instead of by each kube-tower pod.
+
+**Trivy Operator only**: no Trivy in kube-tower, only the operator's reports are shown (images
+only cached on nodes are not scanned):
+
+```yaml
+trivy:
+  enabled: false                 # no init container
+```
+
+**No vulnerabilities at all**: `config.vulnerabilities.enabled: false`.
+
+On `linux/arm/v7` nodes (no official Trivy image), use the Trivy Operator setup, a Trivy server on
+other nodes, or `trivy.image` pointing to an image of yours holding `/usr/local/bin/trivy`. A
+private `trivy.image` is pulled with `imagePullSecrets` (kube-tower pod and Trivy server).
+
+By default the Java database (~1.5 GB more) is not downloaded and Java archives (`.jar`, `.war`,
+`.ear`, `.par`) are skipped: set `config.vulnerabilities.trivy.javaDb: true` to scan them.
+
+### Where the Trivy CLI comes from
 
 The kube-tower image does not contain Trivy (it would add ~170 MB). With the Helm chart, an init
 container copies the `trivy` binary from the official image (`trivy.image`, default
@@ -57,63 +122,43 @@ container copies the `trivy` binary from the official image (`trivy.image`, defa
 `config.vulnerabilities.trivy.binary` to it. Trivy is upgraded by changing `trivy.image.tag`,
 without a new kube-tower release.
 
-The official Trivy image exists for `linux/amd64` and `linux/arm64` only. On `linux/arm/v7` nodes,
-set `trivy.enabled: false` (Trivy Operator reports are still read) or set `trivy.image` to an
-image of yours holding `/usr/local/bin/trivy`. Without the chart, install Trivy next to kube-tower
-and set `vulnerabilities.trivy.binary`.
-
-## Trivy modes
-
-| Mode | When | Database |
-| --- | --- | --- |
-| **Standalone** (default) | `trivy.server.enabled: false` | Downloaded by kube-tower at each scan into an `emptyDir` (~1.6 GB, 3 GiB limit by default) |
-| **Client/server** | `trivy.server.enabled: true` | Held and refreshed by a Trivy server Deployment of the chart; the kube-tower pod stays small |
-
-Standalone suits a few dozen images. Beyond that, prefer client/server: in standalone mode the layers
-shared by many images are downloaded and analysed again for every image, while the Trivy server keeps
-the analysis of each layer between images and scans (see [installation](installation.md#vulnerability-scanning-trivy)).
-
-With the Helm chart:
-
-```yaml
-trivy:
-  server:
-    enabled: true        # deploys the Trivy image as a server, kube-tower scans in client mode
-```
-
-`config.vulnerabilities.trivy.serverUrl` is set automatically to the chart's server; set it yourself
-to use a Trivy server you already run.
-
-By default the Java database (~1.5 GB more) is not downloaded and Java archives (`.jar`, `.war`,
-`.ear`, `.par`) are skipped: set `config.vulnerabilities.trivy.javaDb: true` to scan them.
+Without the chart, install Trivy next to kube-tower and set `vulnerabilities.trivy.binary`.
 
 ## Trivy Operator
 
 Nothing to configure: kube-tower reads the reports when the CRD exists (the chart's ClusterRole and
 [`deploy/remote-cluster-rbac.yaml`](../deploy/remote-cluster-rbac.yaml) grant `get`/`list` on
-`vulnerabilityreports.aquasecurity.github.io`). Without the operator, the CRD is simply not found
+`vulnerabilityreports.aquasecurity.github.io`, see [permissions](permissions.md#trivy-operator-reports)). Without the operator, the CRD is simply not found
 and Trivy scans every image. Set `config.vulnerabilities.trivyOperator: false` to always scan with
 Trivy.
 
 ## Settings
 
+The settings are in `config.vulnerabilities`, every key is listed in
+[configuration](configuration.md#vulnerabilities-trivy). The Trivy CLI uses the [registry credentials](registries.md) of kube-tower to pull the
+layers of private images. In standalone mode, the pod must reach the database registries
+(`mirror.gcr.io` and `ghcr.io`, or the mirror given in `extraArgs`); in client/server mode, only the
+Trivy server needs them.
+
+Examples of `config.yaml` (under `config` in the values of the chart):
+
 ```yaml
+# Only report what can be fixed, scan once a week, skip some images
 vulnerabilities:
-  enabled: true
-  trivyOperator: true          # read Trivy Operator VulnerabilityReports
-  trivy:
-    enabled: true              # scan the other images with the Trivy CLI
-    binary: trivy
-    serverUrl: ""              # client/server mode, e.g. http://kube-tower-trivy:4954
-    cacheDir: /tmp/trivy
-    timeout: 10m               # per image
-    concurrency: 2             # images scanned at the same time
-    rescanInterval: 24h
-    ignoreUnfixed: false       # only report vulnerabilities that have a fix
-    javaDb: false
-    extraArgs: []              # extra `trivy image` arguments
-  ignore:                      # images never scanned (fnmatch on registry/repository[:tag])
+  ignore:
     - registry.k8s.io/pause*
+    - docker.io/library/busybox*
+  trivy:
+    ignoreUnfixed: true
+    rescanInterval: 7d
+```
+
+```yaml
+# Trivy Operator already scans every workload: do not run Trivy in kube-tower
+# (node images without an operator report are then not scanned)
+vulnerabilities:
+  trivy:
+    enabled: false
 ```
 
 ## Overview and Grafana
@@ -124,37 +169,9 @@ the images with critical vulnerabilities per cluster. The [Grafana dashboard](me
 row with the same figures, their evolution and the workloads running an image with critical
 vulnerabilities, filtered by cluster.
 
-## Metrics
+## Metrics and troubleshooting
 
-| Metric | Labels | Value |
-| --- | --- | --- |
-| `kube_tower_image_vulnerabilities` | `image`, `tag`, `severity`, `source` | number of vulnerabilities of that severity |
-| `kube_tower_image_vulnerabilities_fixable` | `image`, `tag`, `severity` | those with a fixed version |
-| `kube_tower_image_os_eosl` | `image`, `tag`, `os` | 1 if the OS of the image is end of life |
-| `kube_tower_image_vulnerability_scan_failed` | `image`, `tag` | 1 if the scan failed |
-| `kube_tower_last_vulnerability_scan_timestamp_seconds` | | end of the last vulnerability scan |
-
-```promql
-# Images with critical vulnerabilities that have a fix, in cluster "prod"
-kube_tower_image_vulnerabilities_fixable{severity="critical"} > 0
-  and on (image, tag) kube_tower_image_workload_info{cluster="prod"}
-```
-
-## Troubleshooting
-
-- **`trivy binary 'trivy' not found`**: Trivy is not installed: with the chart, set `trivy.enabled: true`;
-  otherwise install it and set `vulnerabilities.trivy.binary`.
-- **The pod stays in `Init` (`ImagePullBackOff` on the `trivy` init container)**: the node cannot pull
-  `trivy.image` (no `arm/v7` variant, registry not reachable): use a mirror or set `trivy.enabled: false`.
-- **`cannot download the Trivy database`**: the pod cannot reach `mirror.gcr.io` / `ghcr.io`
-  (database registries). Allow them, or use a Trivy server that can.
-- **`remote error: ... UNAUTHORIZED` / `DENIED`**: private image: add credentials for its registry.
-- **The pod is OOMKilled or evicted**: standalone mode needs memory and disk for the database. Raise
-  `resources.limits.memory` / `trivy.cacheSizeLimit`, lower `concurrency`, or enable `trivy.server`.
-- **An image stays `not scanned`**: it has no report at all. Either it matches `vulnerabilities.ignore`,
-  or `vulnerabilities.trivy.enabled` is `false` and Trivy Operator has no `VulnerabilityReport` for it
-  (`kubectl get vulnerabilityreports -A | grep <image>`: the operator may not have scanned it yet, or its
-  scan job failed), or the vulnerability phase of the last scan did not finish. A controller that
-  starts with a stored snapshot whose vulnerability phase did not finish (it was restarted during
-  that phase) runs it at once, once only (no loop if that phase stops the controller again); a vulnerability phase that fails gives the images it did not scan
-  `scan failed` with the reason (retried by *Retry what failed* on the Administration page).
+The vulnerability metrics (`kube_tower_image_vulnerabilities`, `..._fixable`, `kube_tower_image_os_eosl`...)
+are listed in [metrics](metrics.md#vulnerabilities), with PromQL examples. Common Trivy problems (binary
+not found, database download, OOMKilled pod, images `not scanned`) are in
+[troubleshooting](troubleshooting.md#vulnerabilities).

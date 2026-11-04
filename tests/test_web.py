@@ -1107,7 +1107,7 @@ async def test_watch_event_loop_warns_when_blocked(monkeypatch, caplog):
 
 
 def test_web_layer_only_talks_to_the_backend():
-    # The distributed mode (ADR 0002) swaps the backend of `ui` pods for one that asks the controller:
+    # The distributed mode swaps the backend of `ui` pods for one that asks the controller:
     # pages, API and metrics must not reach the scanner or the administration directly.
     web = Path(__file__).parent.parent / "src" / "kube_tower" / "web"
     for path in [*web.glob("*.py"), *web.glob("templates/*.html")]:

@@ -1,5 +1,9 @@
 # Installation
 
+kube-tower is installed with its Helm chart, directly or through an ArgoCD Application. For a first
+try in a few commands, see the [quick start](quick-start.md); to update an installation, see
+[upgrading](upgrading.md).
+
 ## Requirements
 
 - Kubernetes 1.25+ (any distribution: k3s, kubeadm, GKE, EKS, AKS…).
@@ -15,10 +19,11 @@ The vulnerability scans with Trivy (on by default) also need:
 - an outbound access to the Trivy database registries (`mirror.gcr.io`, `ghcr.io`) and to the
   registries of the scanned images;
 - up to 3 GiB of ephemeral storage for the database (`trivy.cacheSizeLimit`), unless you use the
-  [Trivy server](#vulnerability-scanning-trivy) of the chart;
+  [Trivy server](vulnerabilities.md#trivy-setups) of the chart;
 - nodes able to pull `ghcr.io/aquasecurity/trivy` (amd64 or arm64).
 
-See [vulnerability scanning](#vulnerability-scanning-trivy) to change or disable this.
+See [Trivy setups](vulnerabilities.md#trivy-setups) to change or disable this, and
+[network and ports](network.md) for every outbound connection.
 
 ## With Helm
 
@@ -72,67 +77,10 @@ kube-tower asks for a login: log in as `admin`, with the password kube-tower gen
 Secret `kube-tower-auth` at its first start, then add local accounts, single sign-on or Dex (see
 [authentication](authentication.md)). It only reads data and never shows secret values.
 
-### Vulnerability scanning (Trivy)
-
-kube-tower lists the vulnerabilities of every image: it reads the reports of Trivy Operator when it
-runs in a cluster, and scans the other images with the Trivy CLI (see
-[Vulnerabilities](vulnerabilities.md)). The Trivy CLI is not in the kube-tower image: the chart adds
-an init container that copies it from `trivy.image` at pod start. Choose one of these setups:
-
-**Standalone (default)**: kube-tower downloads the vulnerability database (~1.6 GB) into an
-`emptyDir` and scans the images itself. Nothing to set; size the pod if needed:
-
-```yaml
-trivy:
-  cacheSizeLimit: 3Gi            # emptyDir of the database
-resources:
-  limits:
-    memory: 1536Mi               # raise it, or lower config.vulnerabilities.trivy.concurrency, if OOMKilled
-```
-
-**Client/server**: the chart deploys a Trivy server that holds and refreshes the database;
-kube-tower scans in client mode and its pod stays small. `config.vulnerabilities.trivy.serverUrl` is
-set automatically.
-
-```yaml
-trivy:
-  server:
-    enabled: true
-    resources:
-      limits:
-        memory: 1Gi
-    nodeSelector:
-      kubernetes.io/arch: amd64
-```
-
-To use a Trivy server you already run, keep `trivy.server.enabled: false` and set
-`config.vulnerabilities.trivy.serverUrl: http://trivy.trivy-system:4954`.
-
-**Which one?** Standalone suits a few dozen images. Beyond that, prefer client/server. In standalone
-mode each scan keeps the image layers in memory only (`--cache-backend memory`, so that concurrent scans
-do not fail with "cache may be in use"): the base layers shared by many images (Debian, Alpine,
-distroless…) are downloaded and analysed again for every image, at every scan. The Trivy server keeps
-the analysis of each layer: a layer already seen, in another image or in a previous scan, is neither
-downloaded nor analysed again, so scans are faster and pull much less from the registries (rate
-limits). The database is also downloaded once by the server instead of by each kube-tower pod.
-
-**Trivy Operator only**: no Trivy in kube-tower, only the operator's reports are shown (images
-only cached on nodes are not scanned):
-
-```yaml
-trivy:
-  enabled: false                 # no init container
-```
-
-**No vulnerabilities at all**: `config.vulnerabilities.enabled: false`.
-
-On `linux/arm/v7` nodes (no official Trivy image), use the Trivy Operator setup, a Trivy server on
-other nodes, or `trivy.image` pointing to an image of yours holding `/usr/local/bin/trivy`. A
-private `trivy.image` is pulled with `imagePullSecrets` (kube-tower pod and Trivy server). Upgrade Trivy by changing
-`trivy.image.tag`, without a new kube-tower release.
-
-Scan settings (`concurrency`, `rescanInterval`, `ignoreUnfixed`, `javaDb`, `ignore`…) are in
-`config.vulnerabilities`, see [configuration](configuration.md#vulnerabilities-trivy).
+Every value of the chart is listed in [chart values](chart-values.md). Vulnerability scanning with Trivy
+is on by default: [Trivy setups](vulnerabilities.md#trivy-setups) explains the choices (standalone,
+Trivy server, Trivy Operator only, none). To restrict the network of the pods, see
+[network policies](network.md#network-policies).
 
 ## With ArgoCD
 
@@ -155,7 +103,7 @@ spec:
   source:
     repoURL: ghcr.io/arcanexus/charts
     chart: kube-tower
-    targetRevision: 0.1.0
+    targetRevision: 1.1.0
   syncPolicy:
     automated: {}
     syncOptions:
@@ -185,7 +133,7 @@ spec:
   source:
     repoURL: ghcr.io/arcanexus/charts
     chart: kube-tower
-    targetRevision: 0.1.0
+    targetRevision: 1.1.0
     helm:
       valuesObject:
         config:
@@ -297,139 +245,72 @@ stringData:
   enableOCI: "true"
 ```
 
-**Upgrades.** Bump `targetRevision` to the new chart version: kube-tower is stateless, so the
-upgrade only triggers a new scan. kube-tower itself shows when a new chart version is available
-in its Helm charts dashboard.
+**Upgrades.** Bump `targetRevision`, see [upgrading](upgrading.md).
+
+### Distributed mode with ArgoCD
+
+One pod per role and the chart's Valkey, its password in a Secret created beforehand (or synced by
+ExternalSecrets like the registry credentials):
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-tower
+  namespace: argocd
+spec:
+  destination:
+    name: in-cluster
+    namespace: kube-tower
+  project: default
+  source:
+    repoURL: ghcr.io/arcanexus/charts
+    chart: kube-tower
+    targetRevision: 1.1.0
+    helm:
+      valuesObject:
+        mode: distributed
+        distributed:
+          groups:
+            controller:
+              replicas: 1   # 2: a standby takes over in about 15 s if the active one stops
+            ui:
+              replicas: 1
+            worker:
+              replicas: 1
+        redis:
+          valkey:
+            enabled: true
+          existingSecret: kube-tower-valkey   # key: password
+        config:
+          clusters:
+            useArgocdSecrets: true
+        ingress:
+          enabled: true
+          hosts:
+            - host: kube-tower.example.com
+              paths:
+                - path: /
+                  pathType: Prefix
+        serviceMonitor:
+          enabled: true   # scrapes the active controller
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+Every pod becomes ready (standby controllers too), so ArgoCD shows the Application healthy once the
+pods started. The [complete example](#complete-example) above gives the other values (registry credentials, TLS,
+single sign-on). See [scaling](scaling.md) for the groups, sizing and Valkey.
 
 ### Development version
 
 To follow the development version, point `source` at the git repository instead:
 `repoURL: https://github.com/Arcanexus/kube-tower.git`, `path: charts/kube-tower`,
 `targetRevision: main` and set `image.tag: main`.
-
-## Chart values
-
-| Value | Default | Description |
-| --- | --- | --- |
-| `image.repository` | `ghcr.io/arcanexus/kube-tower` | Image (amd64, arm64, arm/v7) |
-| `image.tag` / `image.pullPolicy` | chart `appVersion` / `IfNotPresent` | Image tag (also the version shown by the UI) |
-| `mode` | `single` | `single`: one pod with every role; `distributed`: one Deployment per group of roles, see [scaling](scaling.md) |
-| `replicaCount` | `1` | Single mode: keep 1, the inventory lives in memory |
-| `distributed.groups.<name>.roles` / `.replicas` / `.resources` / `.autoscaling` | controller ×2, ui ×1, worker ×2, trivy ×1 | Distributed mode: the Deployments and their roles; the trivy group always has 1 replica; `autoscaling` (ui, worker) from 1 to 4 pods with a damped `behavior`, see [scaling](scaling.md#sizing) |
-| `distributed.groups.<name>.nodeSelector` / `.tolerations` / `.affinity` | top-level values | Scheduling of a group |
-| `redis.valkey.enabled` | `false` | A Valkey Deployment through which the pods of the distributed mode talk, also keeping a copy of the inventory, see [scaling](scaling.md#redis--valkey). Distributed mode: this or `redis.url` is required |
-| `redis.valkey.image` / `.port` / `.resources` | `docker.io/valkey/valkey:8.1.1` / `6379` / 20m CPU, 64Mi | Valkey settings |
-| `redis.url` | `""` | An existing Redis / Valkey instead (`redis://` or `rediss://`) |
-| `redis.existingSecret` / `.passwordKey` / `.password` | `""` / `password` / `""` | Optional Redis password, also set on the chart's Valkey |
-| `redis.keyPrefix` | `""` | Prefix of the keys of the distributed mode (empty: the release name) |
-| `config` | see [configuration](configuration.md) | Application settings, rendered into a ConfigMap |
-| `clusters` | `[]` | Remote clusters: Secrets created by the chart or `existingSecret`, see [clusters](clusters.md#registering-clusters-with-the-helm-chart) |
-| `registries.credentials` | `[]` | Per registry credentials, existing Secret, inline password or cloud `provider` (`aws`, `gcp`, `azure`), see [registries](registries.md) |
-| `registries.existingSecret` | `""` | A `kubernetes.io/dockerconfigjson` Secret |
-| `registries.dockerConfigJson` | `{}` | Content of a `kubernetes.io/dockerconfigjson` Secret the chart creates |
-| `registries.ca.existingConfigMap` / `.key` / `.pem` | `""` / `ca.crt` / `""` | CA certificates of internal registries, trusted by kube-tower and Trivy, see [registries](registries.md#tls-private-cas-and-insecure-registries) |
-| `config.registries.useImagePullSecrets` | `false` | Reuse the image pull secrets of the workloads (adds `get` on secrets to the ClusterRole), see [registries](registries.md#reusing-the-image-pull-secrets) |
-| `git.existingSecret` / `git.secretKey` | `""` / `token` | Existing Secret with a token for private git repositories holding charts or Helm value files (`$values/...`) |
-| `git.token` | `""` | The same token inline, the chart creates the Secret |
-| `auth.enabled` | `true` | Login on the UI and the API, see [authentication](authentication.md) |
-| `auth.admin` / `.users` / `.anonymousRole` | `true` / `[]` / `""` | Built-in `admin` account, local accounts (`name`, `role`, `existingSecret`, `passwordKey`), role of the visitors not logged in |
-| `auth.existingSecret` | `""` | Secret with `admin.password` and `session.key`; empty: `<release>-auth`, created by kube-tower when missing |
-| `auth.url` | `""` | URL users open kube-tower with, required by the SSO |
-| `auth.oidc.issuer` / `.existingSecret` / `.clientIdKey` / `.clientSecretKey` / `.clientId` | `""` / `""` / `clientId` / `clientSecret` / `""` | Single sign-on with an OIDC provider, see [authentication](authentication.md#single-sign-on-oidc) |
-| `auth.oidc.adminGroups` / `.readonlyGroups` / `.defaultRole` | `[]` / `[]` / `readonly` | Role from the groups of the user |
-| `auth.oidc.name` / `.scopes` / `.usernameClaim` / `.groupsClaim` / `.caFile` | `SSO` / `openid profile email groups` / `preferred_username` / `groups` / `""` | Login button, claims, private CA |
-| `dex.enabled` / `.name` / `.connectors` / `.env` / `.envFrom` | `false` / `Dex` / `[]` / `[]` / `[]` | Dex served by kube-tower on `<auth.url>api/dex`, like ArgoCD, see [authentication](authentication.md#dex-of-the-chart) |
-| `dex.image` / `.resources` / `.nodeSelector` / `.tolerations` / `.affinity` | `ghcr.io/dexidp/dex:v2.41.1` / 10m CPU, 32Mi | Dex pod |
-| `auth.sessionDuration` / `.metricsPublic` | `24h` / `true` | Session length; `/metrics` open for Prometheus or behind the login |
-| `rbac.create` | `true` | Read-only ClusterRole and Role for cluster Secrets (and, with `auth.enabled`, `get` / `create` on the auth Secret) |
-| `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | ServiceAccount |
-| `service.type` / `service.port` | `ClusterIP` / `80` | Service |
-| `ingress.*` | disabled | Standard ingress settings |
-| `serviceMonitor.enabled` / `.interval` / `.scrapeTimeout` | `false` / `5m` / `""` | Prometheus operator ServiceMonitor (`honorLabels: true`) |
-| `serviceMonitor.labels` / `.metricRelabelings` | `{}` / `[]` | Extra labels (e.g. `release: kube-prometheus-stack`) and relabelings |
-| `grafanaDashboard.enabled` | `false` | ConfigMap holding the [Grafana dashboard](metrics.md#grafana-dashboard) |
-| `grafanaDashboard.namespace` / `.labels` / `.annotations` | release ns / `grafana_dashboard: "1"` / `{}` | Where and how the Grafana sidecar finds it |
-| `trivy.enabled` | `true` | Init container copying the Trivy CLI into the pod, see [vulnerability scanning](#vulnerability-scanning-trivy) |
-| `trivy.image.repository` / `.tag` / `.pullPolicy` | `ghcr.io/aquasecurity/trivy` / `0.75.0` / `IfNotPresent` | Image the Trivy CLI is copied from (amd64, arm64) |
-| `trivy.cacheSizeLimit` | `3Gi` | `emptyDir` holding the Trivy database (standalone mode) |
-| `trivy.server.enabled` | `false` | Trivy server Deployment and Service; kube-tower then scans in client mode |
-| `trivy.server.image` | `{}` (= `trivy.image`) | Image of the Trivy server, merged over `trivy.image` |
-| `trivy.server.port` | `4954` | Port of the Trivy server Service |
-| `trivy.server.cacheSizeLimit` | `3Gi` | `emptyDir` holding the database of the Trivy server |
-| `trivy.server.resources` | 100m CPU / 256Mi requests, 1Gi memory limit | Trivy server resources |
-| `trivy.server.nodeSelector` / `.tolerations` / `.affinity` | | Trivy server scheduling |
-| `config.vulnerabilities.*` | see [configuration](configuration.md#vulnerabilities-trivy) | Trivy Operator reports, scan settings, ignored images |
-| `config.security.*` | `enabled: true`, `exposedSecrets: true` | Trivy Operator security reports of the [Security](security.md) page |
-| `startupProbe` / `livenessProbe` / `readinessProbe` | 5 min to start, then every 20s / 10s | Probes on `/healthz` (the chart sets `httpGet`); `null` disables one |
-| `resources` | 50m CPU / 256Mi requests, 1536Mi memory limit | kube-tower pod resources (Trivy scans in standalone mode need the memory) |
-| `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `podLabels`, `imagePullSecrets` | | Usual pod settings |
-| `extraInitContainers`, `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | Added to the kube-tower pod, e.g. to copy an [exec plugin](clusters.md#managed-clusters-eks-gke-aks-exec-plugins) |
-| `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
-| `networkPolicy.enabled` | `false` | NetworkPolicies of the kube-tower pod and the Trivy server, see [network policies](#network-policies) |
-| `networkPolicy.ingress.from` | `[]` (any pod) | Who may reach the UI, API and `/metrics` (port `http` only) |
-| `networkPolicy.egress.ports` / `.to` / `.extra` | `443`, `6443` / anywhere / `[]` | What kube-tower may reach besides DNS and the Trivy server |
-
-## Network policies
-
-`networkPolicy.enabled: true` restricts the network of the kube-tower pod (and of the Trivy server)
-with NetworkPolicies, enforced by CNIs such as Calico or Cilium:
-
-- **Ingress**: only the `http` port of kube-tower, from `networkPolicy.ingress.from` (any pod when
-  empty). The Trivy server only accepts kube-tower.
-- **Egress**: DNS, the Trivy server, and `networkPolicy.egress.ports` (`443` and `6443`) towards
-  `networkPolicy.egress.to` (anywhere when empty). kube-tower reaches the Kubernetes API servers, the
-  registries, the Helm repositories, the git hosts and, in standalone mode, the Trivy database
-  registries. Add the ports of registries or API servers that use other ones, or rules of your own
-  with `networkPolicy.egress.extra`.
-
-```yaml
-networkPolicy:
-  enabled: true
-  ingress:
-    from:
-      - namespaceSelector:
-          matchLabels:
-            kubernetes.io/metadata.name: ingress-nginx
-      - namespaceSelector:
-          matchLabels:
-            kubernetes.io/metadata.name: monitoring      # Prometheus scraping /metrics
-  egress:
-    ports:
-      - port: 443
-        protocol: TCP
-      - port: 6443
-        protocol: TCP
-      - port: 5000                                       # a private registry on port 5000
-        protocol: TCP
-```
-
-## Permissions
-
-On the cluster it runs in, kube-tower gets a ClusterRole with `get`/`list` on pods, nodes,
-deployments, statefulsets, daemonsets, cronjobs, `applications.argoproj.io` and
-the Trivy Operator reports (`vulnerabilityreports`, `configauditreports`, `exposedsecretreports`,
-`rbacassessmentreports`, `infraassessmentreports`, their cluster-scoped variants and
-`clustercompliancereports`, all `aquasecurity.github.io`), plus `get` on the cluster Secrets
-of its namespace named in `clusters[]` and `config.clusters.secretNames`, and on nothing else.
-Install it in a namespace of its own.
-
-Two options widen this, each reading **every** Secret of a namespace (Kubernetes RBAC cannot
-restrict `list` to a label):
-
-- `config.clusters.listSecrets: true`: `list` on the Secrets of its namespace, to find labelled
-  cluster Secrets;
-- `config.clusters.useArgocdSecrets: true` without `argocdSecretNames`: `list` on the Secrets of
-  the ArgoCD namespace. With `argocdSecretNames`, only `get` on these Secrets.
-
-Nothing is ever created, patched or deleted.
-
-## Upgrading
-
-```sh
-helm upgrade kube-tower oci://ghcr.io/arcanexus/charts/kube-tower -n kube-tower --reuse-values --version <new>
-```
-
-kube-tower is stateless: an upgrade simply triggers a new scan.
 
 ## Uninstalling
 
@@ -439,3 +320,6 @@ kubectl delete namespace kube-tower
 ```
 
 On remote clusters, remove the reader account with `kubectl delete -f deploy/remote-cluster-rbac.yaml`.
+
+Next: [register other clusters](clusters.md), [connect private registries](registries.md),
+[add accounts and single sign-on](authentication.md).
