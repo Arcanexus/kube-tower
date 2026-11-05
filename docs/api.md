@@ -26,7 +26,7 @@ OpenAPI documentation is served by kube-tower itself on `/api/docs`; the API tab
 
 With the login on (the default), the API needs a session or the Basic auth of a local account: `GET`
 for every role, each `POST` and `DELETE` for the roles with its permission (others get a 403 naming
-it, see [roles](authentication.md#roles)). A role limited to some clusters only gets those in
+it, see [RBAC](rbac.md)). A role limited to some clusters only gets those in
 `/api/snapshot` and the other answers. `/healthz`,
 `/readyz` and `/metrics` stay open (see [authentication](authentication.md#api-and-metrics)).
 

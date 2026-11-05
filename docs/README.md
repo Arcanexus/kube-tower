@@ -35,7 +35,8 @@ dashboard: which ones have a newer version, what is urgent, where each one runs.
 | --- | --- |
 | [Clusters](clusters.md) | registering remote clusters, reusing ArgoCD clusters, EKS, GKE and AKS |
 | [Registries](registries.md) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: credentials, cloud identities, private CAs |
-| [Authentication](authentication.md) | admin account, local accounts, single sign-on with OIDC (Authentik, Dex, Keycloak), roles |
+| [Authentication](authentication.md) | admin account, local accounts, single sign-on with OIDC (Authentik, Dex, Keycloak) |
+| [RBAC](rbac.md) | roles, permissions per action, clusters each role sees, roles from OIDC groups |
 | [Vulnerabilities](vulnerabilities.md) | CVEs from Trivy Operator reports or Trivy, the Trivy setups |
 | [Security](security.md) | Trivy Operator config audit, exposed secrets, RBAC, infrastructure and compliance reports |
 | [Scaling](scaling.md) | distributed mode: UI, controller, worker and Trivy pods, Valkey, sizing |

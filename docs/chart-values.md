@@ -31,7 +31,7 @@ The full list with comments is the chart's
 | `git.token` | `""` | The same token inline, the chart creates the Secret |
 | `auth.enabled` | `true` | Login on the UI and the API, see [authentication](authentication.md) |
 | `auth.admin` / `.users` / `.anonymousRole` | `true` / `[]` / `""` | Built-in `admin` account, local accounts (`name`, `role`, `existingSecret`, `passwordKey`), role of the visitors not logged in |
-| `auth.roles` | `{}` | Roles besides `readonly` and `admin`: `{name: {permissions: [...], clusters: [...]}}`, see [roles](authentication.md#roles) |
+| `auth.roles` | `{}` | Roles besides `readonly` and `admin`: `{name: {permissions: [...], clusters: [...]}}`, see [RBAC](rbac.md) |
 | `auth.existingSecret` | `""` | Secret with `admin.password` and `session.key`; empty: `<release>-auth`, created by kube-tower when missing |
 | `auth.url` | `""` | URL users open kube-tower with, required by the SSO |
 | `auth.oidc.issuer` / `.existingSecret` / `.clientIdKey` / `.clientSecretKey` / `.clientId` | `""` / `""` / `clientId` / `clientSecret` / `""` | Single sign-on with an OIDC provider, see [authentication](authentication.md#single-sign-on-oidc) |

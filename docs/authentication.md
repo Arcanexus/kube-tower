@@ -61,76 +61,10 @@ auth:
 
 ## Roles
 
-Every logged-in user sees every page, opens the detail panels and reads the API (`GET`). A role adds
-**permissions**. Each action needs one, and so do two tabs of the Administration:
-
-| Permission | Allows |
-| --- | --- |
-| `scan` | *Scan now* (`POST /api/refresh`) |
-| `rescan` | rescan an image or a chart from its detail panel (`POST /api/rescan/…`) |
-| `retry` | *Retry what failed* |
-| `trivy` | update the Trivy database, read its status again, clear its cache (*Clear and scan now* needs `scan` too) |
-| `connectivity` | test the connectivity to the clusters and registries |
-| `logs` | the Logs tab of the Administration (and its live tail) |
-| `settings` | the Settings tab of the Administration |
-
-Two roles are built in:
-
-| Role | Permissions |
-| --- | --- |
-| `readonly` | `logs`, `settings`: sees everything, runs nothing |
-| `admin` | all of them |
-
-Define more roles in `auth.roles`, with a list of permissions (`*` gives them all) and, optionally,
-the clusters their users see:
-
-```yaml
-auth:
-  roles:
-    team-prod:
-      permissions: [rescan, connectivity]
-      clusters: ["prod-*"]          # names or patterns; empty or left out: every cluster
-    security:
-      permissions: [rescan, trivy, logs]
-```
-
-Give them to local accounts (`users[].role`) or to OIDC groups (`auth.oidc.roleGroups`). A user in
-the groups of several roles gets the permissions and the clusters of all of them; a role without
-`clusters` (`readonly` and `admin` included) shows every cluster.
-
-### Clusters of a role
-
-A user whose roles list `clusters` only sees those clusters, everywhere: the pages, the cluster filter,
-the detail panels, the Administration tabs and the API (`/api/snapshot`). An image used in several
-clusters shows only its usages in theirs. The scan errors naming another cluster are hidden, and a
-rescan of an image or chart they don't see answers `404`.
-
-![Images page of a role limited to the prod cluster](images/role-clusters.png)
-
-Some things are not split by cluster, so give them with care to a limited role:
-
-| What | Why |
-| --- | --- |
-| `scan`, `retry`, `trivy` | They act on every cluster: a full scan, the retry of everything that failed, the Trivy database |
-| `logs`, `settings` | The logs and the settings name every cluster |
-| Registries and Helm repositories of the connectivity test | They are shared by the clusters |
-| `/metrics` | Prometheus scrapes it without a user |
-
-Without a permission, its buttons are hidden or greyed out, with the reason in their tooltip. A tab
-the role may not open is hidden. The API answers `403` with the permission missing, for example
-`{"detail": "permission scan needed"}`. The user, their roles and the *Log out* button are at the
-bottom of the sidebar.
-
-![Administration page for a readonly user](images/readonly.png)
-
-A role with some permissions, here `rescan` and `connectivity`: the other actions are greyed out,
-and the Logs and Settings tabs are hidden.
-
-![Administration page for a custom role](images/custom-role.png)
-
-Every action is logged with the user's name and roles, for example
-`alice (admin): POST /api/refresh`. Every refusal is logged too, with the permission missing:
-`bob (team-prod) not allowed to POST /api/refresh: permission scan needed`.
+Each user gets one or more roles: `readonly` (sees everything, runs nothing), `admin` (may do
+everything) or your own, with the permissions and the clusters you choose. They are set in
+`auth.roles` and given to local accounts (`users[].role`), OIDC groups (`auth.oidc.roleGroups`) and
+the visitors not logged in (`anonymousRole`). See [RBAC](rbac.md).
 
 ## Local accounts
 
@@ -158,7 +92,7 @@ opened with the old one. A change of role applies to the open sessions too.
 ## Single sign-on (OIDC)
 
 kube-tower logs users in with an OpenID Connect provider (authorization code flow with PKCE, as a
-confidential client). Their roles come from their groups.
+confidential client). Their roles come from their groups (see [RBAC](rbac.md#oidc-groups)).
 
 1. In the provider, create a client (an *application*) for kube-tower: confidential, with the
    redirect URI `<auth.url>auth/callback`, for example `https://kube-tower.example.com/auth/callback`,
@@ -199,7 +133,7 @@ as a way in when the provider is down, or set `admin: false` (and no `users`) to
 | `usernameClaim` | `preferred_username` | Claim naming the user (else `email`, else `sub`) |
 | `groupsClaim` | `groups` | Claim listing the groups, read from the ID token, else from the userinfo endpoint |
 | `adminGroups` / `readonlyGroups` | `[]` / `[]` | Groups given the `admin` / `readonly` role |
-| `roleGroups` | `{}` | Groups of each other role, `{role: [groups]}` (any role of `auth.roles`, or `readonly` / `admin`) |
+| `roleGroups` | `{}` | Groups of each other role, `{role: [groups]}`, see [RBAC](rbac.md#oidc-groups) |
 | `defaultRole` | `readonly` | Role of a user in none of these groups; `""` refuses them |
 | `caFile` | `""` | PEM file of a private CA of the provider (mount it with `extraVolumes`) |
 
