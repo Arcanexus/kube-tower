@@ -26,6 +26,7 @@ from functools import partial
 from kube_tower.clusters import Cluster, ClusterRegistry
 from kube_tower.collectors.vulnerabilities import pick_report
 from kube_tower.config import Settings
+from kube_tower.lifecycle import lookup, platform_versions
 from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, VulnerabilityReport
 from kube_tower.registry.auth import AuthResults, Credentials, TokenCache
 from kube_tower.registry.helm import HelmClient, IndexCache
@@ -282,7 +283,12 @@ class Scanner:
         attach_operator_reports(snap.images, operator_reports)
 
         # The results are applied to the snapshot reports: in this process they are the same objects.
-        snap.images, snap.charts = await asyncio.gather(self._check_images(snap.images), self._check_charts(snap.charts))
+        versions = platform_versions(snap.clusters, snap.nodes)
+        snap.images, snap.charts, snap.platform = await asyncio.gather(
+            self._check_images(snap.images),
+            self._check_charts(snap.charts),
+            lookup(self.settings.kubernetes_versions, versions),
+        )
         snap.charts.sort(key=lambda c: (c.cluster, c.application, c.chart))
         snap.errors += check_errors(snap)
         snap.finished_at = datetime.now(UTC)

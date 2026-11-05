@@ -134,6 +134,20 @@ class SecuritySettings:
 
 
 @dataclass
+class KubernetesVersionsSettings:
+    """End of life and vulnerabilities of the Kubernetes and containerd versions of the clusters (Clusters page)."""
+
+    enabled: bool = True
+    # Release cycles of Kubernetes with their end of life (endoflife.date API format).
+    end_of_life_url: str = "https://endoflife.date/api/kubernetes.json"
+    # OSV API (or a mirror) queried for k8s.io/kubernetes and github.com/containerd/containerd.
+    osv_url: str = "https://api.osv.dev/v1/query"
+    # A cycle that reaches its end of life within this many days is shown as a warning.
+    warn_days: int = 90
+    timeout: int = 20
+
+
+@dataclass
 class RegistryCredential:
     """Credentials for one registry host (container registry or Helm repository).
 
@@ -350,6 +364,7 @@ class Settings:
     helm: HelmSettings = field(default_factory=HelmSettings)
     vulnerabilities: VulnerabilitiesSettings = field(default_factory=VulnerabilitiesSettings)
     security: SecuritySettings = field(default_factory=SecuritySettings)
+    kubernetes_versions: KubernetesVersionsSettings = field(default_factory=KubernetesVersionsSettings)
     registries: RegistriesSettings = field(default_factory=RegistriesSettings)
     git: GitSettings = field(default_factory=GitSettings)
     internal: InternalSettings = field(default_factory=InternalSettings)

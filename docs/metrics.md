@@ -95,6 +95,8 @@ The reports of the [Security](security.md) page.
 | --- | --- | --- |
 | `kube_tower_cluster_reachable` | `cluster` | 1 if the cluster answered during the last scan |
 | `kube_tower_cluster_info` | `cluster`, `source`, `version` | always 1 (`source`: `in-cluster`, `secret`, `argocd-secret`; `version`: Kubernetes version) |
+| `kube_tower_kubernetes_end_of_life_days` | `cluster`, `version`, `cycle` | days until the end of life of the Kubernetes release of the API server (negative once passed) |
+| `kube_tower_platform_vulnerabilities` | `component` (`kubernetes`, `containerd`), `version`, `severity` | known vulnerabilities of a version run by the clusters (OSV) |
 | `kube_tower_nodes` | `cluster`, `role`, `pool`, `kubelet_version`, `ready` (`true` / `false`) | nodes of each group with this kubelet version (see the [Clusters page](ui-clusters.md)) |
 | `kube_tower_last_scan_timestamp_seconds` | | end of the last scan (Unix time) |
 | `kube_tower_last_scan_duration_seconds` | | duration of the last scan |
@@ -147,6 +149,9 @@ kube_tower_chart_dependency_outdated == 1
 # Nodes not ready, and clusters whose nodes run more than one kubelet version
 sum by (cluster) (kube_tower_nodes{ready="false"})
 count by (cluster) (count by (cluster, kubelet_version) (kube_tower_nodes)) > 1
+
+# Clusters whose Kubernetes release ends within 90 days, or has ended
+kube_tower_kubernetes_end_of_life_days < 90
 ```
 
 ```promql

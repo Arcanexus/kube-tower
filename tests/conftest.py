@@ -8,3 +8,14 @@ from kube_tower.collectors.security import SecurityFindings
 def no_security_reports(monkeypatch):
     """The fake clusters of the tests have no Trivy Operator: no security report (test_security.py reads them)."""
     monkeypatch.setattr(worker, "collect_security_reports", lambda cluster: SecurityFindings())
+
+
+@pytest.fixture(autouse=True)
+def no_platform_lookup(monkeypatch):
+    """No call to endoflife.date or OSV from the tests (test_lifecycle.py tests the lookup itself)."""
+    from kube_tower import scanner
+
+    async def lookup(settings, versions, http=None):
+        return []
+
+    monkeypatch.setattr(scanner, "lookup", lookup)

@@ -19,6 +19,7 @@ from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 from prometheus_client.registry import Collector
 
 from kube_tower import __version__
+from kube_tower.lifecycle import days_left, plain_version
 from kube_tower.models import ImageReport, Severity, Snapshot, Status
 from kube_tower.versions import update_kind
 
@@ -224,7 +225,27 @@ class SnapshotCollector(Collector):
         counts = Counter((n.cluster, n.role, n.pool, n.kubelet_version, str(n.ready).lower()) for n in snap.nodes)
         for labels, count in sorted(counts.items()):
             nodes.add_metric(list(labels), count)
-        return reachable, info, nodes
+        # End of life and vulnerabilities of the Kubernetes and containerd versions (endoflife.date, OSV)
+        eol = GaugeMetricFamily(
+            "kube_tower_kubernetes_end_of_life_days",
+            "Days until the end of life of the Kubernetes version of the API server (negative once passed)",
+            labels=["cluster", "version", "cycle"],
+        )
+        platform = {(p.component, p.version): p for p in snap.platform}
+        for c in snap.clusters:
+            p = platform.get(("kubernetes", plain_version(c.version)))
+            if p and (left := days_left(p.end_of_life)) is not None:
+                eol.add_metric([c.name, c.version or "", p.cycle], left)
+        cves = GaugeMetricFamily(
+            "kube_tower_platform_vulnerabilities",
+            "Known vulnerabilities of a Kubernetes or containerd version run by the clusters, by severity",
+            labels=["component", "version", "severity"],
+        )
+        for p in snap.platform:
+            for severity, count in p.counts().items():
+                if count:
+                    cves.add_metric([p.component, p.version, severity.value], count)
+        return reachable, info, nodes, eol, cves
 
     def _scan(self, snap: Snapshot):
         build = GaugeMetricFamily("kube_tower_build_info", "kube-tower version (always 1)", labels=["version"])

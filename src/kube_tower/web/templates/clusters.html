@@ -3,13 +3,17 @@
 {% set level_icons = {"ok": "ok", "info": "info", "warning": "warning", "error": "error"} %}
 {% set level_words = {"ok": "healthy", "info": "healthy", "warning": "to check", "error": "problem"} %}
 {% set shown = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM] %}
-{% macro cves(found, empty="no CVE") -%}
+{% macro eol(p, days) -%}
+{# End of life of the release cycle of a version: a tag after the version #}
+{% if p and p.end_of_life and days is not none %}{% if days < 0 %}<span class="eol-tag level-error" title="{{ p.cycle }} is end of life since {{ p.end_of_life }}: no more security fixes">EOL</span>{% elif days <= warn_days %}<span class="eol-tag level-warning" title="{{ p.cycle }} reaches its end of life on {{ p.end_of_life }}">EOL {{ p.end_of_life }}</span>{% endif %}{% endif %}
+{%- endmacro %}
+{% macro cves(found, empty="no CVE", nothing="no pod") -%}
 {% set any = namespace(value=False) %}
 {%- for s in shown if found.vulnerabilities[s] %}{% set any.value = True %}<span class="sev sev-{{ s.value }}" title="{{ found.vulnerabilities[s] }} {{ s.value }} CVEs">{{ found.vulnerabilities[s] }} {{ s.value[0] | upper }}</span> {% endfor -%}
-{%- if not any.value %}{% if not found.images %}<small class="muted-text">no pod</small>{% elif found.unscanned == found.images %}<small class="muted-text">not scanned</small>{% else %}<small class="level-ok">{{ icon("ok") }}{{ empty }}</small>{% endif %}{% endif %}
+{%- if not any.value %}{% if not found.images %}<small class="muted-text">{{ nothing }}</small>{% elif found.unscanned == found.images %}<small class="muted-text">not scanned</small>{% else %}<small class="level-ok">{{ icon("ok") }}{{ empty }}</small>{% endif %}{% endif %}
 {%- endmacro %}
 
-{% block heading %}{{ page_title("clusters", "Clusters", "The nodes of each cluster: their Kubernetes versions and the vulnerabilities of what they run.", "One card per cluster, following the Cluster filter of the top bar. The ring splits the nodes by kubelet version: green on the version of the API server, orange behind it, red unsupported. The vulnerabilities are those of the images the pods run (each CVE counted once). Then one card per node, grouped by role and node group, coloured by its worst finding. Click a node for its details. Registration and connectivity of the clusters are in Administration > Clusters.") }}{% endblock %}
+{% block heading %}{{ page_title("clusters", "Clusters", "The nodes of each cluster: their Kubernetes versions and the vulnerabilities of what they run.", "One card per cluster, following the Cluster filter of the top bar. The ring splits the nodes by kubelet version: green on the version of the API server, orange behind it, red unsupported. The vulnerabilities are those of the Kubernetes and containerd versions of the cluster (from OSV), and of the images its pods run, each CVE counted once. EOL marks a release cycle at (or near) its end of life (from endoflife.date). Then one card per node, grouped by role and node group, coloured by its worst finding. Click a node for its details. Registration and connectivity of the clusters are in Administration > Clusters.") }}{% endblock %}
 {% block content %}
 {% if not snapshot.finished_at and not views %}<p class="notice">{{ icon("info") }}No scan yet.</p>{% endif %}
 {% for v in views %}
@@ -38,7 +42,13 @@
     </svg>
     <div class="cluster-fact">
       <small class="counters-label">Versions</small>
-      <p>Kubernetes <strong>{{ c.version or "unknown" }}</strong></p>
+      {% set api = v.api %}
+      {% set days = v.eol_days(api) %}
+      <p>Kubernetes <strong>{{ c.version or "unknown" }}</strong> {{ eol(api, days) }}</p>
+      {% if api and api.cycle %}<p><small class="muted-text">
+        {%- if api.end_of_life %}{% if days < 0 %}<span class="level-error">end of life since {{ api.end_of_life }}</span>{% else %}supported until {{ api.end_of_life }}{% endif %}{% endif %}
+        {%- if api.latest and api.latest != api.version %} · latest patch {{ api.latest }}{% endif %}
+        {%- if api.newest_cycle and api.newest_cycle != api.cycle %} · newest {{ api.newest_cycle }}{% endif %}</small></p>{% endif %}
       <ul class="donut-legend">
         {% for s in v.kubelet_segments() %}<li><i class="dot stroke-bg-{{ s.level }}"></i><code>{{ s.version }}</code> <small class="muted-text">{{ s.nodes | plural("node") }}</small></li>{% endfor %}
       </ul>
@@ -46,11 +56,12 @@
     </div>
     <div class="cluster-fact">
       <small class="counters-label">Vulnerabilities</small>
-      <p class="cluster-cves">{{ cves(v.images) }}</p>
-      <p><small class="muted-text">in the <a href="images?cluster={{ q }}&amp;running=1">{{ v.images.images | plural("image") }}</a> its pods run{% if v.images.outdated %}, <a href="images?cluster={{ q }}&amp;status=outdated&amp;running=1">{{ v.images.outdated }} outdated</a>{% endif %}</small></p>
+      <p class="cluster-cves"><small class="cves-label muted-text">Kubernetes</small>{{ cves(v.platform_cves, "none", "not looked up") }}</p>
+      <p class="cluster-cves"><small class="cves-label muted-text">Images</small>{{ cves(v.images) }}</p>
+      <p><small class="muted-text">Kubernetes and containerd versions of the cluster, and the <a href="images?cluster={{ q }}&amp;running=1">{{ v.images.images | plural("image") }}</a> its pods run{% if v.images.outdated %} (<a href="images?cluster={{ q }}&amp;status=outdated&amp;running=1">{{ v.images.outdated }} outdated</a>){% endif %}</small></p>
     </div>
   </div>
-  {% set listed = v.findings | rejectattr("level", "equalto", "info") | list %}
+  {% set listed = v.to_check %}
   {% if listed %}
   <details class="cluster-findings" open>
     <summary>{{ listed | length | plural("thing") }} to check</summary>
@@ -61,7 +72,7 @@
   {% endif %}
   {% if v.details %}
   <details class="cluster-findings cluster-differences">
-    <summary>{{ v.details | length | plural("difference") }} between the nodes (OS, runtime, kernel)</summary>
+    <summary>{{ v.details | length | plural("note") }}: newer patch, differences between the nodes (OS, runtime, kernel)</summary>
     <ul>
       {% for f in v.details %}<li class="finding finding-info">{{ icon("info") }}<span>{{ f.text }}</span></li>{% endfor %}
     </ul>
@@ -79,8 +90,10 @@
       <a class="node-tile level-border-{{ nl }}" href="#" hx-get="clusters/node?cluster={{ q }}&amp;name={{ n.name | urlencode }}" hx-target="#detail"
          title="{{ n.name }}{% if nl != 'ok' %}: {{ v.node_findings(n.name) | rejectattr('level', 'equalto', 'info') | map(attribute='text') | join('; ') }}{% endif %}">
         <span class="node-tile-name">{% if nl != "ok" %}{{ icon(level_icons[nl], "level-" ~ nl) }}{% endif %}{{ n.name }}</span>
-        <span class="node-tile-row"><small class="muted-text">Kubelet</small><code class="version-{{ skew }}">{{ n.kubelet_version or "unknown" }}</code></span>
-        <span class="node-tile-row"><small class="muted-text">CVEs</small><span>{{ cves(found, "none") }}</span></span>
+        {% set kubelet = v.platform_of("kubernetes", n.kubelet_version) %}
+        <span class="node-tile-row"><small class="muted-text">Kubelet</small><code class="version-{{ skew }}">{{ n.kubelet_version or "unknown" }}</code>{{ eol(kubelet, v.eol_days(kubelet)) }}</span>
+        <span class="node-tile-row"><small class="muted-text">K8s CVEs</small><span>{{ cves(v.node_platform(n), "none", "—") }}</span></span>
+        <span class="node-tile-row"><small class="muted-text">Image CVEs</small><span>{{ cves(found, "none") }}</span></span>
         <small class="muted-text node-tile-os">{{ n.runtime_name }} {{ n.runtime_version }}{% if n.os_image %} · {{ n.os_image }}{% endif %}</small>
         {% if n.max_pods %}<span class="pod-bar" title="{{ n.pods }} of {{ n.max_pods }} pods"><span style="width: {{ [n.pods * 100 // n.max_pods, 100] | min }}%"></span></span>{% endif %}
       </a>

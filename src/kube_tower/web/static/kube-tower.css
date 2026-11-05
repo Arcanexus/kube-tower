@@ -800,7 +800,9 @@ td.cell-name { max-width: 21rem; }
 .node-tile-name { display: flex; align-items: center; gap: .3rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-tile-name .icon { flex: none; }
 .node-tile-row { display: flex; align-items: center; gap: .5rem; min-height: 1.4rem; }
-.node-tile-row > small:first-child { width: 3.2rem; flex: none; }
+.node-tile-row > small:first-child { width: 4.6rem; flex: none; }
+.eol-tag { font-size: .65rem; font-weight: 700; padding: .05rem .35rem; border-radius: .3rem; border: 1px solid currentColor; white-space: nowrap; }
+.cves-label { display: inline-block; width: 5.5rem; }
 .node-tile-row .sev { font-size: .7rem; padding: .05rem .35rem; }
 .node-tile-os { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .version-warning { background: var(--kt-warn-soft); color: var(--kt-warn); }

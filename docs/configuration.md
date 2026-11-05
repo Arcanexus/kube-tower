@@ -48,6 +48,12 @@ helm:
 security:                      # Trivy Operator security reports, see security.md
   enabled: true
   exposedSecrets: true         # false: leave the exposed secrets out
+kubernetesVersions:            # end of life and CVEs of the Kubernetes and containerd versions, see ui-clusters.md
+  enabled: true
+  endOfLifeUrl: https://endoflife.date/api/kubernetes.json   # or a mirror with the same format
+  osvUrl: https://api.osv.dev/v1/query                       # or a mirror of the OSV API
+  warnDays: 90                 # a release that ends within this many days is a warning
+  timeout: 20
 vulnerabilities:               # see "Vulnerabilities (Trivy)" below
   enabled: true
   trivyOperator: true          # read Trivy Operator VulnerabilityReports

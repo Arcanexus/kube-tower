@@ -375,6 +375,27 @@ class NodeInfo:
 
 
 @dataclass
+class PlatformVersion:
+    """A version of Kubernetes or containerd run by the clusters: its release cycle, end of life and
+    known vulnerabilities (Clusters page)."""
+
+    component: str  # kubernetes | containerd
+    version: str  # 1.30.4
+    cycle: str = ""  # 1.30
+    end_of_life: str = ""  # YYYY-MM-DD, "" when unknown
+    latest: str = ""  # latest patch of the cycle
+    newest_cycle: str = ""  # most recent cycle released
+    vulnerabilities: list[Vulnerability] = field(default_factory=list)
+    message: str | None = None  # why the lookup failed
+
+    def counts(self) -> dict[Severity, int]:
+        out = dict.fromkeys(Severity, 0)
+        for v in self.vulnerabilities:
+            out[v.severity] += 1
+        return out
+
+
+@dataclass
 class ClusterStatus:
     name: str
     server: str
@@ -404,6 +425,8 @@ class Snapshot:
     trivy_operator: list[str] = field(default_factory=list)
     # Nodes of the clusters (Clusters page)
     nodes: list[NodeInfo] = field(default_factory=list)
+    # End of life and vulnerabilities of the Kubernetes and containerd versions (Clusters page)
+    platform: list[PlatformVersion] = field(default_factory=list)
 
     def image(self, ref: str) -> ImageReport | None:
         return self._index("images", lambda r: str(r.image)).get(ref)

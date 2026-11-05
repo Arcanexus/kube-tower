@@ -10,8 +10,10 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import date
 
-from kube_tower.models import ClusterStatus, ImageReport, NodeInfo, Severity, Status
+from kube_tower.lifecycle import days_left, plain_version
+from kube_tower.models import ClusterStatus, ImageReport, NodeInfo, PlatformVersion, Severity, Status
 
 MAX_KUBELET_SKEW = 3  # minor versions a kubelet may be behind the API server
 LEVELS = ("ok", "info", "warning", "error")
@@ -91,6 +93,7 @@ def node_findings(n: NodeInfo, api_version: str | None) -> list[Finding]:
 # The sentence of each kind of node finding in the summary of a cluster, by number of nodes.
 SUMMARY = {
     "not-ready": ("error", "not ready"),
+    "eol": ("error", "with a kubelet at its end of life"),
     "unsupported": ("error", "with an unsupported kubelet version"),
     "behind": ("warning", "behind the API server"),
     "cordoned": ("warning", "cordoned"),
@@ -138,6 +141,34 @@ def images_on(reports: list[ImageReport]) -> ImagesOn:
     return found
 
 
+def platform_cves(found: list[PlatformVersion]) -> ImagesOn:
+    """The vulnerabilities of some Kubernetes and containerd versions, each CVE counted once."""
+    ids: dict[Severity, set[str]] = {s: set() for s in Severity}
+    for p in found:
+        for v in p.vulnerabilities:
+            ids[v.severity].add(v.id)
+    return ImagesOn(
+        images=len(found),
+        unscanned=sum(1 for p in found if p.message and not p.vulnerabilities),
+        vulnerabilities={s: len(ids[s]) for s in Severity},
+    )
+
+
+def eol_findings(p: PlatformVersion | None, what: str, node: str, warn_days: int, today: date | None) -> list[Finding]:
+    """End of life of the release cycle of a version, and a newer patch of the cycle."""
+    if p is None or not p.cycle:
+        return []
+    found = []
+    left = days_left(p.end_of_life, today)
+    if left is not None and left < 0:
+        found.append(
+            Finding("error", f"{what} {p.cycle} is end of life since {p.end_of_life}: no more security fixes", node, "eol")
+        )
+    elif left is not None and left <= warn_days:
+        found.append(Finding("warning", f"{what} {p.cycle} reaches its end of life on {p.end_of_life}", node, "eol-soon"))
+    return found
+
+
 def running_images(images: list[ImageReport], cluster: str) -> dict[str, list[ImageReport]]:
     """The images that pods run on each node of a cluster."""
     by_node: dict[str, list[ImageReport]] = {}
@@ -177,6 +208,37 @@ class ClusterView:
     node_levels: dict[str, str]  # worst level of each node
     node_images: dict[str, ImagesOn] = field(default_factory=dict)  # images run on each node
     images: ImagesOn = field(default_factory=ImagesOn)  # images run in the cluster
+    platform: dict[tuple[str, str], PlatformVersion] = field(default_factory=dict)  # (component, version)
+    warn_days: int = 90
+    today: date | None = None
+
+    def platform_of(self, component: str, version: str | None) -> PlatformVersion | None:
+        return self.platform.get((component, plain_version(version)))
+
+    @property
+    def api(self) -> PlatformVersion | None:
+        """End of life and vulnerabilities of the version of the API server."""
+        return self.platform_of("kubernetes", self.status.version)
+
+    def eol_days(self, p: PlatformVersion | None) -> int | None:
+        return days_left(p.end_of_life, self.today) if p else None
+
+    def node_platform(self, n: NodeInfo) -> ImagesOn:
+        """The vulnerabilities of the kubelet and containerd versions of a node."""
+        found = [self.platform_of("kubernetes", n.kubelet_version)]
+        if n.runtime_name == "containerd":
+            found.append(self.platform_of("containerd", n.runtime_version))
+        return platform_cves([p for p in found if p])
+
+    @property
+    def platform_cves(self) -> ImagesOn:
+        """The vulnerabilities of the Kubernetes and containerd versions the cluster runs."""
+        found = {("kubernetes", plain_version(self.status.version))}
+        for n in self.nodes:
+            found.add(("kubernetes", plain_version(n.kubelet_version)))
+            if n.runtime_name == "containerd":
+                found.add(("containerd", plain_version(n.runtime_version)))
+        return platform_cves([self.platform[k] for k in sorted(found) if k in self.platform])
 
     @property
     def level(self) -> str:
@@ -198,7 +260,7 @@ class ClusterView:
         """(level, sentence) of what to look at, most severe first: [("warning", "1 node behind the API server")]."""
         lines = []
         for kind, (level, text) in SUMMARY.items():
-            if count := len({f.node for f in self.findings if f.kind == kind}):
+            if count := len({f.node for f in self.findings if f.kind == kind and f.node}):
                 lines.append((level, f"{count} node{'s' * (count > 1)} {text}"))
         versions = len({n.kubelet_version for n in self.nodes if n.kubelet_version})
         if versions > 1 and not any(f.kind in ("behind", "unsupported") for f in self.findings):  # else said above
@@ -237,6 +299,12 @@ class ClusterView:
         return sorted(segments, key=lambda s: k8s_version(s.version) or (0, 0, 0), reverse=True)
 
     @property
+    def to_check(self) -> list[Finding]:
+        """The warnings and errors, errors first."""
+        found = [f for f in self.findings if f.level != "info"]
+        return sorted(found, key=lambda f: -LEVELS.index(f.level))
+
+    @property
     def details(self) -> list[Finding]:
         """The findings left out of the summary: versions of the OS, runtimes and kernels mixed across the nodes."""
         return [f for f in self.findings if f.level == "info"]
@@ -252,7 +320,14 @@ MIXED = (
 ROLE_ORDER = {"control-plane": 0, "worker": 2}
 
 
-def cluster_view(status: ClusterStatus, nodes: list[NodeInfo], images: list[ImageReport] | None = None) -> ClusterView:
+def cluster_view(
+    status: ClusterStatus,
+    nodes: list[NodeInfo],
+    images: list[ImageReport] | None = None,
+    platform: list[PlatformVersion] | None = None,
+    warn_days: int = 90,
+    today: date | None = None,
+) -> ClusterView:
     nodes = sorted(nodes, key=lambda n: (ROLE_ORDER.get(n.role, 1), n.role, n.pool, n.name))
     groups: dict[tuple[str, str], NodeGroup] = {}
     for n in nodes:
@@ -263,8 +338,16 @@ def cluster_view(status: ClusterStatus, nodes: list[NodeInfo], images: list[Imag
         if len(values) > 1:
             listed = ", ".join(f"{v} ({c})" for v, c in values.most_common())
             findings.append(Finding(level, f"{len(values)} {what} across the nodes: {listed}", kind=attribute))
+    versions = {(p.component, p.version): p for p in platform or []}
+    api = versions.get(("kubernetes", plain_version(status.version)))
+    findings += eol_findings(api, "Kubernetes", "", warn_days, today)
+    if api and api.latest and plain_version(api.latest) and api.latest != api.version:
+        findings.append(Finding("info", f"Kubernetes {api.latest} is the latest patch of {api.cycle}", kind="patch"))
     for n in nodes:
         findings += node_findings(n, status.version)
+        kubelet = versions.get(("kubernetes", plain_version(n.kubelet_version)))
+        if kubelet and api and kubelet.cycle != api.cycle:  # the cycle of the API server is said once above
+            findings += eol_findings(kubelet, "kubelet", n.name, warn_days, today)
     levels = {n.name: worst(f.level for f in findings if f.node == n.name) for n in nodes}
     per_node = running_images(images or [], status.name)
     in_cluster = {str(r.image): r for reports in per_node.values() for r in reports}
@@ -276,13 +359,20 @@ def cluster_view(status: ClusterStatus, nodes: list[NodeInfo], images: list[Imag
         levels,
         {n.name: images_on(per_node.get(n.name, [])) for n in nodes},
         images_on(list(in_cluster.values())),
+        versions,
+        warn_days,
+        today,
     )
 
 
 def cluster_views(
-    statuses: list[ClusterStatus], nodes: list[NodeInfo], images: list[ImageReport] | None = None
+    statuses: list[ClusterStatus],
+    nodes: list[NodeInfo],
+    images: list[ImageReport] | None = None,
+    platform: list[PlatformVersion] | None = None,
+    warn_days: int = 90,
 ) -> list[ClusterView]:
     by_cluster: dict[str, list[NodeInfo]] = {}
     for n in nodes:
         by_cluster.setdefault(n.cluster, []).append(n)
-    return [cluster_view(s, by_cluster.get(s.name, []), images) for s in statuses]
+    return [cluster_view(s, by_cluster.get(s.name, []), images, platform, warn_days) for s in statuses]

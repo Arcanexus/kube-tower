@@ -739,8 +739,11 @@ def mount(app: FastAPI) -> None:
         cluster, _ = global_filters(request)
         snapshot = snapshot_of(request)
         statuses = [c for c in snapshot.clusters if not cluster or c.name == cluster]
-        views = cluster_views(statuses, snapshot.nodes, snapshot.images)
-        return render(request, "clusters", tab="clusters", views=views, nodes=sum(len(v.nodes) for v in views))
+        warn_days = request.app.state.settings.kubernetes_versions.warn_days
+        views = cluster_views(statuses, snapshot.nodes, snapshot.images, snapshot.platform, warn_days)
+        return render(
+            request, "clusters", tab="clusters", views=views, warn_days=warn_days, nodes=sum(len(v.nodes) for v in views)
+        )
 
     @app.get("/clusters/node", response_class=HTMLResponse, include_in_schema=False)
     async def node_detail(request: Request, cluster: str = "", name: str = ""):
@@ -749,7 +752,9 @@ def mount(app: FastAPI) -> None:
         node = next((n for n in snapshot.nodes if n.cluster == cluster and n.name == name), None)
         if status is None or node is None:
             return Response(status_code=404)
-        view = cluster_view(status, [n for n in snapshot.nodes if n.cluster == cluster], snapshot.images)
+        nodes = [n for n in snapshot.nodes if n.cluster == cluster]
+        warn_days = request.app.state.settings.kubernetes_versions.warn_days
+        view = cluster_view(status, nodes, snapshot.images, snapshot.platform, warn_days)
         images = sorted(running_images(snapshot.images, cluster).get(name, []), key=vulnerability_score, reverse=True)
         return render(
             request,
