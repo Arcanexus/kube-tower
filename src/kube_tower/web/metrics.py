@@ -215,7 +215,16 @@ class SnapshotCollector(Collector):
         for c in snap.clusters:
             reachable.add_metric([c.name], c.reachable)
             info.add_metric([c.name, c.source, c.version or ""], 1)
-        return reachable, info
+        # Nodes counted by group and version, not one series per node (Clusters page)
+        nodes = GaugeMetricFamily(
+            "kube_tower_nodes",
+            "Nodes by role, node group, kubelet version and readiness",
+            labels=["cluster", "role", "pool", "kubelet_version", "ready"],
+        )
+        counts = Counter((n.cluster, n.role, n.pool, n.kubelet_version, str(n.ready).lower()) for n in snap.nodes)
+        for labels, count in sorted(counts.items()):
+            nodes.add_metric(list(labels), count)
+        return reachable, info, nodes
 
     def _scan(self, snap: Snapshot):
         build = GaugeMetricFamily("kube_tower_build_info", "kube-tower version (always 1)", labels=["version"])

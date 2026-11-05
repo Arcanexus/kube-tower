@@ -43,4 +43,5 @@ def scope_snapshot(snapshot: Snapshot, patterns: tuple[str, ...] | None) -> Snap
         security=[r for r in snapshot.security if visible(r.cluster)],
         compliance=[r for r in snapshot.compliance if visible(r.cluster)],
         trivy_operator=[c for c in snapshot.trivy_operator if visible(c)],
+        nodes=[n for n in snapshot.nodes if visible(n.cluster)],
     )

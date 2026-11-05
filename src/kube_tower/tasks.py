@@ -23,7 +23,16 @@ from typing import TYPE_CHECKING, Any, Protocol
 from redis.exceptions import RedisError
 
 from kube_tower.bus import Bus, Message, pack, unpack
-from kube_tower.models import ChartReport, ComplianceReport, ImageReport, SecurityReport, VulnerabilityReport, decode, encode
+from kube_tower.models import (
+    ChartReport,
+    ComplianceReport,
+    ImageReport,
+    NodeInfo,
+    SecurityReport,
+    VulnerabilityReport,
+    decode,
+    encode,
+)
 from kube_tower.registry.auth import AuthResult
 from kube_tower.trivy import TrivyStatus
 
@@ -106,6 +115,7 @@ class CollectResult:
     trivy_operator: bool = False  # Trivy Operator is installed (security reports read)
     # Registry credentials of the image pull secrets of the cluster (registries.useImagePullSecrets)
     pull_secrets: dict[str, tuple[str, str]] = field(default_factory=dict)
+    nodes: list[NodeInfo] = field(default_factory=list)  # Clusters page
 
 
 @dataclass

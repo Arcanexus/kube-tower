@@ -95,6 +95,7 @@ The reports of the [Security](security.md) page.
 | --- | --- | --- |
 | `kube_tower_cluster_reachable` | `cluster` | 1 if the cluster answered during the last scan |
 | `kube_tower_cluster_info` | `cluster`, `source`, `version` | always 1 (`source`: `in-cluster`, `secret`, `argocd-secret`; `version`: Kubernetes version) |
+| `kube_tower_nodes` | `cluster`, `role`, `pool`, `kubelet_version`, `ready` (`true` / `false`) | nodes of each group with this kubelet version (see the [Clusters page](ui-clusters.md)) |
 | `kube_tower_last_scan_timestamp_seconds` | | end of the last scan (Unix time) |
 | `kube_tower_last_scan_duration_seconds` | | duration of the last scan |
 | `kube_tower_last_scan_errors` | | non fatal errors of the last scan (e.g. a resource kube-tower may not list, a registry that cannot be queried), detailed under the scan status of the top bar |
@@ -106,7 +107,7 @@ The reports of the [Security](security.md) page.
 
 The number of series grows with the number of distinct images and charts, not with the number of
 pods or nodes: roughly one series per image, one per (workload, container), one per
-(cluster, image) found on nodes, one per chart and subchart. A few thousand series for a few hundred
+(cluster, image) found on nodes, one per chart and subchart, one per (node group, kubelet version). A few thousand series for a few hundred
 workloads is typical. To drop a metric you do not need, use `serviceMonitor.metricRelabelings`:
 
 ```yaml
@@ -142,6 +143,10 @@ count by (cluster, namespace) (
 # Outdated Helm charts per cluster, outdated subcharts
 count by (cluster) (kube_tower_chart_outdated == 1)
 kube_tower_chart_dependency_outdated == 1
+
+# Nodes not ready, and clusters whose nodes run more than one kubelet version
+sum by (cluster) (kube_tower_nodes{ready="false"})
+count by (cluster) (count by (cluster, kubelet_version) (kube_tower_nodes)) > 1
 ```
 
 ```promql

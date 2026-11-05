@@ -57,6 +57,16 @@ class ClustersSettings:
     # Commands that kubeconfig exec plugins may run (e.g. /opt/kube-tower/bin/kubelogin for AKS), as
     # written in the kubeconfig. Empty: exec plugins are refused (a cluster Secret could run any command).
     exec_commands: list[str] = field(default_factory=list)
+    # Labels naming the node group of a node (Clusters page), the first one found wins.
+    node_pool_labels: list[str] = field(
+        default_factory=lambda: [
+            "eks.amazonaws.com/nodegroup",
+            "cloud.google.com/gke-nodepool",
+            "kubernetes.azure.com/agentpool",
+            "karpenter.sh/nodepool",
+            "node.kubernetes.io/pool",
+        ]
+    )
 
 
 @dataclass

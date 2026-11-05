@@ -25,6 +25,12 @@ clusters:
   argocdSecretNames: []        # ArgoCD cluster Secrets read by name; empty: listed (every Secret of argocd)
   requestTimeout: 30
   execCommands: []             # commands kubeconfig exec plugins may run (EKS, GKE, AKS), see clusters.md
+  nodePoolLabels:              # node labels naming the node group of a node (Clusters page), first found wins
+    - eks.amazonaws.com/nodegroup
+    - cloud.google.com/gke-nodepool
+    - kubernetes.azure.com/agentpool
+    - karpenter.sh/nodepool
+    - node.kubernetes.io/pool
 images:
   enabled: true
   includeNodeImages: true      # images cached on nodes (node.status.images); the nodes give the image sizes either way

@@ -22,7 +22,7 @@
     <span>{{ icon("shield") }}Critical CVEs with a fix</span><strong class="{{ 'danger' if v.fixable_critical }}">{{ v.fixable_critical }}</strong>
     <small>on {{ v.fixable_critical_images | plural("image") }}{% if scanning and not snapshot.vulnerabilities_finished_at %} · scan in progress{% endif %}</small>
   </a>
-  <a class="tile" href="administration?tab=clusters">
+  <a class="tile" href="clusters">
     <span>{{ icon("clusters") }}Clusters reachable</span><strong>{{ reachable | length }}<small> / {{ snapshot.clusters | length }}</small></strong>
     <small>{% if unreachable %}<span class="danger">{{ unreachable[0].name }}: {{ unreachable[0].message or "unreachable" }}</span>{% elif snapshot.clusters %}all reachable{% else %}no scan yet{% endif %}</small>
   </a>

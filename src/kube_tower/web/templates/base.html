@@ -30,8 +30,9 @@
       </a>
       <nav>
         <ul>
-          {% for key, href, label, ico in [("overview", "./", "Overview", "synthesis"), ("images", "images", "Images", "images"), ("charts", "charts", "Helm charts", "charts"), ("security", "security", "Security", "security"), ("administration", "administration", "Administration", "administration")] %}
-          <li><a href="{{ href }}" {% if tab == key %}aria-current="page"{% endif %}>{{ icon(ico) }}<span>{{ label }}</span></a></li>
+          {# (key, href, label, icon, short label of the tab bar on phones) #}
+          {% for key, href, label, ico, short in [("overview", "./", "Overview", "synthesis", "Overview"), ("images", "images", "Images", "images", "Images"), ("charts", "charts", "Helm charts", "charts", "Charts"), ("security", "security", "Security", "security", "Security"), ("clusters", "clusters", "Clusters", "clusters", "Clusters"), ("administration", "administration", "Administration", "administration", "Admin")] %}
+          <li><a href="{{ href }}" {% if tab == key %}aria-current="page"{% endif %}>{{ icon(ico) }}<span class="nav-label">{{ label }}</span><span class="nav-short" aria-hidden="true">{{ short }}</span></a></li>
           {% endfor %}
         </ul>
         <ul class="nav-secondary">

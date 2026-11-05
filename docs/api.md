@@ -9,7 +9,7 @@ OpenAPI documentation is served by kube-tower itself on `/api/docs`; the API tab
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /api/snapshot` | The last scan: images, charts, clusters, errors, timestamps |
+| `GET /api/snapshot` | The last scan: images, charts, clusters and their nodes, errors, timestamps |
 | `POST /api/refresh` | Start a scan now (`{"started": false}` if one is already running) |
 | `POST /api/rescan/image?ref=…` | Check an image again (`ref` as in the snapshot, e.g. `docker.io/library/nginx:1.25`): every image with its name is checked (all tags, including the new ones found on the clusters); `versions=false` or `vulnerabilities=false` to skip one part. 202 when started, 409 with a `reason` if a scan is running, 404 if unknown |
 | `POST /api/rescan/chart?cluster=…&namespace=…&app=…&chart=…` | Check one Helm chart and its subcharts again (`namespace` is the Application's namespace) |

@@ -269,6 +269,7 @@ class Scanner:
             snap.errors += result.errors
             snap.security += result.security
             snap.compliance += result.compliance
+            snap.nodes += result.nodes
             for found in result.operator_reports:
                 operator_reports.setdefault(found.image, []).append(found.report)
             for host, pair in result.pull_secrets.items():

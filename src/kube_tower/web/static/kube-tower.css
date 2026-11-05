@@ -192,6 +192,7 @@ main { flex: 1; padding: 1.25rem 1.5rem; }
 .sidebar nav a[aria-current="page"] { background: var(--kt-primary); color: #fff; }
 .sidebar nav .icon { width: 1.15rem; height: 1.15rem; margin: 0; }
 /* Secondary links (About), below the pages */
+.sidebar .nav-short { display: none; }
 .sidebar nav ul.nav-secondary { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, .1); }
 .sidebar footer { margin-top: auto; padding: 0 .5rem; color: #8e9bb3; line-height: 1.3; display: flex; flex-direction: column; gap: .5rem; }
 .sidebar .version { display: flex; align-items: center; gap: .5rem; }
@@ -236,6 +237,11 @@ main { flex: 1; padding: 1.25rem 1.5rem; }
   .sidebar nav > ul:not(.nav-secondary) a:hover { background: var(--kt-hover); color: var(--kt-text); }
   .sidebar nav > ul:not(.nav-secondary) a[aria-current="page"] { background: none; color: var(--kt-accent); }
   .sidebar nav > ul:not(.nav-secondary) .icon { width: 1.35rem; height: 1.35rem; }
+  /* Six tabs on a phone: short labels, the full one kept for screen readers */
+  .sidebar nav > ul:not(.nav-secondary) .nav-short { display: block; }
+  .sidebar nav > ul:not(.nav-secondary) .nav-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
   .sidebar nav ul.nav-secondary { margin: 0; padding: 0; border: 0; }
   .sidebar .nav-secondary a, .theme-toggle { width: 2.75rem; height: 2.75rem; justify-content: center; padding: 0; border: 0; }
   .sidebar .nav-secondary span, .sidebar .version a, .sidebar .user-name > span { display: none; }
@@ -748,3 +754,58 @@ td.cell-name { max-width: 21rem; }
 .login .sso { display: flex; justify-content: center; }
 .login article > .notice { margin-top: .9rem; }
 .login-or { margin: .9rem 0; text-align: center; color: var(--kt-muted); }
+
+/* Clusters page: one card per cluster (a ring of the kubelet versions, the vulnerabilities), one card per node */
+.level-ok { color: var(--kt-ok); } .level-info { color: var(--kt-accent); }
+.level-warning { color: var(--kt-warn); } .level-error { color: var(--kt-err); }
+.badge.level-ok, .badge.level-info { background: var(--kt-ok-soft); color: var(--kt-ok); }
+.badge.level-warning { background: var(--kt-warn-soft); } .badge.level-error { background: var(--kt-err-soft); }
+.stroke-ok { stroke: var(--kt-ok); } .stroke-warning { stroke: var(--kt-warn); } .stroke-error { stroke: var(--kt-err); } .stroke-info { stroke: var(--kt-unk); }
+.stroke-bg-ok { background: var(--kt-ok); } .stroke-bg-warning { background: var(--kt-warn); } .stroke-bg-error { background: var(--kt-err); } .stroke-bg-info { background: var(--kt-unk); }
+.cluster-card { border-left: 4px solid var(--kt-ok); }
+.level-border-ok, .node-tile.level-border-ok:hover { border-left-color: var(--kt-ok); }
+.level-border-warning, .node-tile.level-border-warning:hover { border-left-color: var(--kt-warn); }
+.level-border-error, .node-tile.level-border-error:hover { border-left-color: var(--kt-err); }
+.cluster-card > header { flex-wrap: wrap; }
+.cluster-card-name { font-size: 1.1rem; }
+.cluster-card-meta { margin-left: auto; font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.cluster-overview { display: grid; grid-template-columns: 7.5rem minmax(12rem, max-content) minmax(12rem, max-content); gap: 1.5rem 3.5rem; align-items: center; margin-bottom: 1rem; }
+.cluster-fact > p { margin: .2rem 0; }
+.cluster-fact .counters-label { display: block; margin-bottom: .2rem; }
+.cluster-cves { font-size: 1rem; }
+.cluster-cves .sev { font-size: .85rem; padding: .15rem .5rem; }
+.donut { width: 7.5rem; height: 7.5rem; }
+.donut circle { fill: none; stroke-width: 5; }
+.donut-ring { stroke: var(--kt-line); }
+.donut-segment { transition: stroke-dashoffset .3s; }
+.donut-number { font-size: .55rem; font-weight: 700; text-anchor: middle; fill: var(--kt-text); }
+.donut-label { font-size: .25rem; text-anchor: middle; fill: var(--kt-muted); }
+.donut-legend { list-style: none; padding: 0; margin: .3rem 0 0; display: flex; flex-direction: column; gap: .2rem; }
+.donut-legend li { display: flex; align-items: center; gap: .4rem; margin: 0; }
+.dot.stroke-bg-ok, .dot.stroke-bg-warning, .dot.stroke-bg-error, .dot.stroke-bg-info { display: inline-block; box-shadow: none; }
+.cluster-findings { margin-bottom: .75rem; }
+.cluster-findings summary { cursor: pointer; font-weight: 600; }
+.cluster-differences summary { font-weight: 500; color: var(--kt-muted); }
+.cluster-findings ul, .cluster-findings-list { list-style: none; padding: 0; margin: .4rem 0 .75rem; }
+.finding { display: flex; gap: .4rem; align-items: baseline; }
+.finding .icon { flex: none; position: relative; top: .15rem; }
+.finding-info .icon { color: var(--kt-accent); } .finding-warning .icon { color: var(--kt-warn); } .finding-error .icon { color: var(--kt-err); }
+.node-group h4 { display: flex; align-items: center; gap: .4rem; font-size: .9rem; margin: .5rem 0; }
+.node-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .5rem; margin-bottom: .75rem; }
+.node-tile {
+  display: flex; flex-direction: column; gap: .25rem; min-width: 0; padding: .55rem .7rem; color: var(--kt-text);
+  background: var(--kt-surface); border: 1px solid var(--kt-line); border-left: 4px solid var(--kt-ok); border-radius: var(--kt-radius);
+}
+.node-tile:hover { border-color: var(--kt-accent); text-decoration: none; }
+.node-tile-name { display: flex; align-items: center; gap: .3rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-tile-name .icon { flex: none; }
+.node-tile-row { display: flex; align-items: center; gap: .5rem; min-height: 1.4rem; }
+.node-tile-row > small:first-child { width: 3.2rem; flex: none; }
+.node-tile-row .sev { font-size: .7rem; padding: .05rem .35rem; }
+.node-tile-os { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.version-warning { background: var(--kt-warn-soft); color: var(--kt-warn); }
+.version-error { background: var(--kt-err-soft); color: var(--kt-err); }
+.pod-bar { display: block; height: .25rem; margin-top: .1rem; border-radius: 1rem; background: var(--kt-code-bg); overflow: hidden; }
+.pod-bar > span { display: block; height: 100%; background: var(--kt-accent); }
+@media (max-width: 900px) { .cluster-overview { grid-template-columns: 6rem minmax(0, 1fr); } .cluster-overview .cluster-fact:last-child { grid-column: 1 / -1; } .donut { width: 6rem; height: 6rem; } }
+@media (max-width: 600px) { .node-tiles { grid-template-columns: minmax(0, 1fr); } .cluster-card-meta { margin-left: 0; width: 100%; } }

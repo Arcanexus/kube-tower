@@ -340,6 +340,41 @@ class ComplianceReport:
 
 
 @dataclass
+class NodeInfo:
+    """A node of a cluster: its role, its versions and its state (node.status.nodeInfo, conditions)."""
+
+    cluster: str
+    name: str
+    role: str = "worker"  # control-plane, worker or another node-role.kubernetes.io/<role> label
+    pool: str = ""  # node group / node pool (EKS, GKE, AKS, Karpenter...), when labelled
+    kubelet_version: str = ""
+    kube_proxy_version: str = ""
+    os_image: str = ""  # e.g. Ubuntu 22.04.4 LTS, Bottlerocket OS 1.20.0
+    kernel_version: str = ""
+    container_runtime: str = ""  # e.g. containerd://1.7.13
+    architecture: str = ""
+    operating_system: str = ""
+    ready: bool = True
+    unschedulable: bool = False  # cordoned
+    problems: list[str] = field(default_factory=list)  # conditions other than Ready that are True: MemoryPressure...
+    cpu: str = ""  # capacity, as the node reports it (4, 3920m)
+    memory: str = ""  # capacity (16303780Ki)
+    max_pods: int = 0
+    pods: int = 0  # pods running on it, from the inventory
+    zone: str = ""
+    instance_type: str = ""
+    created_at: datetime | None = None
+
+    @property
+    def runtime_name(self) -> str:
+        return self.container_runtime.split("://", 1)[0]
+
+    @property
+    def runtime_version(self) -> str:
+        return self.container_runtime.split("://", 1)[-1]
+
+
+@dataclass
 class ClusterStatus:
     name: str
     server: str
@@ -367,6 +402,8 @@ class Snapshot:
     compliance: list[ComplianceReport] = field(default_factory=list)
     # Clusters where Trivy Operator is installed: the Security page only shows when there is one
     trivy_operator: list[str] = field(default_factory=list)
+    # Nodes of the clusters (Clusters page)
+    nodes: list[NodeInfo] = field(default_factory=list)
 
     def image(self, ref: str) -> ImageReport | None:
         return self._index("images", lambda r: str(r.image)).get(ref)

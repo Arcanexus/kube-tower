@@ -8,6 +8,7 @@ How to find your way in kube-tower: what every page has in common. Each page has
 | **Images** | Every image, its versions and its vulnerabilities | [Images page](ui-images.md) |
 | **Helm charts** | Every chart of the ArgoCD Applications and its subcharts | [Helm charts page](ui-charts.md) |
 | **Security** | The reports of Trivy Operator | [Security page](ui-security.md) |
+| **Clusters** | The nodes of every cluster and their versions | [Clusters page](ui-clusters.md) |
 | **Administration** | Scans, Trivy, clusters, pods, credentials, settings, API, logs | [Administration page](ui-administration.md) |
 | **About** | Version, latest release, what this instance runs | [below](#about) |
 
@@ -17,7 +18,7 @@ What `outdated`, `unknown` or `major` mean is explained in [statuses and version
 
 ## Sidebar and top bar
 
-- **Sidebar** (left): the five pages, then **About**. At the bottom: the user logged in and its role,
+- **Sidebar** (left): the six pages, then **About**. At the bottom: the user logged in and its role,
   *Log out*, the version, the GitHub link, and the **theme** icon (auto, light or dark, remembered by
   the browser).
 - **Cluster** filter (top bar): only the images, charts and figures of one cluster. A role limited to
