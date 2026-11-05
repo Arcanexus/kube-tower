@@ -85,8 +85,9 @@ with that role without logging in, see [visitors who are not logged in](authenti
 
 ## Clusters of a role
 
-A user whose roles list `clusters` only sees those clusters, everywhere: the pages, the cluster filter,
-the detail panels, the Administration tabs and the API (`/api/snapshot`). An image used in several
+A user whose roles list `clusters` only sees those clusters, everywhere: the pages (the
+[Clusters page](ui-clusters.md) shows only their nodes), the cluster filter, the detail panels, the
+Administration tabs and the API (`/api/snapshot`). An image used in several
 clusters shows only its usages in theirs. The scan errors naming another cluster are hidden, and a
 rescan of an image or chart they don't see answers `404`.
 
@@ -100,6 +101,7 @@ Some things are not split by cluster, so give them with care to a limited role:
 | `logs`, `settings` | The logs and the settings name every cluster |
 | Registries and Helm repositories of the connectivity test | They are shared by the clusters |
 | `/metrics` | Prometheus scrapes it without a user |
+| End of life and CVEs of the Kubernetes and containerd versions (`platform` in `/api/snapshot`) | They are looked up per version, not per cluster: a version run only by another cluster can show there, without its cluster's name |
 
 ## In the UI and the API
 
