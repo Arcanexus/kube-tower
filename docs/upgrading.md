@@ -20,6 +20,17 @@ Bump `targetRevision` to the new chart version in the Application and sync.
 
 Read the [changelog](../CHANGELOG.md) for every change. What needs a step of yours:
 
+### 1.2.0: Clusters page and custom roles
+
+- Nothing to do: the new settings have defaults, and `readonly` and `admin` keep their rights. Custom
+  roles are optional, see [RBAC](rbac.md).
+- The controller now asks [endoflife.date](https://endoflife.date) and [OSV](https://osv.dev) once per
+  scan for the Kubernetes and containerd versions of the clusters. Behind a strict egress, allow
+  `endoflife.date` and `api.osv.dev` (see [network](network.md)), point `config.kubernetesVersions` to
+  mirrors, or set `config.kubernetesVersions.enabled: false`.
+- `clusters` is now the new [Clusters page](ui-clusters.md), no longer a redirect to the Administration
+  page: the registration and connectivity of the clusters stay in its Clusters tab.
+
 ### 1.1.0: the login is on by default
 
 `auth.enabled` is now `true`: after an upgrade from 1.0, log in as `admin` with the password
@@ -40,7 +51,8 @@ in 1.0. With `rbac.create: false`, give the ServiceAccount the rights on the aut
   [`deploy/remote-cluster-rbac.yaml`](../deploy/remote-cluster-rbac.yaml) again on remote clusters (the
   chart updates its own ClusterRole).
 - The former pages still answer, so bookmarks keep working: `synthesis` opens the Overview,
-  `vulnerabilities` the Images page, `clusters`, `settings`, `logs` and `maintenance` the Administration page.
+  `vulnerabilities` the Images page, `clusters` (until 1.2.0), `settings`, `logs` and `maintenance` the
+  Administration page.
 
 ### 1.0.0-rc.4: the pods talk through Valkey
 
