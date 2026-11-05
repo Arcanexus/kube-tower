@@ -1,4 +1,4 @@
-{% from "_macros.html" import badge, drawer, icon, severity_counts %}
+{% from "_macros.html" import badge, copy, drawer, icon, severity_counts %}
 {% set level_icons = {"ok": "ok", "info": "info", "warning": "warning", "error": "error"} %}
 {% call drawer(n.name, "Node · " ~ n.cluster) %}
 <p>
@@ -13,16 +13,16 @@
 {% set unknown %}<small class="muted-text">unknown</small>{% endset %}
 <table>
   <tr><th scope="row">Role</th><td>{{ n.role }}</td></tr>
-  {% if n.pool %}<tr><th scope="row">Node group</th><td>{{ n.pool }}</td></tr>{% endif %}
-  <tr><th scope="row">Kubelet</th><td><code>{{ n.kubelet_version or "unknown" }}</code>{% if view.status.version %} <small class="muted-text">API server {{ view.status.version }}</small>{% endif %}</td></tr>
-  {% if n.kube_proxy_version %}<tr><th scope="row">kube-proxy</th><td><code>{{ n.kube_proxy_version }}</code></td></tr>{% endif %}
-  <tr><th scope="row">Container runtime</th><td>{{ n.container_runtime or unknown }}</td></tr>
-  <tr><th scope="row">OS</th><td>{{ n.os_image or unknown }}{% if n.operating_system %} <small class="muted-text">{{ n.operating_system }}/{{ n.architecture }}</small>{% endif %}</td></tr>
-  <tr><th scope="row">Kernel</th><td>{{ n.kernel_version or unknown }}</td></tr>
+  {% if n.pool %}<tr><th scope="row">Node group</th><td>{{ copy(n.pool) }}</td></tr>{% endif %}
+  <tr><th scope="row">Kubelet</th><td>{% call copy(n.kubelet_version) %}<code>{{ n.kubelet_version or "unknown" }}</code>{% endcall %}{% if view.status.version %} <small class="muted-text">API server {{ view.status.version }}</small>{% endif %}</td></tr>
+  {% if n.kube_proxy_version %}<tr><th scope="row">kube-proxy</th><td>{% call copy(n.kube_proxy_version) %}<code>{{ n.kube_proxy_version }}</code>{% endcall %}</td></tr>{% endif %}
+  <tr><th scope="row">Container runtime</th><td>{{ copy(n.container_runtime) if n.container_runtime else unknown }}</td></tr>
+  <tr><th scope="row">OS</th><td>{{ copy(n.os_image) if n.os_image else unknown }}{% if n.operating_system %} <small class="muted-text">{{ n.operating_system }}/{{ n.architecture }}</small>{% endif %}</td></tr>
+  <tr><th scope="row">Kernel</th><td>{{ copy(n.kernel_version) if n.kernel_version else unknown }}</td></tr>
   {% if n.cpu or n.memory %}<tr><th scope="row">Capacity</th><td>{{ n.cpu }} CPU · {{ n.memory }}</td></tr>{% endif %}
   {% if n.max_pods %}<tr><th scope="row">Pods</th><td>{{ n.pods }} / {{ n.max_pods }}</td></tr>{% endif %}
-  {% if n.instance_type %}<tr><th scope="row">Instance type</th><td>{{ n.instance_type }}</td></tr>{% endif %}
-  {% if n.zone %}<tr><th scope="row">Zone</th><td>{{ n.zone }}</td></tr>{% endif %}
+  {% if n.instance_type %}<tr><th scope="row">Instance type</th><td>{{ copy(n.instance_type) }}</td></tr>{% endif %}
+  {% if n.zone %}<tr><th scope="row">Zone</th><td>{{ copy(n.zone) }}</td></tr>{% endif %}
   {% if n.created_at %}<tr><th scope="row">Created</th><td>{{ n.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endif %}
 </table>
 {% set platform = [view.platform_of("kubernetes", n.kubelet_version)] + ([view.platform_of("containerd", n.runtime_version)] if n.runtime_name == "containerd" else []) %}
@@ -42,7 +42,7 @@
     <tr>
       <td><a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.id }}</a>{% if x.title %}<br><small class="muted-text">{{ x.title }}</small>{% endif %}</td>
       <td><span class="sev sev-{{ x.severity.value }}">{{ x.severity.value }}</span></td>
-      <td>{{ x.fixed_version or "—" }}</td>
+      <td>{{ copy(x.fixed_version) if x.fixed_version else "—" }}</td>
     </tr>
   {% endfor %}
   </tbody>

@@ -54,6 +54,9 @@ Click a line to open its details on the right:
   the close one;
 - close it with its button, `Esc`, or a click outside (which also does what it was meant to, e.g.
   open another line).
+- **click a value to copy it**: names, versions, digests, namespaces, clusters, repositories, node
+  names… A dashed outline and a copy icon show what can be copied on hover, and a green check confirms
+  the copy (a red cross if the browser refused it). `Enter` copies the focused value too.
 
 ### Rescan one image or chart
 

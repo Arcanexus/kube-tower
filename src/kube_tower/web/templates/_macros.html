@@ -2,6 +2,16 @@
 <svg class="icon {{ cls }}" aria-hidden="true"><use href="{{ asset('icons.svg') }}#i-{{ name }}"></use></svg>
 {%- endmacro %}
 
+{% macro copy(value) -%}
+{# A value of a detail panel: a click (or Enter) copies `value` to the clipboard (ktCopy in kube-tower.js).
+   A copy icon shows on hover, a check once copied (a cross if the browser refused).
+   Shows `value`, or what the {% call %} block renders. #}
+{%- if value -%}
+<span class="copyable" role="button" tabindex="0" data-copy="{{ value }}" title="Click to copy">{{ caller() if caller else value }}
+  {#- #}<span class="copy-icons" aria-hidden="true">{{ icon("copy", "copy-idle") }}{{ icon("check", "copy-done") }}{{ icon("x", "copy-fail") }}</span></span>
+{%- elif caller %}{{ caller() }}{% endif -%}
+{%- endmacro %}
+
 {% macro badge(status) -%}
 {% set icons = {"up-to-date": "ok", "outdated": "outdated", "unknown": "unknown", "error": "error"} %}
 <span class="badge badge-{{ status.value }}">{{ icon(icons[status.value]) }}{{ status.value }}</span>
@@ -33,11 +43,13 @@
 <span class="image-cell">{{ running_icon(r) }}<code class="image-name" title="{{ r.image.name }}"><span class="registry">{{ r.image.registry }}/</span>{{ r.image.repository }}</code></span>
 {%- endmacro %}
 
-{% macro version_cell(tag_value, digest_value, other="", warn=True) -%}
+{% macro version_cell(tag_value, digest_value, other="", warn=True, copyable=False) -%}
 {# A version and its short digest below, to compare current and latest at a glance; `other` is the digest
    of the other column: a different digest is highlighted. #}
-<span class="version-cell"><span class="version-tag" title="{{ tag_value }}">{{ (tag(tag_value) if warn else tag_value) if tag_value else ("pinned digest" if digest_value else "—") }}</span>
-{%- if digest_value %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}" title="{{ digest_value }}">{{ digest_value | short_digest }}</small>{% endif %}</span>
+{% set shown = (tag(tag_value) if warn else tag_value) if tag_value else ("pinned digest" if digest_value else "—") %}
+{% set version_tag %}<span class="version-tag" title="{{ tag_value }}">{{ shown }}</span>{% endset %}
+<span class="version-cell">{% if copyable and tag_value %}{% call copy(tag_value) %}{{ version_tag }}{% endcall %}{% else %}{{ version_tag }}{% endif %}
+{%- if digest_value %}{% if copyable %}{% call copy(digest_value) %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}">{{ digest_value | short_digest }}</small>{% endcall %}{% else %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}" title="{{ digest_value }}">{{ digest_value | short_digest }}</small>{% endif %}{% endif %}</span>
 {%- endmacro %}
 
 {% macro version_cells(r) -%}
@@ -77,7 +89,7 @@
 {%- endmacro %}
 
 {% macro digest(value, short=False) -%}
-{% if value %}<code class="digest" title="{{ value }}">{{ value[:19] ~ "…" if short else value }}</code>{% endif %}
+{% if value %}{% call copy(value) %}<code class="digest">{{ value[:19] ~ "…" if short else value }}</code>{% endcall %}{% endif %}
 {%- endmacro %}
 
 {% macro drawer(title, subtitle="") -%}
@@ -88,7 +100,7 @@
   <div class="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize the panel" title="Drag to resize"
        tabindex="0" onpointerdown="ktResizeStart(event)" onkeydown="ktResizeKey(event)" ondblclick="ktResizeReset()"></div>
   <header>
-    <hgroup><h3>{{ title }}</h3>{% if subtitle %}<p>{{ subtitle }}</p>{% endif %}</hgroup>
+    <hgroup><h3>{{ copy(title) }}</h3>{% if subtitle %}<p>{{ subtitle }}</p>{% endif %}</hgroup>
     <div class="drawer-buttons">
       <button type="button" class="drawer-full-toggle outline secondary" onclick="ktToggleFull()" aria-label="Full screen" title="Full screen">
         {{- icon("maximize", "when-normal") }}{{ icon("minimize", "when-full") -}}

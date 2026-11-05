@@ -811,3 +811,21 @@ td.cell-name { max-width: 21rem; }
 .pod-bar > span { display: block; height: 100%; background: var(--kt-accent); }
 @media (max-width: 900px) { .cluster-overview { grid-template-columns: 6rem minmax(0, 1fr); } .cluster-overview .cluster-fact:last-child { grid-column: 1 / -1; } .donut { width: 6rem; height: 6rem; } }
 @media (max-width: 600px) { .node-tiles { grid-template-columns: minmax(0, 1fr); } .cluster-card-meta { margin-left: 0; width: 100%; } }
+
+/* Copyable values of the detail panels (copy macro, ktCopy) */
+.copyable[role="button"] {
+  display: inline; position: relative; width: auto; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: .3rem;
+  background: none; color: inherit; font: inherit; line-height: inherit; text-align: inherit; white-space: inherit;
+  cursor: copy; filter: none; box-shadow: none; transition: none;
+}
+.copyable[role="button"]:hover, .copyable:focus-visible { outline: 1px dashed var(--kt-line-strong); outline-offset: 2px; }
+.copyable:focus-visible { outline-color: var(--kt-accent); }
+.copy-icons {
+  position: absolute; left: 100%; top: 50%; transform: translate(.25rem, -50%); display: inline-flex;
+  padding: .1rem; border-radius: .3rem; background: var(--kt-surface); pointer-events: none; z-index: 5;
+}
+.copy-icons .icon { display: none; width: .95em; height: .95em; margin: 0; }
+.copyable:hover .copy-idle, .copyable:focus-visible .copy-idle { display: inline-block; color: var(--kt-muted); }
+.copyable.copied .copy-idle, .copyable.copy-failed .copy-idle { display: none; }
+.copyable.copied .copy-done { display: inline-block; color: var(--kt-ok); }
+.copyable.copy-failed .copy-fail { display: inline-block; color: var(--kt-err); }

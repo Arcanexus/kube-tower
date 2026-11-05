@@ -446,10 +446,26 @@ def test_image_detail():
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
     assert "docker.io/library/nginx:1.27" in detail and "web-7d9f-abcde" in detail
     assert re.search(r"Versioning</th><td>semver ", detail)
-    assert 'class="tree-list"' in detail and "<strong>c1</strong>" in detail and "<code>tools</code>" in detail
+    assert 'class="tree-list"' in detail and '<strong><span class="copyable"' in detail and 'data-copy="c1"' in detail
+    assert "<code>tools</code>" in detail
     detail = client.get("/images/detail", params={"ref": "ghcr.io/org/app:2.0"}).text
     assert "cached on 2 nodes" in detail and '<code class="usage-node">n2</code>' in detail
     assert client.get("/images/detail", params={"ref": "nope"}).status_code == 404
+
+
+def test_detail_values_are_copyable():
+    # a click on a value of a detail panel copies it (ktCopy): names, versions, digests, namespaces
+    client, _ = _client()
+    detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
+    for value in ("docker.io/library/nginx", "1.25", "1.27", "docker.io/library/nginx:1.25", "c1"):
+        assert f'data-copy="{value}"' in detail, value
+    assert 'class="copyable" role="button" tabindex="0"' in detail
+    detail = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
+    for value in ("redis", "argocd", "c1"):
+        assert f'data-copy="{value}"' in detail, value
+    js = client.get("/static/kube-tower.js").text
+    assert "function ktCopy(el)" in js and "navigator.clipboard" in js and 'execCommand("copy")' in js
+    assert ".copyable.copied .copy-done" in client.get("/static/kube-tower.css").text
 
 
 def test_image_size():
@@ -486,7 +502,10 @@ def test_chart_tree_and_detail():
     detail = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
     assert "helpers" in detail and "file://../helpers" in detail and "artifacthub.io" in detail
     assert 'class="tree-list" aria-label="Subchart tree"' in detail
-    positions = [detail.index(f"<strong>{name}</strong>") for name in ("redis", "metrics", "helpers")]
+    positions = [
+        detail.index(f'<strong><span class="copyable" role="button" tabindex="0" data-copy="{name}"')
+        for name in ("redis", "metrics", "helpers")
+    ]
     assert positions == sorted(positions)
     assert client.get("/charts/detail?cluster=c1&namespace=argocd&app=x&chart=redis").status_code == 404
 
