@@ -4,7 +4,7 @@
 {% block heading %}{{ page_title("administration", "Administration", "Scans, Trivy, clusters, pods, credentials, settings, API and logs.") }}{% endblock %}
 {% block content %}
 <nav class="tabs" aria-label="Administration">
-  {% for key, (label, ico) in admin_tabs.items() %}
+  {% for key, (label, ico) in admin_tabs.items() if key not in ("logs", "settings") or can(key) %}
   <a href="administration?tab={{ key }}" {% if key == admin_tab %}aria-current="page"{% endif %}>{{ icon(ico) }}{{ label }}</a>
   {% endfor %}
 </nav>

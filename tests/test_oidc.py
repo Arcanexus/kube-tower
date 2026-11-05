@@ -10,7 +10,7 @@ import respx
 from fastapi.testclient import TestClient
 
 from kube_tower.auth import User
-from kube_tower.config import AuthSettings, OidcSettings, Settings, check_auth, load_settings
+from kube_tower.config import AuthSettings, OidcSettings, RoleSettings, Settings, check_auth, load_settings
 from kube_tower.main import create_app
 from kube_tower.oidc import OidcClient, OidcError, jwt_claims, pkce
 from test_web import FakeScanner
@@ -22,6 +22,11 @@ METADATA = {
     "token_endpoint": "https://idp.example.com/token/",
     "userinfo_endpoint": "https://idp.example.com/userinfo/",
 }
+
+
+def user(name: str, role: str, source: str = "local") -> User:
+    """A user with one built-in role and its permissions."""
+    return User(name, (role,), source, AuthSettings().permissions([role]))
 
 
 def _jwt(**claims) -> str:
@@ -93,7 +98,7 @@ async def test_login(idp):
     token = idp.post(METADATA["token_endpoint"]).respond(
         json={"id_token": _jwt(**_claims(preferred_username="alice", groups=["ops", "dev"])), "access_token": "at"}
     )
-    assert await oidc.user("code1", "ver1", "n1") == User("alice", "admin", "oidc")
+    assert await oidc.user("code1", "ver1", "n1") == user("alice", "admin", "oidc")
     sent = token.calls.last.request
     assert parse_qs(sent.content.decode()) == {
         "grant_type": ["authorization_code"],
@@ -110,11 +115,11 @@ async def test_roles_and_userinfo(idp, tmp_path):
     secret = tmp_path / "secret"
     secret.write_text("cs2\n")
     oidc = OidcClient(_settings(readonly_groups=["dev"], default_role="", client_secret_file=str(secret)))
-    assert (oidc.role(["ops"]), oidc.role(["dev"]), oidc.role(["x"])) == ("admin", "readonly", "")
+    assert (oidc.roles(["ops"]), oidc.roles(["dev"]), oidc.roles(["x"])) == (["admin"], ["readonly"], [])
     # No groups in the ID token: read from userinfo, the email names the user without preferred_username
     idp.post(METADATA["token_endpoint"]).respond(json={"id_token": _jwt(**_claims(email="bob@x")), "access_token": "at"})
     info = idp.get(METADATA["userinfo_endpoint"]).respond(json={"sub": "u1", "groups": "dev"})
-    assert await oidc.user("c", "v", "n1") == User("bob@x", "readonly", "oidc")
+    assert await oidc.user("c", "v", "n1") == user("bob@x", "readonly", "oidc")
     assert info.calls.last.request.headers["authorization"] == "Bearer at"
     assert idp.calls[1].request.headers["authorization"] == "Basic " + base64.b64encode(b"kube-tower:cs2").decode()
     # In none of the groups: refused
@@ -235,13 +240,45 @@ def test_sso_errors(idp, tmp_path):
     assert c.get("/auth/login").status_code == 503
 
 
+async def test_role_groups(idp):
+    settings = _settings(role_groups={"team": ["dev", "qa"], "readonly": ["guests"]}, default_role="")
+    settings.roles = {"team": RoleSettings(["rescan"])}
+    check_auth(settings)
+    oidc = OidcClient(settings)
+    assert oidc.roles(["dev", "guests"]) == ["readonly", "team"] and oidc.roles(["ops", "qa"]) == ["admin", "team"]
+    assert oidc.roles(["x"]) == []
+    idp.post(METADATA["token_endpoint"]).respond(json={"id_token": _jwt(**_claims(groups=["qa", "guests"]))})
+    alice = await oidc.user("c", "v", "n1")
+    assert alice.roles == ("readonly", "team") and alice.permissions == {"logs", "settings", "rescan"}
+    with pytest.raises(ValueError, match="roleGroups 'ops': expected one of readonly, admin$"):
+        check_auth(_settings(role_groups={"ops": ["x"]}))
+    with pytest.raises(ValueError, match="defaultRole 'ops': expected empty or one of readonly, admin"):
+        check_auth(_settings(default_role="ops"))
+
+
+def test_sso_session_roles(idp):
+    from kube_tower.auth import Authenticator
+
+    settings = _settings()
+    settings.roles = {"team": RoleSettings(["rescan"])}
+    auth = Authenticator(settings)
+    auth.fallback = {"session.key": "k"}
+    cookie = auth.session(auth.user("alice", ["team", "readonly"], "oidc"))
+    assert auth.from_session(cookie).permissions == {"logs", "settings", "rescan"}
+    old = auth.sign({"u": "bob", "e": time.time() + 60, "s": "oidc", "r": "admin"})  # session of kube-tower 1.1
+    assert auth.from_session(old) == user("bob", "admin", "oidc")
+    del settings.roles["team"]  # a role removed from the settings is dropped from the open sessions
+    assert auth.from_session(cookie) == user("alice", "readonly", "oidc")
+    assert auth.from_session(auth.session(auth.user("carol", ["team"], "oidc"))) is None
+
+
 def test_sso_session_needs_sso(tmp_path, idp):
     from kube_tower.auth import Authenticator
 
     auth = Authenticator(_settings())
     auth.fallback = {"session.key": "k"}
-    cookie = auth.session(User("alice", "readonly", "oidc"))
-    assert auth.from_session(cookie) == User("alice", "readonly", "oidc")
+    cookie = auth.session(user("alice", "readonly", "oidc"))
+    assert auth.from_session(cookie) == user("alice", "readonly", "oidc")
     auth.settings.oidc.issuer = ""
     assert auth.from_session(cookie) is None
 

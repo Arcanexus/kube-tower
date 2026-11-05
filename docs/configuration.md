@@ -91,8 +91,9 @@ redis:                         # Redis / Valkey: required when the roles are apa
 auth:                          # login on the UI and the API, see authentication.md
   enabled: false               # the chart sets true (auth.enabled, on by default)
   admin: true                  # built-in admin account, password in the auth Secret (admin.password)
-  users: []                    # local accounts: name, role (readonly | admin), passwordFile or passwordEnv
-  anonymousRole: ""            # "" (login required) | readonly
+  users: []                    # local accounts: name, role (readonly | admin | a role of roles), passwordFile or passwordEnv
+  roles: {}                    # other roles and their permissions, see authentication.md#roles
+  anonymousRole: ""            # "" (login required) | readonly | a role of roles
   sessionDuration: 24h
   secretName: kube-tower-auth  # admin.password and session.key, created with random values when missing
   secretDir: /etc/kube-tower/auth
@@ -102,6 +103,7 @@ auth:                          # login on the UI and the API, see authentication
     issuer: ""                 # empty: no SSO
     clientId: ""               # empty: from $KUBE_TOWER_OIDC_CLIENT_ID (the chart reads it from auth.oidc.existingSecret)
     adminGroups: []
+    roleGroups: {}             # {role: [groups]}
     defaultRole: readonly
   dexUrl: ""                   # Dex served on <url>api/dex (Helm chart: dex.enabled)
 ```

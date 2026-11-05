@@ -275,11 +275,18 @@ auth:
   admin: true
   # Local accounts, their password in a Secret:
   #   - name: alice
-  #     role: readonly          # readonly (sees everything) or admin (also runs scans, rescans, tests...)
+  #     role: readonly          # readonly (sees everything), admin (may do everything) or a role of auth.roles
   #     existingSecret: kube-tower-alice
   #     passwordKey: password
   users: []
-  # Role of the visitors who are not logged in: "" (they must log in) or readonly.
+  # Roles besides readonly and admin: what their users may do besides looking at the pages, among scan,
+  # rescan, retry, trivy, connectivity, logs, settings, or * (everything). See docs/authentication.md.
+  #   team-prod:
+  #     permissions: [rescan, connectivity]
+  #   security:
+  #     permissions: [rescan, trivy, logs]
+  roles: {}
+  # Role of the visitors who are not logged in: "" (they must log in), readonly or a role of auth.roles.
   anonymousRole: ""
   sessionDuration: 24h
   # Secret with the keys admin.password and session.key (signs the sessions). Empty: <release>-auth, created
@@ -303,10 +310,11 @@ auth:
     scopes: [openid, profile, email, groups]
     usernameClaim: preferred_username
     groupsClaim: groups
-    # Role from the groups: admin when in adminGroups, else readonly when in readonlyGroups, else defaultRole
-    # ("" refuses the users in none of these groups)
+    # Roles from the groups: admin for adminGroups, readonly for readonlyGroups, the roles of roleGroups
+    # (a user in several gets the permissions of all), else defaultRole ("" refuses everyone else)
     adminGroups: []
     readonlyGroups: []
+    roleGroups: {}              # e.g. {team-prod: [k8s-prod-team], security: [secops]}
     defaultRole: readonly
     # PEM file of the CA of a provider with a private CA (mount it with extraVolumes / extraVolumeMounts)
     caFile: ""
@@ -314,7 +322,7 @@ auth:
 # Dex served by kube-tower on <auth.url>api/dex, like ArgoCD (needs auth.enabled and auth.url): users log in
 # with its connectors (GitHub, GitLab, LDAP, SAML, Google, Microsoft, OIDC...). kube-tower is its OIDC client;
 # the client secret is generated in the auth Secret (key dex.clientSecret). The roles come from the groups,
-# set with auth.oidc.adminGroups, readonlyGroups and defaultRole.
+# set with auth.oidc.adminGroups, readonlyGroups, roleGroups and defaultRole.
 dex:
   enabled: false
   name: Dex                      # login button: "Log in with <name>"

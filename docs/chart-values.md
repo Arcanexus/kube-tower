@@ -31,10 +31,11 @@ The full list with comments is the chart's
 | `git.token` | `""` | The same token inline, the chart creates the Secret |
 | `auth.enabled` | `true` | Login on the UI and the API, see [authentication](authentication.md) |
 | `auth.admin` / `.users` / `.anonymousRole` | `true` / `[]` / `""` | Built-in `admin` account, local accounts (`name`, `role`, `existingSecret`, `passwordKey`), role of the visitors not logged in |
+| `auth.roles` | `{}` | Roles besides `readonly` and `admin`: `{name: {permissions: [...]}}`, see [roles](authentication.md#roles) |
 | `auth.existingSecret` | `""` | Secret with `admin.password` and `session.key`; empty: `<release>-auth`, created by kube-tower when missing |
 | `auth.url` | `""` | URL users open kube-tower with, required by the SSO |
 | `auth.oidc.issuer` / `.existingSecret` / `.clientIdKey` / `.clientSecretKey` / `.clientId` | `""` / `""` / `clientId` / `clientSecret` / `""` | Single sign-on with an OIDC provider, see [authentication](authentication.md#single-sign-on-oidc) |
-| `auth.oidc.adminGroups` / `.readonlyGroups` / `.defaultRole` | `[]` / `[]` / `readonly` | Role from the groups of the user |
+| `auth.oidc.adminGroups` / `.readonlyGroups` / `.roleGroups` / `.defaultRole` | `[]` / `[]` / `{}` / `readonly` | Roles from the groups of the user |
 | `auth.oidc.name` / `.scopes` / `.usernameClaim` / `.groupsClaim` / `.caFile` | `SSO` / `openid profile email groups` / `preferred_username` / `groups` / `""` | Login button, claims, private CA |
 | `dex.enabled` / `.name` / `.connectors` / `.env` / `.envFrom` | `false` / `Dex` / `[]` / `[]` / `[]` | Dex served by kube-tower on `<auth.url>api/dex`, like ArgoCD, see [authentication](authentication.md#dex-of-the-chart) |
 | `dex.image` / `.resources` / `.nodeSelector` / `.tolerations` / `.affinity` | `ghcr.io/dexidp/dex:v2.41.1` / 10m CPU, 32Mi | Dex pod |

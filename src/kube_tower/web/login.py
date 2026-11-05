@@ -1,8 +1,9 @@
 """Login page, sessions and roles on every request (auth.enabled).
 
-Without a session a page leads to the login page, the API answers 401. A `readonly` user gets 403 on
-every request that changes something (POST, DELETE): scans, rescans, retries, connectivity tests, Trivy
-actions. The requests of the users that change something are logged with their name.
+Without a session a page leads to the login page, the API answers 401. Each request that changes something
+(POST, DELETE: scans, rescans, retries, connectivity tests, Trivy actions) needs a permission of the user's
+roles, and so do the Logs and Settings tabs of the Administration: without it the answer is 403. The requests
+of the users that change something, and the refusals, are logged with their name.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from kube_tower.auth import COOKIE, Authenticator, User
+from kube_tower.config import PERMISSIONS
 from kube_tower.oidc import OidcClient, OidcError, pkce
 
 log = logging.getLogger(__name__)
@@ -33,8 +35,52 @@ FAILED_LOGIN_DELAY = 1.0  # seconds: slows down password guessing
 current: ContextVar[tuple[bool, User | None]] = ContextVar("kube_tower_user", default=(False, None))
 
 
+# Permission needed by each request that changes something (the API and the actions of the Administration).
+# Any other one needs every permission (admin).
+ACTION_PERMISSIONS = {
+    "/api/refresh": ("scan",),
+    "/administration/scan": ("scan",),
+    "/api/rescan/image": ("rescan",),
+    "/api/rescan/chart": ("rescan",),
+    "/api/administration/retry-failed": ("retry",),
+    "/administration/retry-failed": ("retry",),
+    "/api/administration/trivy-db": ("trivy",),
+    "/administration/trivy-db": ("trivy",),
+    "/administration/trivy-status": ("trivy",),
+    "/api/administration/trivy-cache": ("trivy",),
+    "/administration/trivy-cache": ("trivy",),
+    "/administration/trivy-cache-scan": ("trivy", "scan"),
+    "/api/administration/connectivity": ("connectivity",),
+    "/administration/connectivity": ("connectivity",),
+}
+
+
+def required_permissions(method: str, path: str, query: dict) -> tuple[str, ...]:
+    """What a request needs besides a login: nothing for the pages, a permission for the actions, the Logs and
+    Settings tabs."""
+    if method not in SAFE_METHODS:
+        return () if path == "/logout" else ACTION_PERMISSIONS.get(path, PERMISSIONS)
+    if path == "/logs/tail" or (path == "/administration" and query.get("tab") == "logs"):
+        return ("logs",)
+    if path == "/administration" and query.get("tab") == "settings":
+        return ("settings",)
+    return ()
+
+
+def can(permission: str) -> bool:
+    """The user of the request may do this (config.PERMISSIONS): always when the login is off."""
+    enabled, user = current.get()
+    return not enabled or (user is not None and user.can(permission))
+
+
+def current_permissions() -> frozenset[str]:
+    """What the user of the request may do: everything when the login is off."""
+    enabled, user = current.get()
+    return frozenset(PERMISSIONS) if not enabled else user.permissions if user else frozenset()
+
+
 def can_act() -> bool:
-    """The request may change something: login off, or an admin."""
+    """The request may change everything: login off, or every permission (admin)."""
     enabled, user = current.get()
     return not enabled or (user is not None and user.admin)
 
@@ -94,10 +140,18 @@ def add_login(app: FastAPI, auth: Authenticator, oidc: OidcClient | None = None)
             return await call_next(request)
         if user is None:
             return unauthenticated(request)
+        needed = required_permissions(request.method, path, request.query_params)
+        if missing := [p for p in needed if not user.can(p)]:
+            log.warning(
+                "%s (%s) not allowed to %s %s: permission %s needed",
+                user.name,
+                user.role,
+                request.method,
+                path,
+                ", ".join(missing),
+            )
+            return JSONResponse({"detail": f"permission {', '.join(missing)} needed"}, status_code=403)
         if request.method not in SAFE_METHODS and path != "/logout":
-            if not user.admin:
-                log.warning("%s (%s) not allowed to %s %s: admin role needed", user.name, user.role, request.method, path)
-                return JSONResponse({"detail": "the admin role is needed"}, status_code=403)
             log.info("%s (%s): %s %s", user.name, user.role, request.method, path)
         return await call_next(request)
 

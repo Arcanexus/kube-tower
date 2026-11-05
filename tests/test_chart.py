@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from kube_tower.config import load_settings
+from kube_tower.config import RoleSettings, load_settings
 
 HELM = os.environ.get("HELM_BIN") or shutil.which("helm")
 CHART = Path(__file__).parent.parent / "charts" / "kube-tower"
@@ -619,15 +619,20 @@ def test_auth(tmp_path):
     users = [
         {"name": "alice", "existingSecret": "alice-pw"},
         {"name": "ops", "role": "admin", "existingSecret": "ops", "passwordKey": "pw"},
+        {"name": "bob", "role": "team-prod", "existingSecret": "bob"},
     ]
-    docs = render(tmp_path, {"auth": {"enabled": True, "users": users, "anonymousRole": "readonly", "sessionDuration": "8h"}})
+    roles = {"team-prod": {"permissions": ["rescan", "connectivity"]}}
+    values = {"enabled": True, "users": users, "roles": roles, "anonymousRole": "readonly", "sessionDuration": "8h"}
+    docs = render(tmp_path, {"auth": values})
     settings = app_settings(tmp_path, docs).auth
+    assert settings.roles == {"team-prod": RoleSettings(["rescan", "connectivity"])}
     assert settings.enabled and settings.admin and settings.anonymous_role == "readonly" and settings.metrics_public
     assert settings.session_duration == 8 * 3600
     assert (settings.secret_name, settings.secret_dir) == ("kt-kube-tower-auth", "/etc/kube-tower/auth")
     assert [(u.name, u.role, u.password_file) for u in settings.users] == [
         ("alice", "readonly", "/etc/kube-tower/users/0/password"),
         ("ops", "admin", "/etc/kube-tower/users/1/pw"),
+        ("bob", "team-prod", "/etc/kube-tower/users/2/password"),
     ]
     # The auth Secret is created by kube-tower (kept on upgrades and ArgoCD syncs), mounted once it exists
     assert not [k for k in docs if k[0] == "Secret"]
@@ -643,7 +648,9 @@ def test_auth(tmp_path):
     assert docs[("RoleBinding", "kt-kube-tower-auth")]["roleRef"]["name"] == "kt-kube-tower-auth"
 
     # A Secret of your own (ExternalSecret...): read only, never created
-    docs = render(tmp_path, {"auth": {"enabled": True, "existingSecret": "my-auth", "admin": False, "users": users}})
+    docs = render(
+        tmp_path, {"auth": {"enabled": True, "existingSecret": "my-auth", "admin": False, "users": users, "roles": roles}}
+    )
     assert app_settings(tmp_path, docs).auth.secret_name == "my-auth"
     assert docs[("Role", "kt-kube-tower-auth")]["rules"] == [
         {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["my-auth"], "verbs": ["get"]}
@@ -668,8 +675,12 @@ def test_auth_oidc(tmp_path, monkeypatch):
         "issuer": "https://auth.example.com/application/o/kube-tower/",
         "existingSecret": "kt-oidc",
         "adminGroups": ["ops"],
+        "roleGroups": {"team-prod": ["k8s-prod"]},
     }
-    docs = render(tmp_path, {"auth": {"enabled": True, "admin": False, "url": "https://kt.example.com/", "oidc": oidc}})
+    roles = {"team-prod": {"permissions": ["rescan"]}}
+    docs = render(
+        tmp_path, {"auth": {"enabled": True, "admin": False, "url": "https://kt.example.com/", "roles": roles, "oidc": oidc}}
+    )
     # The client id and the client secret both come from the Secret
     variables = env(docs[("Deployment", "kt-kube-tower")]["spec"])
     assert variables["KUBE_TOWER_OIDC_CLIENT_ID"] == {"secretKeyRef": {"name": "kt-oidc", "key": "clientId"}}
@@ -679,6 +690,7 @@ def test_auth_oidc(tmp_path, monkeypatch):
     monkeypatch.setenv("KUBE_TOWER_OIDC_CLIENT_ID", "kube-tower")  # as the pod gets it from the Secret
     auth = app_settings(tmp_path, docs).auth
     assert auth.url == "https://kt.example.com/" and not auth.admin and auth.oidc.client_id == "kube-tower"
+    assert auth.oidc.role_groups == {"team-prod": ["k8s-prod"]} and auth.permissions(["team-prod"]) == {"rescan"}
     assert (auth.oidc.name, auth.oidc.issuer, auth.oidc.client_id_env) == (
         "Authentik",
         oidc["issuer"],

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from kubernetes import client
 
-from kube_tower.config import USER_ROLES, AuthSettings, LocalUser
+from kube_tower.config import PERMISSIONS, AuthSettings, LocalUser
 
 log = logging.getLogger(__name__)
 
@@ -34,12 +34,22 @@ PASSWORD_KEY, SESSION_KEY, DEX_KEY = "admin.password", "session.key", "dex.clien
 @dataclass(frozen=True)
 class User:
     name: str
-    role: str  # readonly | admin
+    roles: tuple[str, ...]  # readonly, admin or roles of auth.roles
     source: str = "local"  # local | oidc | anonymous
+    permissions: frozenset[str] = frozenset()  # what the roles allow (config.PERMISSIONS)
+
+    @property
+    def role(self) -> str:
+        """The roles, as shown in the UI and the logs."""
+        return ", ".join(self.roles)
+
+    def can(self, permission: str) -> bool:
+        return permission in self.permissions
 
     @property
     def admin(self) -> bool:
-        return self.role == "admin"
+        """Every permission: the admin role or a role with `*`."""
+        return self.permissions >= set(PERMISSIONS)
 
 
 def _b64(data: bytes) -> str:
@@ -115,6 +125,10 @@ class Authenticator:
     def _key(self) -> bytes:
         return self._secret(SESSION_KEY).encode()
 
+    def user(self, name: str, roles: list[str] | tuple[str, ...], source: str = "local") -> User:
+        """A user with these roles and what they allow."""
+        return User(name, tuple(roles), source, self.settings.permissions(roles))
+
     def ready(self) -> bool:
         """The signing key is known: sessions can be opened."""
         return bool(self._key())
@@ -144,7 +158,7 @@ class Authenticator:
         expected = self._password(user) if user else ""
         # compare_digest on every attempt: the time taken does not tell whether the account exists
         valid = hmac.compare_digest(password.encode(), (expected or secrets.token_hex(16)).encode())
-        return User(user.name, user.role) if user and expected and valid else None
+        return self.user(user.name, [user.role]) if user and expected and valid else None
 
     def sign(self, payload: dict) -> str:
         """`payload` as a cookie value signed with the session key."""
@@ -171,8 +185,8 @@ class Authenticator:
     def session(self, user: User, now: float | None = None) -> str:
         """The cookie value of a new session."""
         payload = {"u": user.name, "e": int((now or time.time()) + self.settings.session_duration)}
-        if user.source == "oidc":  # the role from the groups at login: a change applies at the next login
-            payload |= {"s": "oidc", "r": user.role}
+        if user.source == "oidc":  # the roles from the groups at login: a change applies at the next login
+            payload |= {"s": "oidc", "r": list(user.roles)}
         else:
             local = self._local(user.name)
             payload["f"] = self._fingerprint(self._password(local)) if local else ""
@@ -184,15 +198,18 @@ class Authenticator:
         if payload is None:
             return None
         if payload.get("s") == "oidc":
-            role = payload.get("r")
-            return User(payload.get("u", ""), role, "oidc") if self.settings.oidc.issuer and role in USER_ROLES else None
+            roles = payload.get("r")
+            roles = [roles] if isinstance(roles, str) else roles if isinstance(roles, list) else []  # str: 1.1 sessions
+            # A role removed from the settings since the login is dropped; none left: the user logs in again.
+            roles = [r for r in roles if r in self.settings.role_names]
+            return self.user(payload.get("u", ""), roles, "oidc") if self.settings.oidc.issuer and roles else None
         local = self._local(payload.get("u", ""))
         if local is None:
             return None
         password = self._password(local)
         if not password or not hmac.compare_digest(payload.get("f", ""), self._fingerprint(password)):
             return None
-        return User(local.name, local.role)  # the role of now: a change applies to the open sessions
+        return self.user(local.name, [local.role])  # the role of now: a change applies to the open sessions
 
     def from_basic(self, header: str) -> User | None:
         """The user of an `Authorization: Basic` header (scripts calling the API)."""
@@ -212,4 +229,5 @@ class Authenticator:
 
     @property
     def anonymous(self) -> User | None:
-        return User("anonymous", self.settings.anonymous_role, "anonymous") if self.settings.anonymous_role else None
+        role = self.settings.anonymous_role
+        return self.user("anonymous", [role], "anonymous") if role else None

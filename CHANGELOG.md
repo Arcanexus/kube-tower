@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Custom roles** (`auth.roles`, see [roles](docs/authentication.md#roles)): besides `readonly` and
+  `admin`, roles with the permissions you choose among `scan`, `rescan`, `retry`, `trivy`, `connectivity`,
+  `logs` and `settings` (`*`: all), given to local accounts or to OIDC groups (`auth.oidc.roleGroups`). A
+  user in the groups of several roles gets the permissions of all of them. Each action needs its
+  permission instead of the admin role: without it the button is greyed out with the reason, the API
+  answers 403 naming the permission, and the refusal is logged. The Logs and Settings tabs of the
+  Administration are hidden for the roles without `logs` or `settings`.
+
 - **[Prerequisites](docs/prerequisites.md)** page in the documentation: Kubernetes and tool versions,
   optional components, network access, and hardware guidelines: defaults of every pod of the chart,
   CPU, memory and disk to plan by size of inventory (lab, medium, large), and what grows with what

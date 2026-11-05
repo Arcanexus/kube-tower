@@ -1,14 +1,18 @@
 {% from "_macros.html" import icon %}
+{# Permission each action needs (see web/login.py ACTION_PERMISSIONS). #}
+{% set needs = {"scan": ["scan"], "retry-failed": ["retry"], "trivy-db": ["trivy"], "trivy-status": ["trivy"], "trivy-cache": ["trivy"],
+                "trivy-cache-scan": ["trivy", "scan"], "connectivity": ["connectivity"]} %}
 {% macro action(name, label, ico="refresh", disabled=False, why="", confirm="", cls="outline") -%}
+{% set missing = needs.get(name, ["*"]) | reject("in", current_permissions()) | list %}
 <button type="button" class="{{ cls }} small" hx-post="administration/{{ name }}" hx-target="#administration" hx-swap="outerHTML"
         {% if confirm %}hx-confirm="{{ confirm }}"{% endif %}
-        {% if not can_act() %}disabled title="The admin role is needed"{% elif disabled %}disabled title="{{ why }}"{% endif %}>{{ icon(ico) }}{{ label }}</button>
+        {% if missing %}disabled title="Your role does not allow it (permission {{ missing | join(', ') }})"{% elif disabled %}disabled title="{{ why }}"{% endif %}>{{ icon(ico) }}{{ label }}</button>
 {%- endmacro %}
 {% macro date(value) -%}{{ value.strftime("%Y-%m-%d %H:%M UTC") if value else "" }}{%- endmacro %}
 {% set locked = checking_versions or backend.busy %}
 <div id="administration" class="administration"
      {% if busy %}hx-get="administration?polling=1" hx-trigger="every 3s [document.visibilityState=='visible']" hx-target="this" hx-swap="outerHTML"{% endif %}>
-  {% if not can_act() %}<p class="notice">{{ icon("lock") }}Read-only: the actions of this page need the admin role.</p>{% endif %}
+  {% if not can_act() %}<p class="notice">{{ icon("lock") }}{% if current_permissions() | select("in", ["scan", "rescan", "retry", "trivy", "connectivity"]) | list %}Your role allows only some of the actions of this page.{% else %}Read-only: your role does not allow the actions of this page.{% endif %}</p>{% endif %}
   {% if notice %}<p class="notice notice-ok">{{ icon("ok") }}{{ notice }}</p>{% endif %}
   {% if error %}<p class="notice notice-error">{{ icon("error") }}{{ error }}</p>{% endif %}
 
