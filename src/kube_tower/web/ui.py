@@ -20,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.gzip import GZipMiddleware
 
 from kube_tower import __version__
-from kube_tower.clusterview import cluster_view, cluster_views
+from kube_tower.clusterview import cluster_view, cluster_views, running_images
 from kube_tower.config import DEFAULT_CONFIG_PATH, ROLES, Settings
 from kube_tower.models import ChartDependency, ImageRef, ImageReport, SecurityKind, SecurityReport, Severity, Status, Usage
 from kube_tower.processes import roles_status
@@ -739,7 +739,7 @@ def mount(app: FastAPI) -> None:
         cluster, _ = global_filters(request)
         snapshot = snapshot_of(request)
         statuses = [c for c in snapshot.clusters if not cluster or c.name == cluster]
-        views = cluster_views(statuses, snapshot.nodes)
+        views = cluster_views(statuses, snapshot.nodes, snapshot.images)
         return render(request, "clusters", tab="clusters", views=views, nodes=sum(len(v.nodes) for v in views))
 
     @app.get("/clusters/node", response_class=HTMLResponse, include_in_schema=False)
@@ -749,8 +749,17 @@ def mount(app: FastAPI) -> None:
         node = next((n for n in snapshot.nodes if n.cluster == cluster and n.name == name), None)
         if status is None or node is None:
             return Response(status_code=404)
-        view = cluster_view(status, [n for n in snapshot.nodes if n.cluster == cluster])
-        return render(request, "_node_detail", n=node, view=view, findings=view.node_findings(name))
+        view = cluster_view(status, [n for n in snapshot.nodes if n.cluster == cluster], snapshot.images)
+        images = sorted(running_images(snapshot.images, cluster).get(name, []), key=vulnerability_score, reverse=True)
+        return render(
+            request,
+            "_node_detail",
+            n=node,
+            view=view,
+            findings=view.node_findings(name),
+            node_images=view.node_images[name],
+            images=images,
+        )
 
     @app.get("/about", response_class=HTMLResponse, include_in_schema=False)
     async def about(request: Request):

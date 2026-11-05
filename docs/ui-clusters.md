@@ -1,7 +1,7 @@
 # Clusters page
 
-The nodes of every cluster, grouped by role and node group, with their versions and what differs
-between them. How to connect a cluster is in [clusters](clusters.md); their registration and
+The nodes of every cluster, grouped by role and node group, with their Kubernetes versions and the
+vulnerabilities of what they run. How to connect a cluster is in [clusters](clusters.md); their registration and
 connectivity are in the Clusters tab of the [Administration](ui-administration.md#clusters). How
 detail panels work in general is in [usage](usage.md).
 
@@ -9,23 +9,37 @@ detail panels work in general is in [usage](usage.md).
 
 ## One card per cluster
 
-Each card reads from top to bottom:
+The card header gives the state of the cluster: *healthy* (green), *to check* (orange), *problem* (red)
+or *unreachable* with the error of the last scan. Then, side by side:
 
-1. **Its state**: a badge, *healthy* (green), *to check* (orange), *problem* (red) or *unreachable* with
-   the error of the last scan, and the Kubernetes version of the API server.
-2. **What to look at**, in one line per kind of problem with the number of nodes: *1 node behind the API
-   server*, *1 node cordoned*, *1 node not ready*… When there is nothing: *All 11 nodes ready, on the
-   version of the API server*.
-3. **The kubelet versions**: a bar split by version, as wide as the share of nodes running it, green
-   when it is the version of the API server, orange when behind, red when unsupported.
-4. **The nodes**, grouped by role (Control plane, Workers, `ingress`…) and node group. Each node is a
-   chip with a coloured dot (its worst finding); its version only shows when it differs from the most
-   common one. Hover a chip to read its findings, click it for its details.
-5. **Details** (folded): the container runtimes, OS images and kernels of the nodes, and every finding
-   per node.
+| Block | Shows |
+| --- | --- |
+| **Ring** | The nodes split by kubelet version: green on the version of the API server, orange behind it, red unsupported. The number of nodes in the middle |
+| **Versions** | The Kubernetes version of the API server, and each kubelet version with its number of nodes |
+| **Vulnerabilities** | The critical, high and medium CVEs of the images the pods of the cluster run, each CVE counted once, with links to these images and to the outdated ones |
 
-The **Cluster** filter of the top bar applies. *Running only* does not, because nodes are not images.
-A role [limited to some clusters](rbac.md#clusters-of-a-role) only sees those.
+Under them:
+
+- **Things to check** (open): kubelets behind or newer than the API server, nodes not ready, cordoned or
+  under pressure, kubelet versions mixed across the nodes.
+- **Differences between the nodes** (folded): OS images, container runtimes and kernels that are not
+  the same on every node.
+
+## One card per node
+
+The nodes are grouped by role (Control plane, Workers, `ingress`…), then by node group. Each card shows:
+
+- the **name**, with a warning or error icon when the node has a finding (hover the card to read them);
+- the **kubelet version**, orange when behind the API server, red when unsupported;
+- the **CVEs** of the images its pods run: critical, high and medium counts, *none*, *not scanned*, or
+  *no pod*;
+- the container runtime and the OS, and a bar of the pods it runs out of its maximum.
+
+Its left border takes the colour of its worst finding. Click it for its details.
+
+The **Cluster** filter of the top bar applies. *Running only* does not: the vulnerabilities are always
+those of the images that pods run. A role [limited to some clusters](rbac.md#clusters-of-a-role) only
+sees those.
 
 ## Roles and node groups
 
@@ -56,7 +70,8 @@ Distribution suffixes are ignored to compare versions: `v1.30.4-eks-a737599`, `v
 
 Click a node for its findings, role and node group, kubelet and kube-proxy versions (next to the API
 server's), container runtime, OS and kernel, CPU and memory capacity, pods running out of the maximum,
-instance type, zone and creation date.
+instance type, zone and creation date. Below: the images its pods run, most vulnerable first, with
+their status and CVEs; click one for its own details.
 
 ![A node](images/clusters-node.png)
 

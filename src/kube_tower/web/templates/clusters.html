@@ -2,77 +2,92 @@
 {% from "_macros.html" import icon, page_title %}
 {% set level_icons = {"ok": "ok", "info": "info", "warning": "warning", "error": "error"} %}
 {% set level_words = {"ok": "healthy", "info": "healthy", "warning": "to check", "error": "problem"} %}
-{% macro versions(values, label) -%}
-{% if values %}<tr><th scope="row">{{ label }}</th><td>
-  {%- for value, count in values %}<span class="nowrap"><code>{{ value }}</code>{% if values | length > 1 %} <small class="muted-text">× {{ count }}</small>{% endif %}</span>{{ " " if not loop.last }}{% endfor %}</td></tr>{% endif %}
+{% set shown = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM] %}
+{% macro cves(found, empty="no CVE") -%}
+{% set any = namespace(value=False) %}
+{%- for s in shown if found.vulnerabilities[s] %}{% set any.value = True %}<span class="sev sev-{{ s.value }}" title="{{ found.vulnerabilities[s] }} {{ s.value }} CVEs">{{ found.vulnerabilities[s] }} {{ s.value[0] | upper }}</span> {% endfor -%}
+{%- if not any.value %}{% if not found.images %}<small class="muted-text">no pod</small>{% elif found.unscanned == found.images %}<small class="muted-text">not scanned</small>{% else %}<small class="level-ok">{{ icon("ok") }}{{ empty }}</small>{% endif %}{% endif %}
 {%- endmacro %}
 
-{% block heading %}{{ page_title("clusters", "Clusters", "The nodes of each cluster and their Kubernetes versions.", "One card per cluster, following the Cluster filter of the top bar: what to look at, the kubelet versions of the nodes against the API server, and the nodes by role and node group. Green: nothing to do; orange: to check; red: a problem. Click a node for its details. Registration and connectivity of the clusters are in Administration > Clusters.") }}{% endblock %}
+{% block heading %}{{ page_title("clusters", "Clusters", "The nodes of each cluster: their Kubernetes versions and the vulnerabilities of what they run.", "One card per cluster, following the Cluster filter of the top bar. The ring splits the nodes by kubelet version: green on the version of the API server, orange behind it, red unsupported. The vulnerabilities are those of the images the pods run (each CVE counted once). Then one card per node, grouped by role and node group, coloured by its worst finding. Click a node for its details. Registration and connectivity of the clusters are in Administration > Clusters.") }}{% endblock %}
 {% block content %}
 {% if not snapshot.finished_at and not views %}<p class="notice">{{ icon("info") }}No scan yet.</p>{% endif %}
 {% for v in views %}
 {% set c = v.status %}
 {% set level = v.level if c.reachable else "error" %}
+{% set q = c.name | urlencode %}
 <article class="cluster-card level-border-{{ level }}">
   <header>
-    <span class="cluster-card-name">{{ c.name }}</span>
+    {{ icon("clusters") }}<span class="cluster-card-name">{{ c.name }}</span>
     <span class="badge level-{{ level }}">{{ icon(level_icons[level]) }}{{ level_words[level] if c.reachable else "unreachable" }}</span>
-    <small class="muted-text cluster-card-meta">{% if c.version %}Kubernetes <strong>{{ c.version }}</strong>{% endif %}{% if v.nodes %} · {{ v.nodes | length | plural("node") }}{% endif %}</small>
+    <small class="muted-text cluster-card-meta">{{ c.server }}</small>
   </header>
   {% if not c.reachable %}
-  <p class="cluster-summary-line level-error">{{ icon("error") }}{{ c.message or "unreachable" }}</p>
+  <p class="level-error"><small>{{ c.message or "unreachable" }}</small></p>
   {% elif not v.nodes %}
-  <p class="muted-text"><small>No node read yet: they are read at the next scan. Managed control planes (EKS, GKE, AKS) have none.</small></p>
+  <p><small>No node read in this cluster yet: they are read at the next scan. Managed control planes (EKS, GKE, AKS) have none.</small></p>
   {% else %}
-  {% set summary = v.summary() %}
-  {% if summary %}
-  <ul class="cluster-summary">
-    {% for lvl, text in summary %}<li class="level-{{ lvl }}">{{ icon(level_icons[lvl]) }}<span>{{ text }}</span></li>{% endfor %}
-  </ul>
-  {% else %}
-  <p class="cluster-summary-line level-ok">{{ icon("ok") }}All {{ v.nodes | length | plural("node") }} ready, on the version of the API server.</p>
-  {% endif %}
-  {% set segments = v.kubelet_segments() %}
-  <div class="version-bar" role="img" aria-label="Kubelet versions: {% for s in segments %}{{ s.version }} on {{ s.nodes | plural('node') }}{{ ', ' if not loop.last }}{% endfor %}">
-    {% for s in segments %}<span class="version-segment level-bg-{{ s.level }}" style="width: {{ s.percent }}%"></span>{% endfor %}
+  <div class="cluster-overview">
+    <svg class="donut" viewBox="0 0 42 42" role="img" aria-label="{{ v.nodes | length | plural('node') }}: {% for s, _ in v.donut() %}{{ s.version }} on {{ s.nodes }}{{ ', ' if not loop.last }}{% endfor %}">
+      <circle class="donut-ring" cx="21" cy="21" r="15.9155"></circle>
+      {% for s, start in v.donut() %}
+      <circle class="donut-segment stroke-{{ s.level }}" cx="21" cy="21" r="15.9155" stroke-dasharray="{{ s.percent }} {{ (100 - s.percent) | round(1) }}" stroke-dashoffset="{{ (25 - start) | round(1) }}"></circle>
+      {% endfor %}
+      <text x="21" y="21" class="donut-number">{{ v.nodes | length }}</text>
+      <text x="21" y="27" class="donut-label">node{{ "s" if v.nodes | length > 1 }}</text>
+    </svg>
+    <div class="cluster-fact">
+      <small class="counters-label">Versions</small>
+      <p>Kubernetes <strong>{{ c.version or "unknown" }}</strong></p>
+      <ul class="donut-legend">
+        {% for s in v.kubelet_segments() %}<li><i class="dot stroke-bg-{{ s.level }}"></i><code>{{ s.version }}</code> <small class="muted-text">{{ s.nodes | plural("node") }}</small></li>{% endfor %}
+      </ul>
+      {% if v.not_ready %}<p class="level-error"><small>{{ icon("error") }}{{ v.not_ready }} not ready</small></p>{% endif %}
+    </div>
+    <div class="cluster-fact">
+      <small class="counters-label">Vulnerabilities</small>
+      <p class="cluster-cves">{{ cves(v.images) }}</p>
+      <p><small class="muted-text">in the <a href="images?cluster={{ q }}&amp;running=1">{{ v.images.images | plural("image") }}</a> its pods run{% if v.images.outdated %}, <a href="images?cluster={{ q }}&amp;status=outdated&amp;running=1">{{ v.images.outdated }} outdated</a>{% endif %}</small></p>
+    </div>
   </div>
-  <p class="version-legend">
-    <small class="muted-text">Kubelet</small>
-    {% for s in segments %}<span><i class="dot level-bg-{{ s.level }}"></i><code>{{ s.version }}</code> <small class="muted-text">{{ s.nodes | plural("node") }}</small></span>{% endfor %}
-  </p>
-  {% set common = segments | sort(attribute="nodes", reverse=True) | first %}
-  <div class="node-groups">
-    {% for g in v.groups %}
-    <section class="node-group">
-      <h4>{{ g.label }} <small class="muted-text">{{ g.nodes | length }}</small></h4>
-      <div class="node-chips">
-        {% for n in g.nodes %}
-        {% set nl = v.node_levels[n.name] %}
-        {% set nl = "ok" if nl == "info" else nl %}
-        <a class="node-chip" href="#" hx-get="clusters/node?cluster={{ c.name | urlencode }}&amp;name={{ n.name | urlencode }}" hx-target="#detail"
-           title="{{ n.name }} · kubelet {{ n.kubelet_version or 'unknown' }}{% if nl != 'ok' %} · {{ v.node_findings(n.name) | rejectattr('level', 'equalto', 'info') | map(attribute='text') | join('; ') }}{% endif %}">
-          <i class="dot level-bg-{{ nl }}"></i><span class="node-chip-name">{{ n.name }}</span>
-          {%- if (n.kubelet_version or "unknown") != common.version %} <code class="level-{{ 'warning' if nl == 'ok' else nl }}">{{ n.kubelet_version or "unknown" }}</code>{% endif %}
-        </a>
-        {% endfor %}
-      </div>
-    </section>
-    {% endfor %}
-  </div>
-  <details class="cluster-details">
-    <summary>Details: runtimes, OS{% if v.details %} · {{ v.details | length | plural("difference") }}{% endif %}</summary>
-    <table class="cluster-details-table">
-      {{ versions(v.versions("container_runtime"), "Container runtime") }}
-      {{ versions(v.versions("os_image"), "OS") }}
-      {{ versions(v.versions("kernel_version"), "Kernel") }}
-    </table>
-    {% set listed = v.findings | rejectattr("level", "equalto", "info") | selectattr("node") | list %}
-    {% if listed %}
-    <ul class="cluster-findings-list">
-      {% for f in listed %}<li class="finding finding-{{ f.level }}">{{ icon(level_icons[f.level]) }}<span><strong>{{ f.node }}</strong>: {{ f.text }}</span></li>{% endfor %}
+  {% set listed = v.findings | rejectattr("level", "equalto", "info") | list %}
+  {% if listed %}
+  <details class="cluster-findings" open>
+    <summary>{{ listed | length | plural("thing") }} to check</summary>
+    <ul>
+      {% for f in listed %}<li class="finding finding-{{ f.level }}">{{ icon(level_icons[f.level]) }}<span>{% if f.node %}<strong>{{ f.node }}</strong>: {% endif %}{{ f.text }}</span></li>{% endfor %}
     </ul>
-    {% endif %}
   </details>
+  {% endif %}
+  {% if v.details %}
+  <details class="cluster-findings cluster-differences">
+    <summary>{{ v.details | length | plural("difference") }} between the nodes (OS, runtime, kernel)</summary>
+    <ul>
+      {% for f in v.details %}<li class="finding finding-info">{{ icon("info") }}<span>{{ f.text }}</span></li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% for g in v.groups %}
+  <section class="node-group">
+    <h4>{{ icon("server" if g.role == "control-plane" else "cpu", "muted") }}{{ g.label }} <small class="muted-text">{{ g.nodes | length | plural("node") }}</small></h4>
+    <div class="node-tiles">
+      {% for n in g.nodes %}
+      {% set nl = v.node_levels[n.name] %}
+      {% set nl = "ok" if nl == "info" else nl %}
+      {% set skew = v.kubelet_level(n.kubelet_version) %}
+      {% set found = v.node_images[n.name] %}
+      <a class="node-tile level-border-{{ nl }}" href="#" hx-get="clusters/node?cluster={{ q }}&amp;name={{ n.name | urlencode }}" hx-target="#detail"
+         title="{{ n.name }}{% if nl != 'ok' %}: {{ v.node_findings(n.name) | rejectattr('level', 'equalto', 'info') | map(attribute='text') | join('; ') }}{% endif %}">
+        <span class="node-tile-name">{% if nl != "ok" %}{{ icon(level_icons[nl], "level-" ~ nl) }}{% endif %}{{ n.name }}</span>
+        <span class="node-tile-row"><small class="muted-text">Kubelet</small><code class="version-{{ skew }}">{{ n.kubelet_version or "unknown" }}</code></span>
+        <span class="node-tile-row"><small class="muted-text">CVEs</small><span>{{ cves(found, "none") }}</span></span>
+        <small class="muted-text node-tile-os">{{ n.runtime_name }} {{ n.runtime_version }}{% if n.os_image %} · {{ n.os_image }}{% endif %}</small>
+        {% if n.max_pods %}<span class="pod-bar" title="{{ n.pods }} of {{ n.max_pods }} pods"><span style="width: {{ [n.pods * 100 // n.max_pods, 100] | min }}%"></span></span>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
   {% endif %}
 </article>
 {% endfor %}

@@ -204,3 +204,41 @@ async def test_worker_reads_the_nodes(monkeypatch):
     settings.images.enabled = False  # the nodes are still read, for the Clusters page
     result = await w.execute(CollectTask("prod"))
     assert [n.name for n in result.nodes] == ["alone"] and "e" in result.errors
+
+
+def test_images_on_the_nodes():
+    from kube_tower.clusterview import images_on, running_images
+    from kube_tower.models import ImageRef, ImageReport, Severity, Status, Usage, Vulnerability, VulnerabilityReport
+
+    def report(name, node, ids, status=Status.UP_TO_DATE, scanned=True):
+        vulns = [Vulnerability(i, Severity.CRITICAL if i.startswith("C") else Severity.HIGH, "p", "1") for i in ids]
+        return ImageReport(
+            ImageRef("docker.io", name, "1"),
+            [
+                Usage("prod", "Pod", "ns", name, "c", None, node),
+                Usage("prod", "Deployment", "ns", name, "c"),
+                Usage("lab", "Pod", "ns", "x", "c", None, "a"),
+            ],
+            status=status,
+            vulnerabilities=VulnerabilityReport("trivy", vulnerabilities=vulns) if scanned else None,
+        )
+
+    images = [
+        report("a", "a", ["C1", "H1"]),
+        report("b", "a", ["C1", "H2"], Status.OUTDATED),
+        report("c", "b", [], scanned=False),
+    ]
+    per_node = running_images(images, "prod")
+    assert {n: [r.image.repository for r in rs] for n, rs in per_node.items()} == {"a": ["a", "b"], "b": ["c"]}
+    on_a = images_on(per_node["a"])
+    assert (on_a.images, on_a.outdated, on_a.unscanned, on_a.level) == (2, 1, 0, "error")
+    assert on_a.vulnerabilities[Severity.CRITICAL] == 1 and on_a.vulnerabilities[Severity.HIGH] == 2  # C1 counted once
+    assert images_on(per_node["b"]).unscanned == 1 and images_on(per_node["b"]).level == "ok"
+    assert images_on([report("d", "a", ["H9"])]).level == "warning"
+    status = ClusterStatus("prod", "", "secret", True, "v1.30.4")
+    view = cluster_view(status, [NodeInfo("prod", "a", kubelet_version="v1.30.4"), NodeInfo("prod", "z")], images)
+    assert view.images.images == 3 and view.node_images["a"].images == 2 and view.node_images["z"].images == 0
+    assert view.kubelet_level("") == "info" and [(s.version, start) for s, start in view.donut()] == [
+        ("v1.30.4", 0.0),
+        ("unknown", 50.0),
+    ]

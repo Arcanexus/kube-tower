@@ -1072,21 +1072,28 @@ def test_clusters_page():
         NodeInfo("c1", "w-1", pool="general", kubelet_version="v1.30.0", max_pods=110, pods=30, memory="15.5 GiB", cpu="4"),
         NodeInfo("c1", "w-2", pool="general", kubelet_version="v1.27.3", ready=False, unschedulable=True),
     ]
+    nginx = scanner.snapshot.images[0]
+    nginx.usages.append(Usage("c1", "Pod", "default", "web-x", "nginx", "Deployment/web", "w-1"))
     page = " ".join(client.get("/clusters").text.split())
     assert 'aria-current="page"' in page and '<span class="cluster-card-name">c1</span>' in page
-    assert "<h4>Control plane <small" in page and "<h4>Workers · general <small" in page
-    assert "Kubernetes <strong>v1.30.0</strong> · 3 nodes" in page and "problem" in page
-    assert "1 node not ready" in page and "1 node behind the API server" in page and "1 node cordoned" in page
-    assert '<span class="version-segment level-bg-ok" style="width: 66.7%"></span>' in page
-    assert '<span class="version-segment level-bg-warning" style="width: 33.3%"></span>' in page
-    # the version of a node shows only when it is not the most common one
-    assert '<span class="node-chip-name">w-2</span> <code class="level-error">v1.27.3</code>' in page
-    assert '<span class="node-chip-name">w-1</span> </a>' in page
-    assert "<code>containerd://1.7.13</code>" in page  # details
+    assert "Control plane <small" in page and "Workers · general <small" in page
+    assert "Kubernetes <strong>v1.30.0</strong>" in page and ">3</text>" in page and "problem" in page
+    # the ring of the kubelet versions: 2 nodes on the version of the API server, 1 behind
+    assert (
+        'class="donut-segment stroke-ok" cx="21" cy="21" r="15.9155" stroke-dasharray="66.7 33.3" stroke-dashoffset="25.0"'
+        in page
+    )
+    assert 'stroke-dasharray="33.3 66.7" stroke-dashoffset="-41.7"' in page
+    assert "4 things to check" in page and "kubelet v1.27.3 is 3 minor versions behind the API server v1.30.0" in page
+    assert '<code class="version-warning">v1.27.3</code>' in page
+    # vulnerabilities of the images run by the pods: nginx on w-1
+    assert 'title="1 critical CVEs">1 C</span>' in page and 'href="images?cluster=c1&amp;running=1">1 image</a>' in page
+    assert "no pod" in page
     assert "timeout" in page and "unreachable" in page  # c2
     page = client.get("/clusters?cluster=c2").text
     assert 'cluster-card-name">c1' not in page and "unreachable" in page
     detail = " ".join(client.get("/clusters/node?cluster=c1&name=w-1").text.split())
+    assert "Images run on this node (1)" in detail and "library/nginx:1.25" in detail
     assert "Node · c1" in detail and "4 CPU · 15.5 GiB" in detail and "30 / 110" in detail and "general" in detail
     assert "not ready" in client.get("/clusters/node?cluster=c1&name=w-2").text
     assert client.get("/clusters/node?cluster=c1&name=nope").status_code == 404
@@ -1096,7 +1103,7 @@ def test_clusters_page():
     assert 'kube_tower_nodes{cluster="c1",kubelet_version="v1.27.3",pool="general",ready="false",role="worker"} 1.0' in metrics
     scanner.snapshot.nodes = scanner.snapshot.nodes[:2]
     page = " ".join(client.get("/clusters").text.split())
-    assert "All 2 nodes ready, on the version of the API server." in page and "healthy" in page
+    assert "healthy" in page and "to check</summary>" not in page
 
 
 def test_accessibility_helpers():

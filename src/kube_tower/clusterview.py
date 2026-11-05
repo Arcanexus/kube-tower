@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from kube_tower.models import ClusterStatus, NodeInfo
+from kube_tower.models import ClusterStatus, ImageReport, NodeInfo, Severity, Status
 
 MAX_KUBELET_SKEW = 3  # minor versions a kubelet may be behind the API server
 LEVELS = ("ok", "info", "warning", "error")
@@ -108,6 +108,45 @@ class VersionSegment:
     percent: float
 
 
+@dataclass
+class ImagesOn:
+    """The images that pods run on a node (or in a cluster): how many are outdated, and their vulnerabilities
+    by severity, each CVE counted once even when several images have it."""
+
+    images: int = 0
+    outdated: int = 0
+    unscanned: int = 0  # no vulnerability report (not scanned yet, or the scan failed)
+    vulnerabilities: dict[Severity, int] = field(default_factory=lambda: dict.fromkeys(Severity, 0))
+
+    @property
+    def level(self) -> str:
+        if self.vulnerabilities[Severity.CRITICAL]:
+            return "error"
+        return "warning" if self.vulnerabilities[Severity.HIGH] else "ok"
+
+
+def images_on(reports: list[ImageReport]) -> ImagesOn:
+    found = ImagesOn(images=len(reports), outdated=sum(1 for r in reports if r.status == Status.OUTDATED))
+    ids: dict[Severity, set[str]] = {s: set() for s in Severity}
+    for r in reports:
+        if r.vulnerabilities is None or r.vulnerabilities.message:
+            found.unscanned += 1
+            continue
+        for v in r.vulnerabilities.vulnerabilities:
+            ids[v.severity].add(v.id)
+    found.vulnerabilities = {s: len(ids[s]) for s in Severity}
+    return found
+
+
+def running_images(images: list[ImageReport], cluster: str) -> dict[str, list[ImageReport]]:
+    """The images that pods run on each node of a cluster."""
+    by_node: dict[str, list[ImageReport]] = {}
+    for r in images:
+        for node in {u.node for u in r.usages if u.cluster == cluster and u.kind == "Pod" and u.node}:
+            by_node.setdefault(node, []).append(r)
+    return by_node
+
+
 ROLE_LABELS = {"control-plane": "Control plane", "worker": "Workers"}
 
 
@@ -136,6 +175,8 @@ class ClusterView:
     groups: list[NodeGroup]
     findings: list[Finding]
     node_levels: dict[str, str]  # worst level of each node
+    node_images: dict[str, ImagesOn] = field(default_factory=dict)  # images run on each node
+    images: ImagesOn = field(default_factory=ImagesOn)  # images run in the cluster
 
     @property
     def level(self) -> str:
@@ -163,6 +204,20 @@ class ClusterView:
         if versions > 1 and not any(f.kind in ("behind", "unsupported") for f in self.findings):  # else said above
             lines.append(("warning", f"{versions} kubelet versions across the nodes"))
         return sorted(lines, key=lambda line: -LEVELS.index(line[0]))
+
+    def kubelet_level(self, version: str) -> str:
+        """ok, warning (behind the API server) or error (unsupported) for a kubelet version, info when unknown."""
+        if not version:
+            return "info"
+        return worst(f.level for f in skew_findings("kubelet", version, self.status.version, ""))
+
+    def donut(self) -> list[tuple[VersionSegment, float]]:
+        """The kubelet segments with where each starts on the ring (in percent), for the SVG donut."""
+        start, out = 0.0, []
+        for segment in self.kubelet_segments():
+            out.append((segment, start))
+            start += segment.percent
+        return out
 
     def kubelet_segments(self) -> list[VersionSegment]:
         """The kubelet versions of the nodes, newest first, for the version bar."""
@@ -197,7 +252,7 @@ MIXED = (
 ROLE_ORDER = {"control-plane": 0, "worker": 2}
 
 
-def cluster_view(status: ClusterStatus, nodes: list[NodeInfo]) -> ClusterView:
+def cluster_view(status: ClusterStatus, nodes: list[NodeInfo], images: list[ImageReport] | None = None) -> ClusterView:
     nodes = sorted(nodes, key=lambda n: (ROLE_ORDER.get(n.role, 1), n.role, n.pool, n.name))
     groups: dict[tuple[str, str], NodeGroup] = {}
     for n in nodes:
@@ -211,11 +266,23 @@ def cluster_view(status: ClusterStatus, nodes: list[NodeInfo]) -> ClusterView:
     for n in nodes:
         findings += node_findings(n, status.version)
     levels = {n.name: worst(f.level for f in findings if f.node == n.name) for n in nodes}
-    return ClusterView(status, nodes, list(groups.values()), findings, levels)
+    per_node = running_images(images or [], status.name)
+    in_cluster = {str(r.image): r for reports in per_node.values() for r in reports}
+    return ClusterView(
+        status,
+        nodes,
+        list(groups.values()),
+        findings,
+        levels,
+        {n.name: images_on(per_node.get(n.name, [])) for n in nodes},
+        images_on(list(in_cluster.values())),
+    )
 
 
-def cluster_views(statuses: list[ClusterStatus], nodes: list[NodeInfo]) -> list[ClusterView]:
+def cluster_views(
+    statuses: list[ClusterStatus], nodes: list[NodeInfo], images: list[ImageReport] | None = None
+) -> list[ClusterView]:
     by_cluster: dict[str, list[NodeInfo]] = {}
     for n in nodes:
         by_cluster.setdefault(n.cluster, []).append(n)
-    return [cluster_view(s, by_cluster.get(s.name, [])) for s in statuses]
+    return [cluster_view(s, by_cluster.get(s.name, []), images) for s in statuses]

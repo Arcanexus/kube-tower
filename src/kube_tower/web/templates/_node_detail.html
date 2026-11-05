@@ -1,4 +1,4 @@
-{% from "_macros.html" import drawer, icon %}
+{% from "_macros.html" import badge, drawer, icon, severity_counts %}
 {% set level_icons = {"ok": "ok", "info": "info", "warning": "warning", "error": "error"} %}
 {% call drawer(n.name, "Node · " ~ n.cluster) %}
 <p>
@@ -25,4 +25,22 @@
   {% if n.zone %}<tr><th scope="row">Zone</th><td>{{ n.zone }}</td></tr>{% endif %}
   {% if n.created_at %}<tr><th scope="row">Created</th><td>{{ n.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endif %}
 </table>
+<h4>Images run on this node ({{ images | length }})</h4>
+{% if images %}
+<p><small>{% for s in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW] if node_images.vulnerabilities[s] %}<span class="sev sev-{{ s.value }}">{{ node_images.vulnerabilities[s] }} {{ s.value }}</span> {% endfor %}distinct CVEs{% if node_images.outdated %} · {{ node_images.outdated }} outdated image{{ "s" if node_images.outdated > 1 }}{% endif %}</small></p>
+<div class="overflow-auto">
+<table class="striped cve-table">
+  <thead><tr><th>Image</th><th>Version</th><th>CVEs</th></tr></thead>
+  <tbody>
+  {% for r in images %}
+    <tr>
+      <td><a href="#" hx-get="images/detail?ref={{ r.image | string | urlencode }}" hx-target="#detail"><code>{{ r.image.repository }}:{{ r.image.tag }}</code></a></td>
+      <td>{{ badge(r.status) }}</td>
+      <td class="nowrap">{% if r.vulnerabilities and not r.vulnerabilities.message %}{{ severity_counts(r.vulnerabilities) }}{% else %}<small class="muted-text">not scanned</small>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}<p><small>No pod of this node found.</small></p>{% endif %}
 {% endcall %}
