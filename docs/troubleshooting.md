@@ -31,6 +31,7 @@ every request).
 | `exec / AWS auth is not supported in the ArgoCD format` | The ArgoCD-format cluster Secret uses `execProviderConfig` or `awsAuthConfig` | Use a ServiceAccount token (`bearerToken`), or a `kubeconfig` key with an allowed exec plugin, see [managed clusters](clusters.md#managed-clusters-eks-gke-aks-exec-plugins) |
 | `exec command '…' is not allowed` | The kubeconfig of the cluster Secret runs an exec plugin not listed in `clusters.execCommands` | Add the command, exactly as written in the kubeconfig, to `config.clusters.execCommands`, or use a ServiceAccount token |
 | `… (a file path) is not supported` / `auth-provider is not supported` | The kubeconfig points to files of the pod or uses a legacy auth provider | Put the content inline (`token`, `*-data` keys), or use an exec plugin |
+| The Clusters page shows *not looked up* for the Kubernetes CVEs, or no *EOL* tag | The controller cannot reach `endoflife.date` or `api.osv.dev` (the log says `cannot read the end of life…` or `cannot read the vulnerabilities…`) | Allow them in the egress of the controller, point `config.kubernetesVersions.endOfLifeUrl` and `osvUrl` to mirrors, or turn it off with `config.kubernetesVersions.enabled: false` (see [Clusters page](ui-clusters.md#where-the-data-comes-from)) |
 
 ## Registries and images
 

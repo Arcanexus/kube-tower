@@ -30,6 +30,13 @@ All notable changes to this project are documented here. The format follows
   it runs. The nodes are read at each scan, even with `images.enabled: false`, with no new permission.
   New metric `kube_tower_nodes`. The Overview tile and the *To do* line of an unreachable cluster open
   this page.
+- **End of life and vulnerabilities of Kubernetes** on the Clusters page: the release of each API server
+  and kubelet gets an *EOL* tag when it is past (error) or near (warning, `kubernetesVersions.warnDays`) its
+  end of life, read from endoflife.date, with its latest patch and the newest release; the vulnerabilities
+  of the Kubernetes and containerd versions, read from OSV (each CVE counted once), are shown per cluster
+  and per node next to those of the images, and listed with their fix in the node panel. Configurable
+  sources for mirrors, or off for air-gapped clusters (`kubernetesVersions`). New metrics
+  `kube_tower_kubernetes_end_of_life_days` and `kube_tower_platform_vulnerabilities`.
 - **[RBAC](docs/rbac.md)** page in the documentation (wiki *RBAC*, in Configure): permissions, built-in
   and custom roles, how to give them (local accounts, OIDC groups, visitors), clusters of a role. The
   Authentication page keeps the login itself.

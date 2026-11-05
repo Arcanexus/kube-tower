@@ -77,6 +77,21 @@ async def test_scan_only_reachable_clusters(fakes):
     assert scanner.snapshot is snap
 
 
+async def test_scan_looks_up_the_platform_versions(fakes, monkeypatch):
+    from kube_tower import scanner as scanner_module
+    from kube_tower.models import PlatformVersion
+
+    asked = []
+
+    async def lookup(settings, versions, http=None):
+        asked.append(versions)
+        return [PlatformVersion(c, v) for c, v in sorted(versions)]
+
+    monkeypatch.setattr(scanner_module, "lookup", lookup)
+    snap = await Scanner(Settings(), FakeRegistry()).scan()
+    assert asked and snap.platform == [PlatformVersion(c, v) for c, v in sorted(asked[0])]
+
+
 async def test_trigger_runs_once_at_a_time(fakes):
     scanner = Scanner(Settings(), FakeRegistry())
     assert scanner.trigger() is True

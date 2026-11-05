@@ -17,6 +17,7 @@ from kube_tower.models import (
     ImageRef,
     ImageReport,
     NodeInfo,
+    PlatformVersion,
     Severity,
     Snapshot,
     Status,
@@ -1075,6 +1076,7 @@ def test_clusters_page():
     nginx = scanner.snapshot.images[0]
     nginx.usages.append(Usage("c1", "Pod", "default", "web-x", "nginx", "Deployment/web", "w-1"))
     page = " ".join(client.get("/clusters").text.split())
+    assert "not looked up" in page  # no end of life nor vulnerability of Kubernetes yet
     assert 'aria-current="page"' in page and '<span class="cluster-card-name">c1</span>' in page
     assert "Control plane <small" in page and "Workers · general <small" in page
     assert "Kubernetes <strong>v1.30.0</strong>" in page and ">3</text>" in page and "problem" in page
@@ -1092,7 +1094,28 @@ def test_clusters_page():
     assert "timeout" in page and "unreachable" in page  # c2
     page = client.get("/clusters?cluster=c2").text
     assert 'cluster-card-name">c1' not in page and "unreachable" in page
+    scanner.snapshot.platform = [
+        PlatformVersion(
+            "kubernetes",
+            "1.30.0",
+            "1.30",
+            "2025-06-28",
+            "1.30.14",
+            "1.34",
+            [
+                Vulnerability(
+                    "CVE-2025-1", Severity.HIGH, "k8s.io/kubernetes", "1.30.0", "1.30.9", "Kubelet flaw", "https://osv.dev/x"
+                )
+            ],
+        )
+    ]
+    page = " ".join(client.get("/clusters").text.split())
+    assert 'Kubernetes <strong>v1.30.0</strong> <span class="eol-tag level-error"' in page
+    assert "end of life since 2025-06-28</span> · latest patch 1.30.14 · newest 1.34" in page
+    assert "Kubernetes 1.30 is end of life since 2025-06-28: no more security fixes" in page
+    assert 'title="1 high CVEs">1 H</span>' in page
     detail = " ".join(client.get("/clusters/node?cluster=c1&name=w-1").text.split())
+    assert "kubernetes 1.30.0" in detail and "CVE-2025-1" in detail and "1.30.9" in detail
     assert "Images run on this node (1)" in detail and "library/nginx:1.25" in detail
     assert "Node · c1" in detail and "4 CPU · 15.5 GiB" in detail and "30 / 110" in detail and "general" in detail
     assert "not ready" in client.get("/clusters/node?cluster=c1&name=w-2").text
@@ -1101,7 +1124,10 @@ def test_clusters_page():
     metrics = client.get("/metrics").text
     assert 'kube_tower_nodes{cluster="c1",kubelet_version="v1.30.0",pool="general",ready="true",role="worker"} 1.0' in metrics
     assert 'kube_tower_nodes{cluster="c1",kubelet_version="v1.27.3",pool="general",ready="false",role="worker"} 1.0' in metrics
-    scanner.snapshot.nodes = scanner.snapshot.nodes[:2]
+    metrics = client.get("/metrics").text
+    assert 'kube_tower_kubernetes_end_of_life_days{cluster="c1",cycle="1.30",version="v1.30.0"}' in metrics
+    assert 'kube_tower_platform_vulnerabilities{component="kubernetes",severity="high",version="1.30.0"} 1.0' in metrics
+    scanner.snapshot.nodes, scanner.snapshot.platform = scanner.snapshot.nodes[:2], []
     page = " ".join(client.get("/clusters").text.split())
     assert "healthy" in page and "to check</summary>" not in page
 

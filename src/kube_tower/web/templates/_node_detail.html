@@ -25,6 +25,32 @@
   {% if n.zone %}<tr><th scope="row">Zone</th><td>{{ n.zone }}</td></tr>{% endif %}
   {% if n.created_at %}<tr><th scope="row">Created</th><td>{{ n.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endif %}
 </table>
+{% set platform = [view.platform_of("kubernetes", n.kubelet_version)] + ([view.platform_of("containerd", n.runtime_version)] if n.runtime_name == "containerd" else []) %}
+{% set platform = platform | select | list %}
+{% if platform %}
+<h4>Kubernetes and containerd</h4>
+{% for p in platform %}
+<p><strong>{{ p.component }} {{ p.version }}</strong>
+  {%- if p.end_of_life %} <small class="muted-text">· cycle {{ p.cycle }}, end of life {{ p.end_of_life }}{% if p.latest and p.latest != p.version %} · latest patch {{ p.latest }}{% endif %}</small>{% endif %}
+  {%- if p.message %}<br><small class="muted-text">{{ p.message }}</small>{% endif %}</p>
+{% if p.vulnerabilities %}
+<div class="overflow-auto">
+<table class="striped cve-table">
+  <thead><tr><th>Vulnerability</th><th>Severity</th><th>Fixed in</th></tr></thead>
+  <tbody>
+  {% for x in p.vulnerabilities %}
+    <tr>
+      <td><a href="{{ x.url }}" target="_blank" rel="noopener">{{ x.id }}</a>{% if x.title %}<br><small class="muted-text">{{ x.title }}</small>{% endif %}</td>
+      <td><span class="sev sev-{{ x.severity.value }}">{{ x.severity.value }}</span></td>
+      <td>{{ x.fixed_version or "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% elif not p.message %}<p><small class="level-ok">{{ icon("ok") }}No known vulnerability.</small></p>{% endif %}
+{% endfor %}
+{% endif %}
 <h4>Images run on this node ({{ images | length }})</h4>
 {% if images %}
 <p><small>{% for s in [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW] if node_images.vulnerabilities[s] %}<span class="sev sev-{{ s.value }}">{{ node_images.vulnerabilities[s] }} {{ s.value }}</span> {% endfor %}distinct CVEs{% if node_images.outdated %} · {{ node_images.outdated }} outdated image{{ "s" if node_images.outdated > 1 }}{% endif %}</small></p>

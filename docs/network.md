@@ -34,7 +34,10 @@ kube-tower connects, in `https://` only when credentials are involved:
   `ghcr.io`), see [vulnerabilities](vulnerabilities.md);
 - with a cloud `provider` of [registries](registries.md), to the token services of the cloud (and the GKE
   metadata server `169.254.169.254:80`);
-- to the OIDC provider with single sign-on, see [authentication](authentication.md).
+- to the OIDC provider with single sign-on, see [authentication](authentication.md);
+- from the controller, once per scan, to `endoflife.date` and `api.osv.dev` for the end of life and the
+  vulnerabilities of the Kubernetes and containerd versions (`kubernetesVersions`, see the
+  [Clusters page](ui-clusters.md#where-the-data-comes-from)).
 
 The browser of the user, not kube-tower, asks GitHub for the latest release on the About page.
 
