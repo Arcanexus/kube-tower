@@ -9,19 +9,20 @@ detail panels work in general is in [usage](usage.md).
 
 ## One card per cluster
 
-Each card shows the Kubernetes version of the API server, the number of nodes (and how many are not
-ready), and a badge with the worst finding of the cluster: **healthy**, **info**, **warning**,
-**error**, or **unreachable** with the error of the last scan.
+Each card reads from top to bottom:
 
-Under it:
-
-- **Kubelet**, **Runtime** and **OS**: the versions run by the nodes, the most common first, with the
-  number of nodes when there is more than one. A version that only some nodes run is highlighted.
-- **Findings**: what to look at, for the whole cluster and per node (open by default when one is a
-  warning or an error).
-- **The nodes**, one tile each, grouped by role, then by node group. A tile shows the name, the kubelet
-  version, the container runtime, the architecture and how full the node is in pods. Its colour is its
-  worst finding; hovering it lists them.
+1. **Its state**: a badge, *healthy* (green), *to check* (orange), *problem* (red) or *unreachable* with
+   the error of the last scan, and the Kubernetes version of the API server.
+2. **What to look at**, in one line per kind of problem with the number of nodes: *1 node behind the API
+   server*, *1 node cordoned*, *1 node not ready*… When there is nothing: *All 11 nodes ready, on the
+   version of the API server*.
+3. **The kubelet versions**: a bar split by version, as wide as the share of nodes running it, green
+   when it is the version of the API server, orange when behind, red when unsupported.
+4. **The nodes**, grouped by role (Control plane, Workers, `ingress`…) and node group. Each node is a
+   chip with a coloured dot (its worst finding); its version only shows when it differs from the most
+   common one. Hover a chip to read its findings, click it for its details.
+5. **Details** (folded): the container runtimes, OS images and kernels of the nodes, and every finding
+   per node.
 
 The **Cluster** filter of the top bar applies. *Running only* does not, because nodes are not images.
 A role [limited to some clusters](rbac.md#clusters-of-a-role) only sees those.
@@ -36,6 +37,8 @@ A role [limited to some clusters](rbac.md#clusters-of-a-role) only sees those.
 Managed control planes (EKS, GKE, AKS) have no node: only their API server version shows.
 
 ## Findings
+
+What turns a node or a cluster orange or red:
 
 | Level | Finding |
 | --- | --- |

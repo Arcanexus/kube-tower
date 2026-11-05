@@ -1074,11 +1074,16 @@ def test_clusters_page():
     ]
     page = " ".join(client.get("/clusters").text.split())
     assert 'aria-current="page"' in page and '<span class="cluster-card-name">c1</span>' in page
-    assert "control-plane" in page and "worker · general" in page
-    assert "3 nodes" in page and "1 not ready" in page and "2 kubelet versions across the nodes" in page
-    assert "kubelet v1.27.3 is 3 minor versions behind the API server v1.30.0" in page
-    assert 'class="node-tile level-border-error"' in page and 'style="width: 27%"' in page
-    assert "timeout" in page  # c2 unreachable
+    assert "<h4>Control plane <small" in page and "<h4>Workers · general <small" in page
+    assert "Kubernetes <strong>v1.30.0</strong> · 3 nodes" in page and "problem" in page
+    assert "1 node not ready" in page and "1 node behind the API server" in page and "1 node cordoned" in page
+    assert '<span class="version-segment level-bg-ok" style="width: 66.7%"></span>' in page
+    assert '<span class="version-segment level-bg-warning" style="width: 33.3%"></span>' in page
+    # the version of a node shows only when it is not the most common one
+    assert '<span class="node-chip-name">w-2</span> <code class="level-error">v1.27.3</code>' in page
+    assert '<span class="node-chip-name">w-1</span> </a>' in page
+    assert "<code>containerd://1.7.13</code>" in page  # details
+    assert "timeout" in page and "unreachable" in page  # c2
     page = client.get("/clusters?cluster=c2").text
     assert 'cluster-card-name">c1' not in page and "unreachable" in page
     detail = " ".join(client.get("/clusters/node?cluster=c1&name=w-1").text.split())
@@ -1089,6 +1094,9 @@ def test_clusters_page():
     metrics = client.get("/metrics").text
     assert 'kube_tower_nodes{cluster="c1",kubelet_version="v1.30.0",pool="general",ready="true",role="worker"} 1.0' in metrics
     assert 'kube_tower_nodes{cluster="c1",kubelet_version="v1.27.3",pool="general",ready="false",role="worker"} 1.0' in metrics
+    scanner.snapshot.nodes = scanner.snapshot.nodes[:2]
+    page = " ".join(client.get("/clusters").text.split())
+    assert "All 2 nodes ready, on the version of the API server." in page and "healthy" in page
 
 
 def test_accessibility_helpers():

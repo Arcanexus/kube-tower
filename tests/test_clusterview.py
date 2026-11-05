@@ -138,7 +138,7 @@ def test_cluster_view():
         NodeInfo("prod", "w-3", kubelet_version="v1.30.4", unschedulable=True, problems=["DiskPressure"]),
     ]
     view = cluster_view(status, nodes)
-    assert [g.label for g in view.groups] == ["control-plane", "gpu", "worker", "worker · spot"]
+    assert [g.label for g in view.groups] == ["Control plane", "gpu", "Workers", "Workers · spot"]
     assert [n.name for n in view.groups[3].nodes] == ["w-1", "w-2"]
     assert view.groups[3].values("kubelet_version") == [("v1.30.4", 1), ("v1.29.1", 1)]
     assert view.versions("kubelet_version")[0] == ("v1.30.4", 4)
@@ -149,6 +149,25 @@ def test_cluster_view():
     assert [f.text for f in view.node_findings("w-3")] == ["cordoned: no new pod is scheduled on it", "DiskPressure"]
     assert any("kube-proxy v1.31.0 newer" in f.text for f in view.node_findings("gpu"))
     assert view.level == "error" and view.not_ready == 1
+    assert view.summary() == [
+        ("error", "1 node not ready"),
+        ("error", "1 node with an unsupported kubelet version"),
+        ("warning", "1 node behind the API server"),
+        ("warning", "1 node cordoned"),
+        ("warning", "1 node under pressure (memory, disk or PIDs)"),
+    ]
+    segments = view.kubelet_segments()
+    assert [(s.version, s.nodes, s.level, s.percent) for s in segments] == [
+        ("v1.30.4", 4, "ok", 80.0),
+        ("v1.29.1", 1, "warning", 20.0),
+    ]
+    assert [f.kind for f in view.details] == ["os_image"]
+    patch = cluster_view(
+        status, [NodeInfo("prod", "a", kubelet_version="v1.30.4"), NodeInfo("prod", "b", kubelet_version="v1.30.2")]
+    )
+    assert patch.summary() == [("warning", "2 kubelet versions across the nodes")]
+    unknown = cluster_view(status, [NodeInfo("prod", "a")])
+    assert [(s.version, s.level) for s in unknown.kubelet_segments()] == [("unknown", "info")] and unknown.summary() == []
     same = cluster_view(status, [NodeInfo("prod", "a", kubelet_version="v1.30.4")])
     assert same.level == "ok" and same.findings == []
     down = cluster_views([ClusterStatus("lab", "https://lab", "secret", False, message="timeout"), status], nodes)
