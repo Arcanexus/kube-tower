@@ -21,7 +21,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from kube_tower.auth import COOKIE, Authenticator, User
 from kube_tower.config import PERMISSIONS
+from kube_tower.models import Snapshot
 from kube_tower.oidc import OidcClient, OidcError, pkce
+from kube_tower.scope import cluster_matcher, scope_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +89,30 @@ def can_act() -> bool:
 
 def current_user() -> User | None:
     return current.get()[1]
+
+
+def visible_clusters() -> tuple[str, ...] | None:
+    """Patterns of the clusters the user of the request sees, None for all of them (or the login off)."""
+    enabled, user = current.get()
+    return user.clusters if enabled and user is not None else None
+
+
+def visible_checks(report) -> list:
+    """The connectivity checks the user of the request sees: of the clusters of their roles only (the
+    registries and Helm repositories are shared)."""
+    visible = cluster_matcher(visible_clusters())
+    return [c for c in report.checks if visible is None or c.kind != "cluster" or visible(c.target.split(" (")[0])]
+
+
+def snapshot_of(request) -> Snapshot:
+    """The last snapshot as the user of the request sees it: only the clusters of their roles. Cut once per
+    request (a page reads it several times)."""
+    snapshot = request.app.state.backend.snapshot
+    cached = getattr(request.state, "kt_snapshot", None)
+    if cached is None or cached[0] is not snapshot:
+        cached = (snapshot, scope_snapshot(snapshot, visible_clusters()))
+        request.state.kt_snapshot = cached
+    return cached[1]
 
 
 # The page to go back to after the login: relative, without scheme nor host (no redirection to another site).

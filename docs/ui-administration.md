@@ -2,7 +2,7 @@
 
 Six tabs to run and check kube-tower; Logs is the last one. Each action needs a permission of
 the user's role: without it, its button is greyed out. The Logs and Settings tabs are hidden for roles
-without the `logs` or `settings` permission (see [roles](authentication.md#roles)).
+without the `logs` or `settings` permission (see [RBAC](rbac.md)).
 
 ![Administration](images/administration.png)
 

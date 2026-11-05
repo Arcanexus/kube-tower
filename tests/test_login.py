@@ -333,3 +333,32 @@ def test_check_custom_roles(tmp_path):
     )
     settings = load_settings(str(config))
     assert settings.auth.roles == {"team_a": RoleSettings(["rescan"])} and settings.auth.users[0].role == "team_a"
+
+
+def test_role_limited_to_clusters(secret_dir, monkeypatch):
+    monkeypatch.setenv("BOB_PASSWORD", "bobpw")
+    roles = {"edge": RoleSettings(["rescan", "connectivity"], ["c2*"])}
+    c, scanner = _client(_settings(secret_dir, roles=roles, users=[LocalUser("bob", "edge", password_env="BOB_PASSWORD")]))
+    assert _login(c, "bob", "bobpw").status_code == 303
+    # Only the images, charts and clusters of c2, in the pages and the API
+    snapshot = c.get("/api/snapshot").json()
+    assert [i["image"]["repository"] for i in snapshot["images"]] == ["org/app"] and snapshot["charts"] == []
+    assert [x["name"] for x in snapshot["clusters"]] == ["c2"]
+    page = c.get("/images?running=0").text
+    assert "org/app" in page and "library/nginx" not in page and "library/redis" not in page
+    assert "redis" not in c.get("/charts").text.split("<main")[1]
+    assert c.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).status_code == 404
+    assert c.get("/images/detail", params={"ref": "ghcr.io/org/app:2.0"}).status_code == 200
+    # No rescan of what the role does not see
+    r = c.post("/api/rescan/image", params={"ref": "docker.io/library/nginx:1.25"})
+    assert r.status_code == 404 and scanner.rescans == []
+    r = c.post("/api/rescan/chart", params={"cluster": "c1", "namespace": "argocd", "app": "redis", "chart": "redis"})
+    assert r.status_code == 404
+    assert c.post("/api/rescan/image", params={"ref": "ghcr.io/org/app:2.0"}).status_code == 202
+    clusters = c.get("/administration?tab=clusters").text
+    assert "https://c2" in clusters and "https://c1" not in clusters
+    unused = c.get("/api/administration/unused-images").json()
+    assert {u["cluster"] for u in unused} == {"c2"}  # not the redis cached on a node of c1
+    # The admin still sees everything
+    c.cookies.clear()
+    assert len(c.get("/api/snapshot", auth=("admin", "s3cret")).json()["images"]) == 3

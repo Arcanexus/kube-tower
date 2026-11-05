@@ -8,13 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Custom roles** (`auth.roles`, see [roles](docs/authentication.md#roles)): besides `readonly` and
+- **Custom roles** (`auth.roles`, see [RBAC](docs/rbac.md)): besides `readonly` and
   `admin`, roles with the permissions you choose among `scan`, `rescan`, `retry`, `trivy`, `connectivity`,
   `logs` and `settings` (`*`: all), given to local accounts or to OIDC groups (`auth.oidc.roleGroups`). A
   user in the groups of several roles gets the permissions of all of them. Each action needs its
   permission instead of the admin role: without it the button is greyed out with the reason, the API
   answers 403 naming the permission, and the refusal is logged. The Logs and Settings tabs of the
   Administration are hidden for the roles without `logs` or `settings`.
+- **Clusters of a role** (`auth.roles.<role>.clusters`, names or patterns): its users only see those
+  clusters, in every page, detail panel, Administration tab and the API. An image used in several clusters
+  shows only its usages in theirs; the scan errors naming another cluster are hidden; rescanning what they
+  don't see answers 404. A role without `clusters` (readonly and admin included) sees them all.
+- **[RBAC](docs/rbac.md)** page in the documentation (wiki *RBAC*, in Configure): permissions, built-in
+  and custom roles, how to give them (local accounts, OIDC groups, visitors), clusters of a role. The
+  Authentication page keeps the login itself.
 
 - **[Prerequisites](docs/prerequisites.md)** page in the documentation: Kubernetes and tool versions,
   optional components, network access, and hardware guidelines: defaults of every pod of the chart,

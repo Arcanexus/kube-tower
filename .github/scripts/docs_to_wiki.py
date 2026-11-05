@@ -37,6 +37,7 @@ PAGES: list[tuple[str, list[tuple[str, str]]]] = [
         ("clusters.md", "Clusters"),
         ("registries.md", "Registries"),
         ("authentication.md", "Authentication"),
+        ("rbac.md", "RBAC"),
         ("vulnerabilities.md", "Vulnerabilities"),
         ("security.md", "Security"),
         ("scaling.md", "Scaling"),

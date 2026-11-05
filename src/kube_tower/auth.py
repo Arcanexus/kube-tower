@@ -37,6 +37,7 @@ class User:
     roles: tuple[str, ...]  # readonly, admin or roles of auth.roles
     source: str = "local"  # local | oidc | anonymous
     permissions: frozenset[str] = frozenset()  # what the roles allow (config.PERMISSIONS)
+    clusters: tuple[str, ...] | None = None  # patterns of the clusters the user sees, None: all of them
 
     @property
     def role(self) -> str:
@@ -127,7 +128,7 @@ class Authenticator:
 
     def user(self, name: str, roles: list[str] | tuple[str, ...], source: str = "local") -> User:
         """A user with these roles and what they allow."""
-        return User(name, tuple(roles), source, self.settings.permissions(roles))
+        return User(name, tuple(roles), source, self.settings.permissions(roles), self.settings.clusters(roles))
 
     def ready(self) -> bool:
         """The signing key is known: sessions can be opened."""

@@ -621,11 +621,11 @@ def test_auth(tmp_path):
         {"name": "ops", "role": "admin", "existingSecret": "ops", "passwordKey": "pw"},
         {"name": "bob", "role": "team-prod", "existingSecret": "bob"},
     ]
-    roles = {"team-prod": {"permissions": ["rescan", "connectivity"]}}
+    roles = {"team-prod": {"permissions": ["rescan", "connectivity"], "clusters": ["prod-*"]}}
     values = {"enabled": True, "users": users, "roles": roles, "anonymousRole": "readonly", "sessionDuration": "8h"}
     docs = render(tmp_path, {"auth": values})
     settings = app_settings(tmp_path, docs).auth
-    assert settings.roles == {"team-prod": RoleSettings(["rescan", "connectivity"])}
+    assert settings.roles == {"team-prod": RoleSettings(["rescan", "connectivity"], ["prod-*"])}
     assert settings.enabled and settings.admin and settings.anonymous_role == "readonly" and settings.metrics_public
     assert settings.session_duration == 8 * 3600
     assert (settings.secret_name, settings.secret_dir) == ("kt-kube-tower-auth", "/etc/kube-tower/auth")
