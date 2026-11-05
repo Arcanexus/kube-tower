@@ -9,6 +9,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from kube_tower.administration import unused_node_images
+from kube_tower.web.login import snapshot_of, visible_checks
 
 router = APIRouter()
 # Processes without the ui role (controller, worker, trivy) only answer the probes: alive once started.
@@ -60,7 +61,7 @@ async def readyz(request: Request, response: Response) -> dict:
 @router.get("/api/snapshot")
 async def snapshot(request: Request) -> Response:
     # Serialized in a thread: a large snapshot would hold the pages meanwhile.
-    snap = request.app.state.backend.snapshot
+    snap = snapshot_of(request)
     body = await asyncio.to_thread(lambda: json.dumps(snap.to_dict(), separators=(",", ":")).encode())
     return Response(body, media_type="application/json")
 
@@ -83,7 +84,8 @@ async def rescan_image(
 ) -> dict:
     """Check one image again (its version and/or its vulnerabilities), in the background."""
     backend = request.app.state.backend
-    if (report := backend.snapshot.image(ref)) is None:
+    # The report of the backend, the one the rescan updates; only when the user sees it
+    if snapshot_of(request).image(ref) is None or (report := backend.snapshot.image(ref)) is None:
         raise HTTPException(404, f"image {ref!r} not found in the last scan")
     return _rescan_answer(response, await backend.rescan_image(report, versions, vulnerabilities))
 
@@ -92,7 +94,7 @@ async def rescan_image(
 async def rescan_chart(request: Request, response: Response, cluster: str, namespace: str, app: str, chart: str) -> dict:
     """Check one Helm chart and its subcharts again, in the background."""
     backend = request.app.state.backend
-    if (report := backend.snapshot.chart(cluster, namespace, app, chart)) is None:
+    if (report := snapshot_of(request).chart(cluster, namespace, app, chart)) is None:
         raise HTTPException(
             404, f"chart {chart!r} of application {namespace}/{app} in cluster {cluster!r} not found in the last scan"
         )
@@ -131,11 +133,11 @@ async def connectivity(request: Request) -> dict:
         "running": "connectivity" in backend.admin_running,
         "startedAt": report.started_at.isoformat() if report else None,
         "finishedAt": report.finished_at.isoformat() if report and report.finished_at else None,
-        "checks": [asdict(c) for c in report.checks] if report else [],
+        "checks": [asdict(c) for c in visible_checks(report)] if report else [],
     }
 
 
 @router.get("/api/administration/unused-images")
 async def unused_images(request: Request) -> list[dict]:
     """Images cached on nodes that no workload of their cluster uses."""
-    return [asdict(u) for u in unused_node_images(request.app.state.backend.snapshot)]
+    return [asdict(u) for u in unused_node_images(snapshot_of(request))]

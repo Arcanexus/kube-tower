@@ -133,7 +133,7 @@
       {% if "connectivity" in backend.admin_running %}<span aria-busy="true">Testing…</span>
       {% else %}{{ action("connectivity", "Test the connectivity", "plug") }}{% endif %}
     </div>
-    {% set c = backend.connectivity %}
+    {% set c = connectivity %}
     {% if c and c.checks %}
     <p><small>{% if c.finished_at %}{{ date(c.finished_at) }}: {{ c.checks | length - c.failed }}/{{ c.checks | length }} OK{% else %}Started {{ date(c.started_at) }}{% endif %}</small></p>
     <table class="striped">

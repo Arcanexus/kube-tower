@@ -186,7 +186,7 @@ class OidcClient:
                 f"{name} is in none of the groups allowed in kube-tower (auth.oidc.adminGroups, readonlyGroups, roleGroups)"
             )
         log.debug("OIDC user %s, groups %s: roles %s", name, ", ".join(groups) or "none", ", ".join(roles))
-        return User(name, tuple(roles), "oidc", self.settings.permissions(roles))
+        return User(name, tuple(roles), "oidc", self.settings.permissions(roles), self.settings.clusters(roles))
 
     def _check(self, claims: dict, metadata: dict, nonce: str) -> dict:
         if claims.get("iss", "").rstrip("/") != metadata["issuer"].rstrip("/"):

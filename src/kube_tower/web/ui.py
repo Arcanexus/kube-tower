@@ -25,7 +25,7 @@ from kube_tower.models import ChartDependency, ImageRef, ImageReport, SecurityKi
 from kube_tower.processes import roles_status
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
-from kube_tower.web.login import can, can_act, current_permissions, current_user
+from kube_tower.web.login import can, can_act, current_permissions, current_user, snapshot_of, visible_checks
 from kube_tower.web.metrics import image_update
 from kube_tower.web.summary import UPDATE_KINDS, fixable_critical, summarize, todo, workloads
 
@@ -460,7 +460,7 @@ def global_filters(request: Request) -> tuple[str, bool]:
     cluster = params.get("cluster")
     if cluster is None:
         cluster = cookies.get("kt-cluster", "")
-        if cluster not in {c.name for c in request.app.state.backend.snapshot.clusters}:
+        if cluster not in {c.name for c in snapshot_of(request).clusters}:
             cluster = ""  # a cluster that is gone
     return cluster, params.get("running", cookies.get("kt-running", "1")) != "0"
 
@@ -522,7 +522,7 @@ def mount(app: FastAPI) -> None:
             {
                 "cluster": cluster,
                 "running": running,
-                "snapshot": backend.snapshot,
+                "snapshot": snapshot_of(request),
                 "scanning": backend.running,
                 "checking_versions": backend.checking_versions,
                 "warnings": warnings(request),
@@ -546,7 +546,7 @@ def mount(app: FastAPI) -> None:
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def overview(request: Request):
         cluster, running = global_filters(request)
-        snapshot = request.app.state.backend.snapshot
+        snapshot = snapshot_of(request)
         summary = summarize(snapshot, running=running, cluster=cluster)
         items, total = todo(snapshot, running=running, cluster=cluster)
         return render(
@@ -575,7 +575,7 @@ def mount(app: FastAPI) -> None:
         words, terms = split_query(q)
         found = {}  # image reference -> its vulnerabilities whose ID matches a CVE of the search
         matching = []
-        for r in request.app.state.backend.snapshot.images:
+        for r in snapshot_of(request).images:
             text = str(r.image)
             if (
                 all(w in text.lower() for w in words)
@@ -628,8 +628,8 @@ def mount(app: FastAPI) -> None:
     async def image_detail(request: Request, ref: str = "", cve: str = ""):
         """One panel per image: versions, vulnerabilities and where it is used. `cve`: the CVEs searched on the
         Images page, listed first and highlighted."""
-        backend = request.app.state.backend
-        if (report := backend.snapshot.image(ref)) is None:
+        backend, snapshot = request.app.state.backend, snapshot_of(request)
+        if (report := snapshot.image(ref)) is None:
             return Response(status_code=404)
         _, terms = split_query(cve)
         return render_detail(
@@ -638,7 +638,7 @@ def mount(app: FastAPI) -> None:
             image_key(report),
             r=report,
             can_rescan_vulnerabilities=backend.can_rescan_vulnerabilities(report),
-            same_name=len(backend.same_name_images(report)),
+            same_name=sum(1 for r in backend.same_name_images(report) if snapshot.image(str(r.image))),
             cve=cve,
             highlighted={v.id for v in matching_vulnerabilities(report, terms)},
         )
@@ -649,7 +649,7 @@ def mount(app: FastAPI) -> None:
         cluster, _ = global_filters(request)
         matching = [
             c
-            for c in request.app.state.backend.snapshot.charts
+            for c in snapshot_of(request).charts
             if _matches(f"{c.application} {c.chart} {c.repository}", q) and (not cluster or c.cluster == cluster)
         ]
         listing = list_page(
@@ -670,7 +670,7 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/charts/detail", response_class=HTMLResponse, include_in_schema=False)
     async def chart_detail(request: Request, cluster: str = "", namespace: str = "", app: str = "", chart: str = ""):
-        if (report := request.app.state.backend.snapshot.chart(cluster, namespace, app, chart)) is None:
+        if (report := snapshot_of(request).chart(cluster, namespace, app, chart)) is None:
             return Response(status_code=404)
         return render_detail(request, "_chart_detail", chart_key(report), c=report)
 
@@ -680,7 +680,7 @@ def mount(app: FastAPI) -> None:
         q, kind, severity = p.get("q", ""), p.get("kind", ""), p.get("severity", "")
         clean = p.get("all", "") == "1"  # also list the resources that pass every check
         cluster, _ = global_filters(request)
-        snapshot = request.app.state.backend.snapshot
+        snapshot = snapshot_of(request)
         matching = [r for r in snapshot.security if (not cluster or r.cluster == cluster) and _matches(security_text(r), q)]
         # The tiles and counters ignore the filter they set: they are the buttons that set it.
         level = Severity.parse(severity) if severity in Severity._value2member_map_ else None
@@ -722,14 +722,14 @@ def mount(app: FastAPI) -> None:
         name: str = "",
         container: str = "",
     ):
-        snapshot = request.app.state.backend.snapshot
+        snapshot = snapshot_of(request)
         if (report := snapshot.security_report((cluster, kind, namespace, rkind, name, container))) is None:
             return Response(status_code=404)
         return render(request, "_security_detail", r=report)
 
     @app.get("/security/compliance", response_class=HTMLResponse, include_in_schema=False)
     async def compliance_detail(request: Request, cluster: str = "", id: str = ""):
-        if (report := request.app.state.backend.snapshot.compliance_report(cluster, id)) is None:
+        if (report := snapshot_of(request).compliance_report(cluster, id)) is None:
             return Response(status_code=404)
         return render(request, "_compliance_detail", c=report)
 
@@ -810,12 +810,18 @@ def mount(app: FastAPI) -> None:
 
     def scans_context(request: Request) -> dict:
         """What the Scans and Trivy tab of the Administration shows (`#administration`, polled while an action runs)."""
-        backend = request.app.state.backend
+        backend, snapshot = request.app.state.backend, snapshot_of(request)
         images, vulnerabilities, charts = backend.failed_items()
+        connectivity = backend.connectivity
         return {
             "backend": backend,
+            "connectivity": dataclasses.replace(connectivity, checks=visible_checks(connectivity)) if connectivity else None,
             "busy": bool(backend.locked or backend.rescanning or backend.admin_running),
-            "failed": {"images": images, "vulnerabilities": vulnerabilities, "charts": charts},
+            "failed": {  # in the clusters the user sees
+                "images": [r for r in images if snapshot.image(str(r.image))],
+                "vulnerabilities": [r for r in vulnerabilities if snapshot.image(str(r.image))],
+                "charts": [c for c in charts if snapshot.chart(*c.key)],
+            },
             "trivy_settings": request.app.state.settings.vulnerabilities,
         }
 
@@ -853,7 +859,7 @@ def mount(app: FastAPI) -> None:
             context = scans_context(request)
         elif tab == "clusters":
             _, running = global_filters(request)
-            context = {"summaries": {c.name: c for c in summarize(backend.snapshot, running=running).clusters}}
+            context = {"summaries": {c.name: c for c in summarize(snapshot_of(request), running=running).clusters}}
         elif tab == "pods":
             processes = backend.processes()
             context = {"processes": processes, "roles_status": roles_status(processes)}

@@ -20,7 +20,8 @@ What `outdated`, `unknown` or `major` mean is explained in [statuses and version
 - **Sidebar** (left): the five pages, then **About**. At the bottom: the user logged in and its role,
   *Log out*, the version, the GitHub link, and the **theme** icon (auto, light or dark, remembered by
   the browser).
-- **Cluster** filter (top bar): only the images, charts and figures of one cluster.
+- **Cluster** filter (top bar): only the images, charts and figures of one cluster. A role limited to
+  some clusters only lists those (see [clusters of a role](authentication.md#clusters-of-a-role)).
 - **Running only** filter (top bar, on by default): leaves out the images no pod runs (only cached on
   nodes, workload scaled to zero, CronJob between two runs).
 - **Scan status** (top right): a dot (green, orange with problems, pulsing blue while a scan runs), the

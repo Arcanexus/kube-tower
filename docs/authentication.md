@@ -81,19 +81,40 @@ Two roles are built in:
 | `readonly` | `logs`, `settings`: sees everything, runs nothing |
 | `admin` | all of them |
 
-Define more roles in `auth.roles`, with a list of permissions (`*` gives them all):
+Define more roles in `auth.roles`, with a list of permissions (`*` gives them all) and, optionally,
+the clusters their users see:
 
 ```yaml
 auth:
   roles:
     team-prod:
       permissions: [rescan, connectivity]
+      clusters: ["prod-*"]          # names or patterns; empty or left out: every cluster
     security:
       permissions: [rescan, trivy, logs]
 ```
 
 Give them to local accounts (`users[].role`) or to OIDC groups (`auth.oidc.roleGroups`). A user in
-the groups of several roles gets the permissions of all of them.
+the groups of several roles gets the permissions and the clusters of all of them; a role without
+`clusters` (`readonly` and `admin` included) shows every cluster.
+
+### Clusters of a role
+
+A user whose roles list `clusters` only sees those clusters, everywhere: the pages, the cluster filter,
+the detail panels, the Administration tabs and the API (`/api/snapshot`). An image used in several
+clusters shows only its usages in theirs. The scan errors naming another cluster are hidden, and a
+rescan of an image or chart they don't see answers `404`.
+
+![Images page of a role limited to the prod cluster](images/role-clusters.png)
+
+Some things are not split by cluster, so give them with care to a limited role:
+
+| What | Why |
+| --- | --- |
+| `scan`, `retry`, `trivy` | They act on every cluster: a full scan, the retry of everything that failed, the Trivy database |
+| `logs`, `settings` | The logs and the settings name every cluster |
+| Registries and Helm repositories of the connectivity test | They are shared by the clusters |
+| `/metrics` | Prometheus scrapes it without a user |
 
 Without a permission, its buttons are hidden or greyed out, with the reason in their tooltip. A tab
 the role may not open is hidden. The API answers `403` with the permission missing, for example
@@ -319,7 +340,7 @@ auth:
     - name: alice
       role: readonly           # readonly | admin | a role of roles
       passwordFile: /etc/kube-tower/users/0/password   # or passwordEnv: ALICE_PASSWORD
-  roles: {}                    # other roles: {name: {permissions: [scan, rescan, retry, trivy, connectivity, logs, settings] or [*]}}
+  roles: {}                    # other roles: {name: {permissions: [scan, rescan, retry, trivy, connectivity, logs, settings] or [*], clusters: [patterns]}}
   anonymousRole: ""            # "" (login required) | readonly | a role of roles (not admin)
   sessionDuration: 24h
   secretName: kube-tower-auth  # created with random values when missing (needs get and create on it)

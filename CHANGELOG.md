@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows
   permission instead of the admin role: without it the button is greyed out with the reason, the API
   answers 403 naming the permission, and the refusal is logged. The Logs and Settings tabs of the
   Administration are hidden for the roles without `logs` or `settings`.
+- **Clusters of a role** (`auth.roles.<role>.clusters`, names or patterns): its users only see those
+  clusters, in every page, detail panel, Administration tab and the API. An image used in several clusters
+  shows only its usages in theirs; the scan errors naming another cluster are hidden; rescanning what they
+  don't see answers 404. A role without `clusters` (readonly and admin included) sees them all.
 
 - **[Prerequisites](docs/prerequisites.md)** page in the documentation: Kubernetes and tool versions,
   optional components, network access, and hardware guidelines: defaults of every pod of the chart,

@@ -280,9 +280,11 @@ auth:
   #     passwordKey: password
   users: []
   # Roles besides readonly and admin: what their users may do besides looking at the pages, among scan,
-  # rescan, retry, trivy, connectivity, logs, settings, or * (everything). See docs/authentication.md.
+  # rescan, retry, trivy, connectivity, logs, settings, or * (everything), and the clusters they see
+  # (patterns; empty: all). See docs/authentication.md.
   #   team-prod:
   #     permissions: [rescan, connectivity]
+  #     clusters: ["prod-*"]
   #   security:
   #     permissions: [rescan, trivy, logs]
   roles: {}

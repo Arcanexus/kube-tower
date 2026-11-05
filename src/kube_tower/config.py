@@ -228,9 +228,11 @@ BUILTIN_ROLES: dict[str, tuple[str, ...]] = {"readonly": ("logs", "settings"), "
 
 @dataclass
 class RoleSettings:
-    """A role of auth.roles: what its users may do besides looking at the pages."""
+    """A role of auth.roles: what its users may do besides looking at the pages, and the clusters they see."""
 
     permissions: list[str] = field(default_factory=list)
+    # Names of the clusters its users see, fnmatch patterns (prod-*): empty, every cluster.
+    clusters: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -315,6 +317,17 @@ class AuthSettings:
                 BUILTIN_ROLES[role] if role in BUILTIN_ROLES else self.roles[role].permissions if role in self.roles else ()
             )
         return frozenset(PERMISSIONS) if "*" in granted else frozenset(granted)
+
+    def clusters(self, roles: list[str] | tuple[str, ...]) -> tuple[str, ...] | None:
+        """Patterns of the clusters users with these roles see, None for every cluster: a role without
+        `clusters` (readonly, admin included) shows them all, otherwise the patterns of all the roles add up."""
+        patterns: list[str] = []
+        for role in roles:
+            if role in BUILTIN_ROLES or (role in self.roles and not self.roles[role].clusters):
+                return None
+            if role in self.roles:
+                patterns += self.roles[role].clusters
+        return tuple(dict.fromkeys(patterns))
 
 
 @dataclass
