@@ -23,6 +23,7 @@ from kube_tower.checkers import ChartChecker, ImageChecker
 from kube_tower.clusters import Cluster
 from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
+from kube_tower.collectors.nodes import collect_nodes
 from kube_tower.collectors.security import collect_security_reports
 from kube_tower.collectors.vulnerabilities import collect_operator_reports
 from kube_tower.config import Settings
@@ -181,9 +182,15 @@ class Worker:
 
         def collect() -> CollectResult:
             result = CollectResult()
-            inventory = ImageInventory(settings.images, settings.registries.use_image_pull_secrets)
+            inventory = ImageInventory(
+                settings.images, settings.registries.use_image_pull_secrets, settings.clusters.node_pool_labels
+            )
             if settings.images.enabled and task.images:
                 result.errors += inventory.collect(cluster)
+                result.nodes = inventory.nodes
+            elif task.images:  # the nodes alone (Clusters page)
+                result.nodes, node_errors = collect_nodes(cluster, settings.clusters.node_pool_labels)
+                result.errors += node_errors
             if settings.helm.enabled and task.charts:
                 result.charts, chart_errors = collect_charts(cluster, settings.helm)
                 result.errors += chart_errors

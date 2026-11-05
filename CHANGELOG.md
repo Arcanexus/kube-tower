@@ -19,6 +19,14 @@ All notable changes to this project are documented here. The format follows
   clusters, in every page, detail panel, Administration tab and the API. An image used in several clusters
   shows only its usages in theirs; the scan errors naming another cluster are hidden; rescanning what they
   don't see answers 404. A role without `clusters` (readonly and admin included) sees them all.
+- **Clusters page** (sidebar, see [Clusters page](docs/ui-clusters.md)): one card per cluster with its
+  nodes grouped by role (control plane, workers, other `node-role` labels) and node group (EKS, GKE, AKS,
+  Karpenter labels, `clusters.nodePoolLabels`), the kubelet, runtime and OS versions they run, and the
+  findings: kubelet or kube-proxy newer than the API server or outside the supported skew (error), behind
+  it (warning), kubelet versions mixed across the nodes, nodes not ready, cordoned or under pressure. Click
+  a node for its details (versions, capacity, pods, instance type, zone). The nodes are read at each scan,
+  even with `images.enabled: false`, with no new permission. New metric `kube_tower_nodes`. The Overview
+  tile and the *To do* line of an unreachable cluster open this page.
 - **[RBAC](docs/rbac.md)** page in the documentation (wiki *RBAC*, in Configure): permissions, built-in
   and custom roles, how to give them (local accounts, OIDC groups, visitors), clusters of a role. The
   Authentication page keeps the login itself.

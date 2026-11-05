@@ -26,7 +26,7 @@ what failed* and the rescans can already start.
 
 Every cluster: API server, where it comes from (`in-cluster`, `secret`, `argocd-secret`), Kubernetes
 version, whether it answered (or the error), and its images, charts and critical CVEs. Each number opens
-the list of that cluster. See [clusters](clusters.md).
+the list of that cluster. See [clusters](clusters.md). Their nodes are on the [Clusters page](ui-clusters.md).
 
 ## Pods
 

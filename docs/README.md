@@ -51,6 +51,7 @@ dashboard: which ones have a newer version, what is urgent, where each one runs.
 | [Images page](ui-images.md) | versions and vulnerabilities of every image, detail panel |
 | [Helm charts page](ui-charts.md) | charts and subcharts, detail panel |
 | [Security page](ui-security.md) | Trivy Operator reports: tiles, list, failed checks |
+| [Clusters page](ui-clusters.md) | nodes by role and node group, their versions, what differs |
 | [Administration page](ui-administration.md) | scans, clusters, pods, settings, API, logs |
 | [Statuses and versions](statuses.md) | statuses, how tags are compared, versioning schemes, floating tags, charts |
 

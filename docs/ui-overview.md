@@ -12,13 +12,13 @@ top bar (see [usage](usage.md)).
 | Images | Up to date out of all, how many are outdated and how many to check (`unknown` or `error`) | the Images page |
 | Helm charts | Up to date, and the ones outdated only because of a subchart | the Helm charts page |
 | Critical CVEs with a fix | Their number, on how many images | the Images page, filtered |
-| Clusters | Reachable out of all, with the error of the first unreachable one | the Clusters tab |
+| Clusters | Reachable out of all, with the error of the first unreachable one | the [Clusters page](ui-clusters.md) |
 
 ## To do
 
 The urgent items, most urgent first:
 
-1. unreachable clusters;
+1. unreachable clusters (they open the [Clusters page](ui-clusters.md));
 2. images with critical CVEs that have a fix;
 3. image checks in error;
 4. major updates of images and of Helm charts;

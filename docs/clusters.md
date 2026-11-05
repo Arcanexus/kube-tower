@@ -101,7 +101,8 @@ A cluster added to ArgoCD later is then only scanned once its Secret is added to
 production, a dedicated read-only ServiceAccount token per cluster (above) remains the safest
 choice.
 
-The Clusters tab shows each cluster and whether it is reachable.
+The Clusters tab of the Administration shows each cluster and whether it is reachable; the
+[Clusters page](ui-clusters.md) shows its nodes and their versions.
 
 ## Managed clusters (EKS, GKE, AKS): exec plugins
 

@@ -14,9 +14,10 @@ from collections.abc import Iterable
 from kubernetes import client
 
 from kube_tower.clusters import Cluster
+from kube_tower.collectors.nodes import node_info
 from kube_tower.config import ImagesSettings
 from kube_tower.errors import kubernetes_hint
-from kube_tower.models import ImageRef, ImageReport, Usage
+from kube_tower.models import ImageRef, ImageReport, NodeInfo, Usage
 from kube_tower.registry.oci import parse_docker_config, parse_image_ref
 
 log = logging.getLogger(__name__)
@@ -99,8 +100,11 @@ def _pull_secret_names(spec: client.V1PodSpec | None) -> Iterable[str]:
 class ImageInventory:
     """Accumulates image usages, deduplicated by image reference (without digest)."""
 
-    def __init__(self, settings: ImagesSettings, pull_secrets: bool = False):
+    def __init__(self, settings: ImagesSettings, pull_secrets: bool = False, node_pool_labels: list[str] | None = None):
         self.settings = settings
+        # The nodes, read with their images (Clusters page), with the labels naming their node group.
+        self.nodes: list[NodeInfo] = []
+        self.node_pool_labels = node_pool_labels or []
         # Read the image pull secrets of the pods and workloads (registries.useImagePullSecrets).
         self.read_pull_secrets = pull_secrets
         # Their credentials by registry host: the first Secret found for a host wins.
@@ -170,6 +174,7 @@ class ImageInventory:
                 return items
 
         secret_refs: set[tuple[str, str]] = set()  # (namespace, name) of the image pull secrets
+        pods_per_node: dict[str, int] = {}
         for pod in safe("pods", core.list_pod_for_all_namespaces):
             secret_refs |= {(pod.metadata.namespace, name) for name in _pull_secret_names(pod.spec)}
             digests = {
@@ -177,6 +182,8 @@ class ImageInventory:
                 for cs in [*(pod.status.init_container_statuses or []), *(pod.status.container_statuses or [])]
             }
             owner, node = _pod_owner(pod), pod.spec.node_name
+            if node and getattr(pod.status, "phase", None) not in ("Succeeded", "Failed"):
+                pods_per_node[node] = pods_per_node.get(node, 0) + 1
             for name, image in _pod_spec_images(pod.spec):
                 usage = Usage(cluster.name, "Pod", pod.metadata.namespace, pod.metadata.name, name, owner, node)
                 self.add(image, usage, digests.get(name))
@@ -199,7 +206,11 @@ class ImageInventory:
                 self.add(image, Usage(cluster.name, "CronJob", cron.metadata.namespace, cron.metadata.name, name))
 
         # The nodes also give the size of the images they pulled: read them even without includeNodeImages.
+        nodes = []
         for node in safe("nodes", core.list_node):
+            info = node_info(cluster.name, node, self.node_pool_labels)
+            info.pods = pods_per_node.get(info.name, 0)
+            nodes.append(info)
             for node_image in node.status.images or []:
                 names = node_image.names or []
                 digest = next((_digest_from_image_id(n) for n in names if "@sha256:" in n), None)
@@ -210,6 +221,8 @@ class ImageInventory:
                         self.add(image, Usage(cluster.name, "Node", None, node.metadata.name), digest)
                     if node_image.size_bytes:
                         self.add_size(image, digest, node_image.size_bytes)
+        with self._lock:
+            self.nodes += nodes
         if self.read_pull_secrets:
             errors += self._read_pull_secrets(cluster, core, secret_refs)
         log.info(

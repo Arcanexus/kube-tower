@@ -16,6 +16,7 @@ from kube_tower.models import (
     ClusterStatus,
     ImageRef,
     ImageReport,
+    NodeInfo,
     Severity,
     Snapshot,
     Status,
@@ -526,7 +527,7 @@ def test_ui_helpers():
 def test_overview_is_the_home_page():
     client, _ = _client()
     page = client.get("/?running=0").text
-    assert 'href="./" aria-current="page"' in page and "<span>Overview</span>" in page
+    assert 'href="./" aria-current="page"' in page and '<span class="nav-label">Overview</span>' in page
     resp = client.get("/synthesis", follow_redirects=False)  # former name
     assert resp.status_code == 301 and resp.headers["location"] == "./"
     # 3 images: 2 outdated (nginx minor, redis digest), 1 up to date; 1 chart outdated through its subchart
@@ -552,7 +553,7 @@ def test_overview_to_do_list():
     # most urgent first: the unreachable cluster, the fixable critical CVEs, then the floating tag and the end of life OS
     items = re.findall(r'class="todo-tag todo-\w+">([^<]+)</span>', page)
     assert items == ["cluster", "1 critical", "latest", "end of life"]
-    assert 'href="administration?tab=clusters"' in page and "Unreachable: timeout" in page
+    assert 'href="clusters"' in page and "Unreachable: timeout" in page
     assert 'hx-get="images/detail?ref=docker.io%2Flibrary%2Fnginx%3A1.25" hx-target="#detail"' in page
     assert '1 critical CVE with a fix · 4 workloads in c1</small></span> <small class="todo-hint">→ 1.27' in page
     assert "debian 11 gets no more security fixes" in page
@@ -1062,8 +1063,32 @@ def test_clusters_tab_has_the_figures_of_each_cluster():
     assert 'href="images?severity=critical&amp;cluster=c1">1 image</a>' in page
     # By default only the images a pod runs: nginx in c1
     assert 'href="images?cluster=c1">1</a>' in client.get("/administration?tab=clusters").text
-    resp = client.get("/clusters?running=0", follow_redirects=False)  # former page
-    assert resp.status_code == 301 and resp.headers["location"] == "administration?tab=clusters&running=0"
+
+
+def test_clusters_page():
+    client, scanner = _client()
+    scanner.snapshot.nodes = [
+        NodeInfo("c1", "cp-1", role="control-plane", kubelet_version="v1.30.0", container_runtime="containerd://1.7.13"),
+        NodeInfo("c1", "w-1", pool="general", kubelet_version="v1.30.0", max_pods=110, pods=30, memory="15.5 GiB", cpu="4"),
+        NodeInfo("c1", "w-2", pool="general", kubelet_version="v1.27.3", ready=False, unschedulable=True),
+    ]
+    page = " ".join(client.get("/clusters").text.split())
+    assert 'aria-current="page"' in page and '<span class="cluster-card-name">c1</span>' in page
+    assert "control-plane" in page and "worker · general" in page
+    assert "3 nodes" in page and "1 not ready" in page and "2 kubelet versions across the nodes" in page
+    assert "kubelet v1.27.3 is 3 minor versions behind the API server v1.30.0" in page
+    assert 'class="node-tile level-border-error"' in page and 'style="width: 27%"' in page
+    assert "timeout" in page  # c2 unreachable
+    page = client.get("/clusters?cluster=c2").text
+    assert 'cluster-card-name">c1' not in page and "unreachable" in page
+    detail = " ".join(client.get("/clusters/node?cluster=c1&name=w-1").text.split())
+    assert "Node · c1" in detail and "4 CPU · 15.5 GiB" in detail and "30 / 110" in detail and "general" in detail
+    assert "not ready" in client.get("/clusters/node?cluster=c1&name=w-2").text
+    assert client.get("/clusters/node?cluster=c1&name=nope").status_code == 404
+    assert client.get("/clusters/node?cluster=c9&name=w-1").status_code == 404
+    metrics = client.get("/metrics").text
+    assert 'kube_tower_nodes{cluster="c1",kubelet_version="v1.30.0",pool="general",ready="true",role="worker"} 1.0' in metrics
+    assert 'kube_tower_nodes{cluster="c1",kubelet_version="v1.27.3",pool="general",ready="false",role="worker"} 1.0' in metrics
 
 
 def test_accessibility_helpers():

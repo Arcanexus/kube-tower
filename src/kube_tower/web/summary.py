@@ -185,7 +185,7 @@ def todo(snap: Snapshot, running: bool = False, cluster: str = "", limit: int = 
                     c.name,
                     f"Unreachable: {c.message or 'no answer'}",
                     "Clusters",
-                    href="administration?tab=clusters",
+                    href="clusters",
                     code=False,
                 )
             )

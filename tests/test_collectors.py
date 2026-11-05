@@ -342,6 +342,7 @@ def test_image_inventory_reads_raw_json(monkeypatch):
         inventory = ImageInventory(ImagesSettings(), pull_secrets=True)
         assert inventory.collect(Cluster("c1", "https://x", "in-cluster", None)) == []
         assert apis.read_namespaced_secret.call_args.args == ("regcred", "shop")
+        assert [(n.name, n.pods) for n in inventory.nodes] == [("node-1", 1)]  # Clusters page
         return {ref: (r.usages, r.running_digests, r.sizes) for ref, r in inventory.reports.items()}
 
     raw = collect(raw=True)

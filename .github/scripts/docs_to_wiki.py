@@ -49,6 +49,7 @@ PAGES: list[tuple[str, list[tuple[str, str]]]] = [
         ("ui-images.md", "Images-page"),
         ("ui-charts.md", "Helm-charts-page"),
         ("ui-security.md", "Security-page"),
+        ("ui-clusters.md", "Clusters-page"),
         ("ui-administration.md", "Administration-page"),
         ("statuses.md", "Statuses-and-versions"),
     ]),

@@ -19,6 +19,7 @@
     "image-detail": "Image details: digests, size, registry links, the tree of where the image runs and its CVE list.",
     "charts": "Helm charts deployed by ArgoCD, with the tree of their subcharts and the latest version of each.",
     "security": "Trivy Operator reports of every cluster: misconfigurations, exposed secrets, RBAC, infrastructure and compliance.",
+    "clusters-page": "The nodes of every cluster by role and node group, their versions, and what differs or lags behind the API server.",
     "administration": "Administration: the state of every role and pod, rescans, Trivy database, connectivity and credential tests, logs.",
     "dark": "A dark theme, chosen by your system or by you.",
     "grafana": "Prometheus metrics and a ready-made Grafana dashboard for alerts and trends."

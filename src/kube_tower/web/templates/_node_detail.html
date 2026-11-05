@@ -1,0 +1,28 @@
+{% from "_macros.html" import drawer, icon %}
+{% set level_icons = {"ok": "ok", "info": "info", "warning": "warning", "error": "error"} %}
+{% call drawer(n.name, "Node · " ~ n.cluster) %}
+<p>
+  {% if n.ready %}<span class="badge badge-up-to-date">{{ icon("ok") }}ready</span>{% else %}<span class="badge badge-error">{{ icon("error") }}not ready</span>{% endif %}
+  {% if n.unschedulable %}<span class="badge badge-outdated">{{ icon("warning") }}cordoned</span>{% endif %}
+</p>
+{% if findings %}
+<ul class="cluster-findings-list">
+  {% for f in findings %}<li class="finding finding-{{ f.level }}">{{ icon(level_icons[f.level]) }}<span>{{ f.text }}</span></li>{% endfor %}
+</ul>
+{% endif %}
+{% set unknown %}<small class="muted-text">unknown</small>{% endset %}
+<table>
+  <tr><th scope="row">Role</th><td>{{ n.role }}</td></tr>
+  {% if n.pool %}<tr><th scope="row">Node group</th><td>{{ n.pool }}</td></tr>{% endif %}
+  <tr><th scope="row">Kubelet</th><td><code>{{ n.kubelet_version or "unknown" }}</code>{% if view.status.version %} <small class="muted-text">API server {{ view.status.version }}</small>{% endif %}</td></tr>
+  {% if n.kube_proxy_version %}<tr><th scope="row">kube-proxy</th><td><code>{{ n.kube_proxy_version }}</code></td></tr>{% endif %}
+  <tr><th scope="row">Container runtime</th><td>{{ n.container_runtime or unknown }}</td></tr>
+  <tr><th scope="row">OS</th><td>{{ n.os_image or unknown }}{% if n.operating_system %} <small class="muted-text">{{ n.operating_system }}/{{ n.architecture }}</small>{% endif %}</td></tr>
+  <tr><th scope="row">Kernel</th><td>{{ n.kernel_version or unknown }}</td></tr>
+  {% if n.cpu or n.memory %}<tr><th scope="row">Capacity</th><td>{{ n.cpu }} CPU · {{ n.memory }}</td></tr>{% endif %}
+  {% if n.max_pods %}<tr><th scope="row">Pods</th><td>{{ n.pods }} / {{ n.max_pods }}</td></tr>{% endif %}
+  {% if n.instance_type %}<tr><th scope="row">Instance type</th><td>{{ n.instance_type }}</td></tr>{% endif %}
+  {% if n.zone %}<tr><th scope="row">Zone</th><td>{{ n.zone }}</td></tr>{% endif %}
+  {% if n.created_at %}<tr><th scope="row">Created</th><td>{{ n.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endif %}
+</table>
+{% endcall %}
