@@ -311,3 +311,41 @@ function ktCycleTheme() {
 }
 document.addEventListener("DOMContentLoaded", ktShowTheme);
 document.addEventListener("htmx:afterSettle", ktShowTheme);  // pages are swapped in by hx-boost (base.html)
+
+// Values of the detail panels (.copyable, see the copy macro): a click, Enter or Space copies them to the
+// clipboard, and "Copied" shows for a moment. Without the Clipboard API (plain http other than localhost)
+// a hidden textarea is copied instead. A text the user is selecting is left alone.
+function ktCopyText(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand("copy");
+  area.remove();
+  return ok ? Promise.resolve() : Promise.reject(new Error("copy refused"));
+}
+function ktCopy(el) {
+  const done = (cls) => {
+    el.classList.remove("copied", "copy-failed");
+    el.classList.add(cls);
+    clearTimeout(el.ktCopyTimer);
+    el.ktCopyTimer = setTimeout(() => el.classList.remove(cls), 1200);
+  };
+  ktCopyText(el.dataset.copy).then(() => done("copied"), () => done("copy-failed"));
+}
+document.addEventListener("click", (e) => {
+  const el = e.target.closest && e.target.closest(".copyable");
+  if (!el || String(window.getSelection && window.getSelection()).length) return;
+  e.preventDefault(); // inside a <summary>: copy without folding
+  ktCopy(el);
+});
+document.addEventListener("keydown", (e) => {
+  const el = e.target.closest && e.target.closest(".copyable");
+  if (!el || (e.key !== "Enter" && e.key !== " ")) return;
+  e.preventDefault();
+  ktCopy(el);
+});

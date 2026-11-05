@@ -1,13 +1,13 @@
-{% from "_macros.html" import badge, drawer, icon, links, rescan, subchart_badge %}
+{% from "_macros.html" import badge, copy, drawer, icon, links, rescan, subchart_badge %}
 {% set query = "cluster=" ~ (c.cluster | urlencode) ~ "&namespace=" ~ (c.app_namespace | urlencode) ~ "&app=" ~ (c.application | urlencode) ~ "&chart=" ~ (c.chart | urlencode) %}
 {% macro chart_versions(version, latest) -%}
-<span class="tree-versions">{{ version or "n/a" }}{% if latest and latest != version %} <span class="arrow" aria-hidden="true">→</span> {{ latest }}{% endif %}</span>
+<span class="tree-versions">{{ copy(version) if version else "n/a" }}{% if latest and latest != version %} <span class="arrow" aria-hidden="true">→</span> {{ copy(latest) }}{% endif %}</span>
 {%- endmacro %}
 
 {% macro subchart_item(d) -%}
 {# A subchart and its own subcharts (see ChartDependency.dependencies). #}
-<li>{{ icon("box") }}<strong>{{ d.name }}</strong> {{ chart_versions(d.version, d.latest_version) }} {{ subchart_badge(d) }}
-  <div class="tree-sub"><small class="tree-repo">{{ d.repository or "local" }}</small>{% if not d.deployed %}<br><small>Not deployed: {{ d.not_deployed }}</small>{% endif %}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</div>
+<li>{{ icon("box") }}<strong>{{ copy(d.name) }}</strong> {{ chart_versions(d.version, d.latest_version) }} {{ subchart_badge(d) }}
+  <div class="tree-sub"><small class="tree-repo">{{ copy(d.repository) if d.repository else "local" }}</small>{% if not d.deployed %}<br><small>Not deployed: {{ d.not_deployed }}</small>{% endif %}{% if d.message %}<br><small>{{ d.message }}</small>{% endif %}</div>
   {% if d.dependencies %}<ul>{% for s in d.dependencies %}{{ subchart_item(s) }}{% endfor %}</ul>{% endif %}
 </li>
 {%- endmacro %}
@@ -18,26 +18,26 @@
 
 <h4>Chart</h4>
 <table>
-  <tr><th scope="row">Version</th><td>{{ c.version or "n/a" }}</td></tr>
-  <tr><th scope="row">Latest</th><td>{{ c.latest_version or "n/a" }}</td></tr>
+  <tr><th scope="row">Version</th><td>{{ copy(c.version) if c.version else "n/a" }}</td></tr>
+  <tr><th scope="row">Latest</th><td>{{ copy(c.latest_version) if c.latest_version else "n/a" }}</td></tr>
   <tr><th scope="row">Source</th><td>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }}</td></tr>
-  <tr><th scope="row">Repository</th><td><code>{{ c.repository }}</code></td></tr>
-  {% if c.git_ref %}<tr><th scope="row">Git revision</th><td><code>{{ c.git_ref }}</code></td></tr>{% endif %}
+  <tr><th scope="row">Repository</th><td>{% call copy(c.repository) %}<code>{{ c.repository }}</code>{% endcall %}</td></tr>
+  {% if c.git_ref %}<tr><th scope="row">Git revision</th><td>{% call copy(c.git_ref) %}<code>{{ c.git_ref }}</code>{% endcall %}</td></tr>{% endif %}
 </table>
 {{ links(chart_links(c)) }}
 
 <h4>ArgoCD Application</h4>
 <table>
-  <tr><th scope="row">Name</th><td>{{ c.application }}</td></tr>
-  <tr><th scope="row">Namespace</th><td>{{ c.app_namespace }}</td></tr>
-  <tr><th scope="row">Cluster</th><td>{{ c.cluster }}</td></tr>
-  <tr><th scope="row">Destination namespace</th><td>{{ c.destination_namespace or "" }}</td></tr>
+  <tr><th scope="row">Name</th><td>{{ copy(c.application) }}</td></tr>
+  <tr><th scope="row">Namespace</th><td>{{ copy(c.app_namespace) }}</td></tr>
+  <tr><th scope="row">Cluster</th><td>{{ copy(c.cluster) }}</td></tr>
+  <tr><th scope="row">Destination namespace</th><td>{{ copy(c.destination_namespace) }}</td></tr>
 </table>
 
 <h4>Subcharts</h4>
 {% if c.dependencies %}
 <ul class="tree-list" aria-label="Subchart tree">
-  <li>{{ icon("charts") }}<strong>{{ c.chart }}</strong> {{ chart_versions(c.version, c.latest_version) }} {{ badge(c.status) }}
+  <li>{{ icon("charts") }}<strong>{{ copy(c.chart) }}</strong> {{ chart_versions(c.version, c.latest_version) }} {{ badge(c.status) }}
     <ul>{% for d in c.dependencies %}{{ subchart_item(d) }}{% endfor %}</ul></li>
 </ul>
 {% else %}

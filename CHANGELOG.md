@@ -45,6 +45,10 @@ All notable changes to this project are documented here. The format follows
   optional components, network access, and hardware guidelines: defaults of every pod of the chart,
   CPU, memory and disk to plan by size of inventory (lab, medium, large), and what grows with what
   (memory per image measured on a synthetic inventory, Trivy databases, ui pods per user).
+- **Copy a value of a detail panel with a click** (or `Enter`): image names, current and latest
+  versions, digests, chart names, versions and repositories, ArgoCD Applications, namespaces, clusters,
+  node names and versions. A copy icon shows on hover and a check once copied; on plain http it falls back to the copy
+  of the browser.
 
 ### Changed
 

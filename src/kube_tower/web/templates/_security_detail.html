@@ -1,12 +1,12 @@
-{% from "_macros.html" import drawer, icon, severity_counts %}
+{% from "_macros.html" import copy, drawer, icon, severity_counts %}
 {% call drawer(r.resource_kind ~ " " ~ r.resource_name, r.kind.label ~ " · " ~ (r.namespace or "cluster-scoped") ~ " · " ~ r.cluster) %}
 <p>{{ severity_counts(r) }}{% if r.kind != SecurityKind.EXPOSED_SECRET %} <small>· {{ r.checks | length }} failed, {{ r.passed }} passed</small>{% endif %}</p>
 <table>
-  <tr><th scope="row">Resource</th><td>{{ r.resource_kind }} <code>{{ r.resource_name }}</code></td></tr>
-  <tr><th scope="row">Namespace</th><td>{% if r.namespace %}<code>{{ r.namespace }}</code>{% else %}cluster-scoped{% endif %}</td></tr>
-  <tr><th scope="row">Cluster</th><td>{{ r.cluster }}</td></tr>
-  {% if r.container %}<tr><th scope="row">Container</th><td>{{ r.container }}</td></tr>{% endif %}
-  {% if r.image %}<tr><th scope="row">Image</th><td><code>{{ r.image }}</code></td></tr>{% endif %}
+  <tr><th scope="row">Resource</th><td>{{ r.resource_kind }} {% call copy(r.resource_name) %}<code>{{ r.resource_name }}</code>{% endcall %}</td></tr>
+  <tr><th scope="row">Namespace</th><td>{% if r.namespace %}{% call copy(r.namespace) %}<code>{{ r.namespace }}</code>{% endcall %}{% else %}cluster-scoped{% endif %}</td></tr>
+  <tr><th scope="row">Cluster</th><td>{{ copy(r.cluster) }}</td></tr>
+  {% if r.container %}<tr><th scope="row">Container</th><td>{{ copy(r.container) }}</td></tr>{% endif %}
+  {% if r.image %}<tr><th scope="row">Image</th><td>{% call copy(r.image) %}<code>{{ r.image }}</code>{% endcall %}</td></tr>{% endif %}
   <tr><th scope="row">Source</th><td>Trivy Operator report{% if r.scanned_at %}, {{ r.scanned_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</td></tr>
 </table>
 
@@ -21,7 +21,7 @@
     <tr>
       <td>{{ x.title or x.id }}<br><small class="muted-text">{{ x.id }}{% if x.category %} · {{ x.category }}{% endif %}</small></td>
       <td><span class="sev sev-{{ x.severity.value }}">{{ x.severity.value }}</span></td>
-      <td><code>{{ x.target }}</code>{% if x.match %}<br><small><code class="secret-match">{{ x.match }}</code></small>{% endif %}</td>
+      <td>{% call copy(x.target) %}<code>{{ x.target }}</code>{% endcall %}{% if x.match %}<br><small><code class="secret-match">{{ x.match }}</code></small>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
