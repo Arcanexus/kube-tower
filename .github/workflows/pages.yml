@@ -30,7 +30,7 @@ jobs:
           cp -r site/. _site/
           cp -r docs/images _site/images
           cp src/kube_tower/web/static/icons.svg _site/icons.svg
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
