@@ -16,7 +16,7 @@ The full list with comments is the chart's
 | `distributed.groups.<name>.roles` / `.replicas` / `.resources` / `.autoscaling` | controller ×2, ui ×1, worker ×2, trivy ×1 | Distributed mode: the Deployments and their roles; the trivy group always has 1 replica; `autoscaling` (ui, worker) from 1 to 4 pods with a damped `behavior`, see [scaling](scaling.md#sizing) |
 | `distributed.groups.<name>.nodeSelector` / `.tolerations` / `.affinity` | top-level values | Scheduling of a group |
 | `redis.valkey.enabled` | `false` | A Valkey Deployment through which the pods of the distributed mode talk, also keeping a copy of the inventory, see [scaling](scaling.md#redis--valkey). Distributed mode: this or `redis.url` is required |
-| `redis.valkey.image` / `.port` / `.resources` | `docker.io/valkey/valkey:8.1.1` / `6379` / 20m CPU, 64Mi | Valkey settings |
+| `redis.valkey.image` / `.port` / `.resources` | `docker.io/valkey/valkey:9.1.3` / `6379` / 20m CPU, 64Mi | Valkey settings |
 | `redis.url` | `""` | An existing Redis / Valkey instead (`redis://` or `rediss://`) |
 | `redis.existingSecret` / `.passwordKey` / `.password` | `""` / `password` / `""` | Optional Redis password, also set on the chart's Valkey |
 | `redis.keyPrefix` | `""` | Prefix of the keys of the distributed mode (empty: the release name) |
@@ -38,7 +38,7 @@ The full list with comments is the chart's
 | `auth.oidc.adminGroups` / `.readonlyGroups` / `.roleGroups` / `.defaultRole` | `[]` / `[]` / `{}` / `readonly` | Roles from the groups of the user |
 | `auth.oidc.name` / `.scopes` / `.usernameClaim` / `.groupsClaim` / `.caFile` | `SSO` / `openid profile email groups` / `preferred_username` / `groups` / `""` | Login button, claims, private CA |
 | `dex.enabled` / `.name` / `.connectors` / `.env` / `.envFrom` | `false` / `Dex` / `[]` / `[]` / `[]` | Dex served by kube-tower on `<auth.url>api/dex`, like ArgoCD, see [authentication](authentication.md#dex-of-the-chart) |
-| `dex.image` / `.resources` / `.nodeSelector` / `.tolerations` / `.affinity` | `ghcr.io/dexidp/dex:v2.41.1` / 10m CPU, 32Mi | Dex pod |
+| `dex.image` / `.resources` / `.nodeSelector` / `.tolerations` / `.affinity` | `ghcr.io/dexidp/dex:v2.46.1` / 10m CPU, 32Mi | Dex pod |
 | `auth.sessionDuration` / `.metricsPublic` | `24h` / `true` | Session length; `/metrics` open for Prometheus or behind the login |
 | `rbac.create` | `true` | Read-only ClusterRole and Role for cluster Secrets (and, with `auth.enabled`, `get` / `create` on the auth Secret) |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | ServiceAccount |
@@ -49,7 +49,7 @@ The full list with comments is the chart's
 | `grafanaDashboard.enabled` | `false` | ConfigMap holding the [Grafana dashboard](metrics.md#grafana-dashboard) |
 | `grafanaDashboard.namespace` / `.labels` / `.annotations` | release ns / `grafana_dashboard: "1"` / `{}` | Where and how the Grafana sidecar finds it |
 | `trivy.enabled` | `true` | Init container copying the Trivy CLI into the pod, see [Trivy setups](vulnerabilities.md#trivy-setups) |
-| `trivy.image.repository` / `.tag` / `.pullPolicy` | `ghcr.io/aquasecurity/trivy` / `0.75.0` / `IfNotPresent` | Image the Trivy CLI is copied from (amd64, arm64) |
+| `trivy.image.repository` / `.tag` / `.pullPolicy` | `ghcr.io/aquasecurity/trivy` / `0.76.2` / `IfNotPresent` | Image the Trivy CLI is copied from (amd64, arm64) |
 | `trivy.cacheSizeLimit` | `3Gi` | `emptyDir` holding the Trivy database (standalone mode) |
 | `trivy.server.enabled` | `false` | Trivy server Deployment and Service; kube-tower then scans in client mode |
 | `trivy.server.image` | `{}` (= `trivy.image`) | Image of the Trivy server, merged over `trivy.image` |
