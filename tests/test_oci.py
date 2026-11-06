@@ -364,3 +364,53 @@ async def test_authentication_results_are_recorded():
     bad = results.get("bad.example.com")
     assert not bad.ok and "bad.example.com refused the credentials: HTTP 401" in bad.message
     assert not results.get("wrong.example.com").ok
+
+
+def test_parse_created():
+    from datetime import UTC, datetime
+
+    from kube_tower.registry.oci import parse_created
+
+    assert parse_created("2024-10-01T12:34:56.123456789Z") == datetime(2024, 10, 1, 12, 34, 56, 123456, tzinfo=UTC)
+    assert parse_created("2024-10-01T12:34:56") == datetime(2024, 10, 1, 12, 34, 56, tzinfo=UTC)
+    # reproducible builds: no real date
+    assert parse_created("1970-01-01T00:00:00Z") is None and parse_created("1980-01-01T00:00:01Z") is None
+    assert parse_created("not a date") is None and parse_created(None) is None and parse_created(12) is None
+
+
+@respx.mock
+async def test_get_created():
+    from datetime import UTC, datetime
+
+    index = {
+        "manifests": [
+            {"digest": "sha256:att", "platform": {"os": "unknown", "architecture": "unknown"}},
+            {"digest": "sha256:arm", "platform": {"os": "linux", "architecture": "arm64"}},
+            {"digest": "sha256:amd", "platform": {"os": "linux", "architecture": "amd64"}},
+        ]
+    }
+    image = {"config": {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": "sha256:cfg"}}
+    respx.get("https://ghcr.io/v2/org/app/manifests/2.0").respond(200, json=index)
+    respx.get("https://ghcr.io/v2/org/app/manifests/sha256:amd").respond(200, json=image)
+    respx.get("https://ghcr.io/v2/org/app/blobs/sha256:cfg").respond(200, json={"created": "2026-10-12T08:00:00Z"})
+    # annotated: no more request
+    annotated = {"annotations": {"org.opencontainers.image.created": "2026-09-01T00:00:00Z"}, "layers": []}
+    respx.get("https://quay.io/v2/org/app/manifests/1.0").respond(200, json=annotated)
+    # a Helm chart without annotation: its config is the Chart.yaml
+    chart = {"config": {"mediaType": "application/vnd.cncf.helm.config.v1+json", "digest": "sha256:chart"}}
+    respx.get("https://ghcr.io/v2/org/charts/app/manifests/1.0.0").respond(200, json=chart)
+    respx.get("https://quay.io/v2/org/empty/manifests/1.0").respond(200, json={"manifests": []})
+    # Docker Hub: its web API, else the registry for private repositories
+    respx.get("https://hub.docker.com/v2/repositories/library/nginx/tags/1.27").respond(
+        200, json={"tag_last_pushed": "2026-08-15T10:00:00.123456Z"}
+    )
+    respx.get("https://hub.docker.com/v2/repositories/me/private/tags/1.0").respond(404)
+    respx.get("https://registry-1.docker.io/v2/me/private/manifests/1.0").respond(200, json=annotated)
+    async with httpx.AsyncClient() as http:
+        oci = OCIClient(http)
+        assert await oci.get_created("ghcr.io", "org/app", "2.0") == datetime(2026, 10, 12, 8, tzinfo=UTC)
+        assert await oci.get_created("quay.io", "org/app", "1.0") == datetime(2026, 9, 1, tzinfo=UTC)
+        assert await oci.get_created("ghcr.io", "org/charts/app", "1.0.0") is None
+        assert await oci.get_created("quay.io", "org/empty", "1.0") is None
+        assert (await oci.get_created("docker.io", "library/nginx", "1.27")).date().isoformat() == "2026-08-15"
+        assert await oci.get_created("docker.io", "me/private", "1.0") == datetime(2026, 9, 1, tzinfo=UTC)

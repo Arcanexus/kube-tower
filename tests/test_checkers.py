@@ -69,6 +69,37 @@ async def test_image_checker_tag_digests():
     assert disabled.tag_digest is None and disabled.latest_digest is None
 
 
+async def test_image_release_dates(caplog):
+    from datetime import UTC, datetime
+
+    class DatedOCI(FakeOCI):
+        created = 0
+
+        async def get_created(self, registry, repository, tag):
+            self.created += 1
+            if repository == "library/redis":
+                raise RegistryError("refused")
+            return datetime(2026, 10, 12, tzinfo=UTC)
+
+    oci = DatedOCI(
+        tags={"library/nginx": ["1.25.3", "1.26.0"], "library/redis": ["7.0.0"]},
+        digests={"library/nginx": "sha256:b", "library/redis": "sha256:r"},
+    )
+    caplog.set_level(logging.DEBUG)
+    reports = [_img("library/nginx", "1.25.3"), _img("library/nginx", "1.26.0"), _img("library/redis", "7.0.0")]
+    await ImageChecker(oci, ImagesSettings()).check_all(reports)
+    assert [r.latest_released for r in reports] == [datetime(2026, 10, 12, tzinfo=UTC)] * 2 + [None]
+    assert oci.created == 2  # 1.26.0 asked once
+    assert "no release date for image docker.io library/redis 7.0.0" in caplog.text
+    # kept for the next scans, not the failures
+    again = [_img("library/nginx", "1.25.3"), _img("library/redis", "7.0.0")]
+    await ImageChecker(oci, ImagesSettings()).check_all(again)
+    assert again[0].latest_released and oci.created == 3
+    disabled = _img("library/nginx", "1.25.3")
+    await ImageChecker(oci, ImagesSettings(fetch_release_dates=False)).check(disabled)
+    assert disabled.latest_released is None
+
+
 def _chart_archive(chart: dict) -> bytes:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
@@ -99,6 +130,11 @@ class FakeHelm:
 
     async def list_versions(self, repository, chart):
         return self.versions[(repository, chart)]
+
+    async def release_date(self, repository, chart, version):
+        from datetime import UTC, datetime
+
+        return datetime(2026, 10, 12, tzinfo=UTC)
 
     values: dict = {}  # chart -> default values
     files: dict = {}  # path -> content, in the chart or in git
@@ -148,6 +184,8 @@ async def test_chart_checker():
         (2, "common", Status.OUTDATED),
         (3, "common", Status.OUTDATED),
     ]
+    assert app.latest_released.isoformat() == "2026-10-12T00:00:00+00:00"
+    assert app.dependencies[0].latest_released.isoformat().startswith("2026-10-12")
     assert app2.status == Status.UNKNOWN
     assert (mon.status, mon.version, mon.chart) == (Status.UP_TO_DATE, "0.3.0", "monitoring")
     assert mon.dependencies[0].status == Status.UNKNOWN

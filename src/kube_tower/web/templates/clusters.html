@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, page_title %}
+{% from "_macros.html" import icon, page_title, released %}
 {% set level_icons = {"ok": "ok", "info": "info", "warning": "warning", "error": "error"} %}
 {% set level_words = {"ok": "healthy", "info": "healthy", "warning": "to check", "error": "problem"} %}
 {% set shown = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM] %}
@@ -47,8 +47,8 @@
       <p>Kubernetes <strong>{{ c.version or "unknown" }}</strong> {{ eol(api, days) }}</p>
       {% if api and api.cycle %}<p><small class="muted-text">
         {%- if api.end_of_life %}{% if days < 0 %}<span class="level-error">end of life since {{ api.end_of_life }}</span>{% else %}supported until {{ api.end_of_life }}{% endif %}{% endif %}
-        {%- if api.latest and api.latest != api.version %} · latest patch {{ api.latest }}{% endif %}
-        {%- if api.newest_cycle and api.newest_cycle != api.cycle %} · newest {{ api.newest_cycle }}{% endif %}</small></p>{% endif %}
+        {%- if api.latest and api.latest != api.version %} · latest patch {{ api.latest }} {{ released(api.latest_released) }}{% endif %}
+        {%- if api.newest_cycle and api.newest_cycle != api.cycle %} · newest {{ api.newest_cycle }} {{ released(api.newest_released) }}{% endif %}</small></p>{% endif %}
       <ul class="donut-legend">
         {% for s in v.kubelet_segments() %}<li><i class="dot stroke-bg-{{ s.level }}"></i><code>{{ s.version }}</code> <small class="muted-text">{{ s.nodes | plural("node") }}</small></li>{% endfor %}
       </ul>

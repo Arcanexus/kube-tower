@@ -1,4 +1,4 @@
-{% from "_macros.html" import badge, copy, drawer, icon, severity_counts %}
+{% from "_macros.html" import badge, copy, drawer, icon, released, severity_counts %}
 {% set level_icons = {"ok": "ok", "info": "info", "warning": "warning", "error": "error"} %}
 {% call drawer(n.name, "Node · " ~ n.cluster) %}
 <p>
@@ -31,7 +31,7 @@
 <h4>Kubernetes and containerd</h4>
 {% for p in platform %}
 <p><strong>{{ p.component }} {{ p.version }}</strong>
-  {%- if p.end_of_life %} <small class="muted-text">· cycle {{ p.cycle }}, end of life {{ p.end_of_life }}{% if p.latest and p.latest != p.version %} · latest patch {{ p.latest }}{% endif %}</small>{% endif %}
+  {%- if p.end_of_life %} <small class="muted-text">· cycle {{ p.cycle }}, end of life {{ p.end_of_life }}{% if p.latest and p.latest != p.version %} · latest patch {{ p.latest }} {{ released(p.latest_released) }}{% endif %}</small>{% endif %}
   {%- if p.message %}<br><small class="muted-text">{{ p.message }}</small>{% endif %}</p>
 {% if p.vulnerabilities %}
 <div class="overflow-auto">

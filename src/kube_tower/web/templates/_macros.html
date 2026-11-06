@@ -43,19 +43,26 @@
 <span class="image-cell">{{ running_icon(r) }}<code class="image-name" title="{{ r.image.name }}"><span class="registry">{{ r.image.registry }}/</span>{{ r.image.repository }}</code></span>
 {%- endmacro %}
 
-{% macro version_cell(tag_value, digest_value, other="", warn=True, copyable=False) -%}
+{% macro released(date) -%}
+{# When a latest version was published: a datetime (ImageReport/ChartReport.latest_released) or a
+   YYYY-MM-DD text (PlatformVersion). #}
+{%- if date is string %}<small class="released" title="Released {{ date }}">{{ icon("calendar") }}{{ date }}</small>
+{%- elif date %}<small class="released" title="Released {{ date.strftime('%Y-%m-%d %H:%M UTC') }}, {{ date | age }}">{{ icon("calendar") }}{{ date.strftime("%Y-%m-%d") }}</small>{% endif -%}
+{%- endmacro %}
+
+{% macro version_cell(tag_value, digest_value, other="", warn=True, copyable=False, released_at=None) -%}
 {# A version and its short digest below, to compare current and latest at a glance; `other` is the digest
    of the other column: a different digest is highlighted. #}
 {% set shown = (tag(tag_value) if warn else tag_value) if tag_value else ("pinned digest" if digest_value else "—") %}
 {% set version_tag %}<span class="version-tag" title="{{ tag_value }}">{{ shown }}</span>{% endset %}
 <span class="version-cell">{% if copyable and tag_value %}{% call copy(tag_value) %}{{ version_tag }}{% endcall %}{% else %}{{ version_tag }}{% endif %}
-{%- if digest_value %}{% if copyable %}{% call copy(digest_value) %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}">{{ digest_value | short_digest }}</small>{% endcall %}{% else %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}" title="{{ digest_value }}">{{ digest_value | short_digest }}</small>{% endif %}{% endif %}</span>
+{%- if digest_value %}{% if copyable %}{% call copy(digest_value) %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}">{{ digest_value | short_digest }}</small>{% endcall %}{% else %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}" title="{{ digest_value }}">{{ digest_value | short_digest }}</small>{% endif %}{% endif %}{{ released(released_at) }}</span>
 {%- endmacro %}
 
 {% macro version_cells(r) -%}
 {% set current, latest = image_versions(r) %}
 <td data-sort="{{ current[0] }}">{{ version_cell(current[0], current[1]) }}</td>
-<td data-sort="{{ latest[0] }}">{% if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False) }}{% else %}<small class="muted-text" title="The registry could not tell (see the status)">unknown</small>{% endif %}</td>
+<td data-sort="{{ latest[0] }}">{% if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False, released_at=r.latest_released if latest[0] == r.latest_tag) }}{% else %}<small class="muted-text" title="The registry could not tell (see the status)">unknown</small>{% endif %}</td>
 {%- endmacro %}
 
 {% macro chip(name, value, active, count, label, title) -%}

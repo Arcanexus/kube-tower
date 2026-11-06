@@ -15,7 +15,7 @@ checks in error, then the most vulnerable.
 | --- | --- |
 | Image | Normalized name (`nginx` becomes `docker.io/library/nginx`), with an icon: green ▶ a pod runs it, grey ⏸ none does |
 | Current | Tag used by the workloads, with the start of its digest |
-| Latest | Highest tag of the same shape and [versioning scheme](statuses.md#versioning-schemes), with its digest (orange when it differs) |
+| Latest | Highest tag of the same shape and [versioning scheme](statuses.md#versioning-schemes), with its digest (orange when it differs) and its release date |
 | Update | `major`, `minor`, `patch`, `newer` or `new digest`, else the [status](statuses.md) |
 | Vulnerabilities | Count by severity (C, H, M, L), `pending` while scanning, `scan failed` (reason on hover) or `not scanned` (see [troubleshooting](troubleshooting.md#vulnerabilities)) |
 | Used by | Number of workloads (or `cached on nodes`) and their clusters |
@@ -53,5 +53,10 @@ Notes:
   unpacked size with Docker. A range when nodes differ; unknown if no node pulled it.
 - A workload without pod says **no pod running** (scaled to zero, CronJob between two runs).
 - Published digests need `images.fetchTagDigests` (on by default).
+- The **release date** of the latest tag is when it was pushed on Docker Hub (its web API, outside the
+  pull rate limit), else when the image was built: the `org.opencontainers.image.created` annotation,
+  or the `created` date of its config (linux/amd64). Images built reproducibly carry a fixed date
+  (1970, 1980) and show none. Each date is read once per version; turn it off with
+  `images.fetchReleaseDates: false`.
 
 Where the vulnerabilities come from: [vulnerabilities](vulnerabilities.md).

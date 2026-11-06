@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import Counter
+from collections import Counter, OrderedDict
+from datetime import datetime
 
 from kube_tower.config import HelmSettings, ImagesSettings
 from kube_tower.errors import GIT_CREDENTIALS, explain
@@ -45,6 +46,49 @@ def _mark_deployed(dependencies: list[ChartDependency], values: dict | None, tag
 def _summary(statuses) -> str:
     counts = Counter(s.value for s in statuses)
     return ", ".join(f"{counts[s.value]} {s.value}" for s in Status if counts[s.value]) or "nothing to check"
+
+
+class _ReleaseDates:
+    """Release dates already read, kept between scans (a published version keeps its date): each one is
+    asked once per process. Failed lookups are not kept, the next scan tries again."""
+
+    def __init__(self, size: int = 20000):
+        self.size = size
+        self._dates: OrderedDict[tuple, datetime | None] = OrderedDict()
+
+    def get(self, key: tuple) -> tuple[bool, datetime | None]:
+        if key in self._dates:
+            self._dates.move_to_end(key)
+            return True, self._dates[key]
+        return False, None
+
+    def put(self, key: tuple, value: datetime | None) -> None:
+        self._dates[key] = value
+        self._dates.move_to_end(key)
+        while len(self._dates) > self.size:
+            self._dates.popitem(last=False)
+
+
+RELEASE_DATES = _ReleaseDates()
+
+
+async def _release_date(memo: _Memo, sem: asyncio.Semaphore, key: tuple, lookup) -> datetime | None:
+    """Best effort: the date `lookup` reads, None when it fails (logged at debug level)."""
+    known, date = RELEASE_DATES.get(key)
+    if known:
+        return date
+
+    async def fetch():
+        async with sem:
+            date = await lookup()
+        RELEASE_DATES.put(key, date)
+        return date
+
+    try:
+        return await memo.get(("released", *key), fetch)
+    except Exception as exc:  # noqa: BLE001 - informative only, the status is already known
+        log.debug("no release date for %s: %s", " ".join(str(k) for k in key if k), explain(exc))
+        return None
 
 
 class _Memo:
@@ -102,6 +146,7 @@ class ImageChecker:
                 report.latest_tag = latest_matching(ref.tag, tags, self.settings.include_prerelease)
                 report.status = Status.OUTDATED if is_newer(report.latest_tag, ref.tag) else Status.UP_TO_DATE
                 await self._fetch_digests(report)
+                await self._fetch_release_date(report)
                 return
             # Floating tag (latest, stable, ...): compare digests like watchtower does.
             if not self.settings.check_floating_digests or not report.running_digests:
@@ -128,6 +173,16 @@ class ImageChecker:
                 report.latest_digest = await self._digest(ref.registry, ref.repository, report.latest_tag)
         except Exception as exc:  # noqa: BLE001 - informative only, the status is already known
             log.debug("cannot read digests of %s: %s", ref, explain(exc))
+
+    async def _fetch_release_date(self, report: ImageReport) -> None:
+        """Best effort: when the latest tag was built or pushed, shown next to it."""
+        if not self.settings.fetch_release_dates or not report.latest_tag:
+            return
+        ref = report.image
+        key = ("image", ref.registry, ref.repository, report.latest_tag)
+        report.latest_released = await _release_date(
+            self.memo, self.sem, key, lambda: self.oci.get_created(ref.registry, ref.repository, report.latest_tag)
+        )
 
     async def check_all(self, reports: list[ImageReport]) -> None:
         log.info("checking %d image(s) against their registries", len(reports))
@@ -214,6 +269,13 @@ class ChartChecker:
     async def _latest(self, repository: str, chart: str) -> str | None:
         return latest_semver(await self._versions(repository, chart), self.settings.include_prerelease)
 
+    async def _released(self, repository: str, chart: str, version: str | None) -> datetime | None:
+        """Best effort: when `version` of the chart was published."""
+        if not self.settings.fetch_release_dates or not version:
+            return None
+        key = ("chart", repository, chart, version)
+        return await _release_date(self.memo, self.sem, key, lambda: self.helm.release_date(repository, chart, version))
+
     async def check_dependency(self, dep: ChartDependency, depth: int = 1, parent: dict | None = None, tags=None) -> None:
         """Check a subchart, then its own subcharts. `parent` holds the values of the chart that includes it
         (None when unknown) and `tags` the `tags:` block of the release values.
@@ -225,6 +287,7 @@ class ChartChecker:
             return
         try:
             dep.latest_version = await self._latest(repository, dep.name)
+            dep.latest_released = await self._released(repository, dep.name, dep.latest_version)
             if parse(dep.version) is None:
                 # Version constraint such as "~1.2" or "1.x": just display the latest one.
                 dep.status, dep.message = Status.UNKNOWN, "version is a constraint"
@@ -282,6 +345,7 @@ class ChartChecker:
                 report.status, report.message = Status.UP_TO_DATE, f"deployed from git ({report.git_ref})"
             else:
                 report.latest_version = await self._latest(report.repository, report.chart)
+                report.latest_released = await self._released(report.repository, report.chart, report.latest_version)
                 if parse(report.version) is None:
                     report.status, report.message = Status.UNKNOWN, f"targetRevision '{report.version}' is not a fixed version"
                 else:

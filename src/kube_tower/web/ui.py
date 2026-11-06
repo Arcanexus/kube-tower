@@ -8,6 +8,7 @@ import os
 import platform
 import re
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -341,6 +342,20 @@ def duration(seconds: float) -> str:
     return f"{round(seconds / 86400)} days"
 
 
+def age(when: datetime, now: datetime | None = None) -> str:
+    """How long ago a date is, roughly: today, 5 days, 3 weeks, 4 months, 2 years."""
+    days = ((now or datetime.now(UTC)) - when).days
+    if days < 1:
+        return "today"
+    if days < 14:
+        return f"{days} day{'s' if days > 1 else ''} ago"
+    if days < 61:
+        return f"{days // 7} weeks ago"
+    if days < 730:
+        return f"{days // 30} months ago"
+    return f"{days // 365} years ago"
+
+
 def short_digest(value: str | None) -> str:
     """sha256:0123456789abcdef… -> sha256:0123456789ab (enough to compare at a glance)."""
     if not value:
@@ -502,7 +517,7 @@ templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulner
 templates.env.globals.update(image_update=image_update, fixable_critical=fixable_critical)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
 templates.env.globals.update(versioning=versioning, image_versions=image_versions, image_size=image_size, usage_tree=usage_tree)
-templates.env.filters.update(plural=plural, duration=duration, short_digest=short_digest)
+templates.env.filters.update(plural=plural, duration=duration, short_digest=short_digest, age=age)
 
 
 def mount(app: FastAPI) -> None:

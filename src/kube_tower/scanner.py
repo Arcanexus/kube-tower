@@ -665,21 +665,33 @@ RETRY_KEY = ("retry-failed",)
 
 def _fresh_image(report: ImageReport) -> ImageReport:
     """A copy of the report to check again apart (the current results stay shown meanwhile)."""
-    return dataclasses.replace(report, status=Status.UNKNOWN, latest_tag=None, latest_digest=None, tag_digest=None, message=None)
+    return dataclasses.replace(
+        report,
+        status=Status.UNKNOWN,
+        latest_tag=None,
+        latest_digest=None,
+        tag_digest=None,
+        latest_released=None,
+        message=None,
+    )
 
 
 def _apply_image(report: ImageReport, fresh: ImageReport) -> None:
     report.status, report.message = fresh.status, fresh.message
     report.latest_tag, report.latest_digest, report.tag_digest = fresh.latest_tag, fresh.latest_digest, fresh.tag_digest
+    report.latest_released = fresh.latest_released
 
 
 def _fresh_chart(report: ChartReport) -> ChartReport:
-    return dataclasses.replace(report, status=Status.UNKNOWN, latest_version=None, message=None, dependencies=[])
+    return dataclasses.replace(
+        report, status=Status.UNKNOWN, latest_version=None, latest_released=None, message=None, dependencies=[]
+    )
 
 
 def _apply_chart(report: ChartReport, fresh: ChartReport) -> None:
     # `chart` is kept: it identifies the chart in the UI.
     report.version, report.status, report.latest_version = fresh.version, fresh.status, fresh.latest_version
+    report.latest_released = fresh.latest_released
     report.message, report.dependencies = fresh.message, fresh.dependencies
 
 

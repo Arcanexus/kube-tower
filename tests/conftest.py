@@ -19,3 +19,11 @@ def no_platform_lookup(monkeypatch):
         return []
 
     monkeypatch.setattr(scanner, "lookup", lookup)
+
+
+@pytest.fixture(autouse=True)
+def no_known_release_dates():
+    """The release dates read by a test are not kept for the next ones."""
+    from kube_tower.checkers import RELEASE_DATES
+
+    RELEASE_DATES._dates.clear()

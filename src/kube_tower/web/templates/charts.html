@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, chip, counters, filters, icon, list_shown, load_more, more_hint, page_title, sort_th, subchart_badge, tree_cell %}
+{% from "_macros.html" import badge, chip, counters, filters, icon, list_shown, load_more, more_hint, page_title, released, sort_th, subchart_badge, tree_cell %}
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.", "One line per chart. The Status column shows the chart and its subcharts as a tree, each with its version and its own status. The chips and the sort use the worst status of the chart and its deployed subcharts: a subchart that the Helm values of the Application leave out (condition or tags false) is shown as not deployed. Click a chart for its details.") }}{% endblock %}
 {% block content %}
@@ -29,7 +29,7 @@
         hx-get="charts/detail?cluster={{ c.cluster | urlencode }}&namespace={{ c.app_namespace | urlencode }}&app={{ c.application | urlencode }}&chart={{ c.chart | urlencode }}">
       <td class="cell-name"><strong>{{ c.chart }}</strong></td>
       <td>{{ c.version }}</td>
-      <td>{{ c.latest_version or unknown }}</td>
+      <td data-sort="{{ c.latest_version or '' }}"><span class="version-cell">{{ c.latest_version or unknown }}{{ released(c.latest_released) }}</span></td>
       <td data-sort="{{ status_rank[c.worst_status] }}" class="status-cell">
         <ul class="status-tree" aria-label="Status of the chart and its subcharts">
           <li><div class="tree-cell"><span class="tree-label"><code>{{ c.chart }}</code></span>{{ versions(c.version, c.latest_version) }}{{ badge(c.status) }}

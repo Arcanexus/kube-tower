@@ -158,12 +158,14 @@ config:
     checkFloatingDigests: true
     # Read the published digests of the current and latest tags (shown in the image details)
     fetchTagDigests: true
+    fetchReleaseDates: true
     ignore: []
   helm:
     applicationNamespaces:
       - argocd
     includePrerelease: false
     checkDependencies: true
+    fetchReleaseDates: true
   # Known vulnerabilities (CVE) of the images, see docs/vulnerabilities.md
   vulnerabilities:
     enabled: true

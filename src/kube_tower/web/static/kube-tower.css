@@ -829,3 +829,7 @@ td.cell-name { max-width: 21rem; }
 .copyable.copied .copy-idle, .copyable.copy-failed .copy-idle { display: none; }
 .copyable.copied .copy-done { display: inline-block; color: var(--kt-ok); }
 .copyable.copy-failed .copy-fail { display: inline-block; color: var(--kt-err); }
+
+/* Release date of a latest version (released macro) */
+.released { display: inline-flex; align-items: center; color: var(--kt-muted); font-size: .72rem; white-space: nowrap; }
+.released .icon { width: .9em; height: .9em; margin-right: .25em; }

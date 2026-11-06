@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,6 +39,33 @@ MANIFEST_ACCEPT = ", ".join(
         "application/vnd.docker.distribution.manifest.v2+json",
     ]
 )
+CREATED_ANNOTATION = "org.opencontainers.image.created"
+DOCKER_HUB_WEB_API = "hub.docker.com"
+# Reproducible builds (distroless, ko, nix, Bazel, SOURCE_DATE_EPOCH) stamp 1970 or 1980: no real date.
+EARLIEST_RELEASE = datetime(1990, 1, 1, tzinfo=UTC)
+
+
+def parse_created(value: object) -> datetime | None:
+    """A release date from an OCI annotation, an image config or the Docker Hub API (RFC 3339), or None
+    when missing, unreadable or set to a fixed date by a reproducible build."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        created = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    return created if created >= EARLIEST_RELEASE else None
+
+
+def _platform_manifest(index: dict) -> dict | None:
+    """The linux/amd64 manifest of an index (else the first image one), skipping attestations."""
+    images = [m for m in index.get("manifests") or [] if (m.get("platform") or {}).get("os") != "unknown"]
+    amd64 = (m for m in images if (m.get("platform") or {}).get("architecture") == "amd64")
+    return next(amd64, images[0] if images else None)
+
+
 _CHALLENGE_RE = re.compile(r'(\w+)="([^"]*)"')
 _LINK_RE = re.compile(r"<([^>]+)>;\s*rel=\"next\"")
 
@@ -349,6 +377,41 @@ class OCIClient:
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot read the manifest of {registry}/{repository}:{reference}", resp))
         return resp.json()
+
+    async def get_created(self, registry: str, repository: str, reference: str) -> datetime | None:
+        """When an image (or OCI Helm chart) was built: Docker Hub tells when the tag was pushed (its web
+        API does not count in the pull rate limit); elsewhere the `org.opencontainers.image.created`
+        annotation of the manifest, else the `created` field of the image config (linux/amd64 for a
+        multi-architecture image). None when the registry does not tell."""
+        if registry == DOCKER_HUB:
+            try:
+                return await self._docker_hub_pushed(repository, reference)
+            except Exception as exc:  # noqa: BLE001 - private repositories need the registry API
+                log.debug("Docker Hub API: no push date of %s:%s (%s), reading its image config", repository, reference, exc)
+        manifest = await self.get_manifest(registry, repository, reference, MANIFEST_ACCEPT)
+        if created := parse_created((manifest.get("annotations") or {}).get(CREATED_ANNOTATION)):
+            return created
+        if "manifests" in manifest:
+            platform = _platform_manifest(manifest)
+            if platform is None:
+                return None
+            if created := parse_created((platform.get("annotations") or {}).get(CREATED_ANNOTATION)):
+                return created
+            manifest = await self.get_manifest(registry, repository, platform["digest"], MANIFEST_ACCEPT)
+            if created := parse_created((manifest.get("annotations") or {}).get(CREATED_ANNOTATION)):
+                return created
+        config = manifest.get("config") or {}
+        if not config.get("digest") or not config.get("mediaType", "").endswith("image.config.v1+json"):
+            return None  # e.g. a Helm chart: its config is the Chart.yaml, without date
+        return parse_created(json.loads(await self.get_blob(registry, repository, config["digest"])).get("created"))
+
+    async def _docker_hub_pushed(self, repository: str, tag: str) -> datetime | None:
+        url = f"https://{DOCKER_HUB_WEB_API}/v2/repositories/{repository}/tags/{tag}"
+        resp = await self.client_for(DOCKER_HUB_WEB_API).get(url, follow_redirects=True)
+        if resp.status_code != 200:
+            raise RegistryError(http_error_message(f"cannot read the tag {repository}:{tag} on Docker Hub", resp))
+        data = resp.json()
+        return parse_created(data.get("tag_last_pushed") or data.get("last_updated"))
 
     async def get_blob(self, registry: str, repository: str, digest: str) -> bytes:
         url = self._url(registry, f"/v2/{repository}/blobs/{digest}")

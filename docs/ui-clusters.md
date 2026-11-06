@@ -15,7 +15,7 @@ or *unreachable* with the error of the last scan. Then, side by side:
 | Block | Shows |
 | --- | --- |
 | **Ring** | The nodes split by kubelet version: green on the version of the API server, orange behind it, red unsupported. The number of nodes in the middle |
-| **Versions** | The Kubernetes version of the API server with an **EOL** tag when its release cycle is at (or near) its end of life, the date it is supported until, its latest patch and the newest release; then each kubelet version with its number of nodes |
+| **Versions** | The Kubernetes version of the API server with an **EOL** tag when its release cycle is at (or near) its end of life, the date it is supported until, its latest patch and the newest release with their release dates; then each kubelet version with its number of nodes |
 | **Vulnerabilities** | Two lines of critical, high and medium CVEs, each counted once: **Kubernetes**, those of the Kubernetes (API server, kubelets) and containerd versions of the cluster; **Images**, those of the images its pods run, with links to these images and to the outdated ones |
 
 Under them:

@@ -30,6 +30,8 @@ kube-tower connects, in `https://` only when credentials are involved:
 - to the Kubernetes API servers of the scanned clusters (usually port `443` or `6443`);
 - to the registries of the images and of the OCI Helm charts, the HTTP Helm repositories, and the git
   hosts of the charts read from git (raw files, e.g. `raw.githubusercontent.com`);
+- to `hub.docker.com` for the release dates of the Docker Hub images (`images.fetchReleaseDates`;
+  without it, the date comes from the registry);
 - for the vulnerability scans in standalone mode, to the Trivy database registries (`mirror.gcr.io`,
   `ghcr.io`), see [vulnerabilities](vulnerabilities.md);
 - with a cloud `provider` of [registries](registries.md), to the token services of the cloud (and the GKE
