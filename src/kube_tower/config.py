@@ -78,6 +78,8 @@ class ImagesSettings:
     check_floating_digests: bool = True
     # Read the published digests of the current and latest tags, shown in the image details.
     fetch_tag_digests: bool = True
+    # Read when the latest tag was built (Docker Hub API, OCI annotation or image config), shown next to it.
+    fetch_release_dates: bool = True
     # fnmatch patterns on the image name (registry/repository), e.g. "registry.k8s.io/pause*".
     ignore: list[str] = field(default_factory=list)
     # Pages of 1000 tags read per repository: some have tens of thousands (CI builds), with the releases
@@ -92,6 +94,8 @@ class HelmSettings:
     application_namespaces: list[str] = field(default_factory=lambda: ["argocd"])
     include_prerelease: bool = False
     check_dependencies: bool = True
+    # Read when the latest versions were published (index.yaml, or an OCI annotation), shown next to them.
+    fetch_release_dates: bool = True
 
 
 @dataclass

@@ -37,6 +37,7 @@ images:
   includePrerelease: false
   checkFloatingDigests: true   # compare digests for latest/stable tags
   fetchTagDigests: true        # published digests of the current/latest tags (image details)
+  fetchReleaseDates: true      # when the latest tags were built (Docker Hub API, OCI annotation or image config)
   ignore:                      # fnmatch patterns on registry/repository[:tag]
     - registry.k8s.io/pause*
   maxTagPages: 50              # 1000 tags per page
@@ -45,6 +46,7 @@ helm:
   applicationNamespaces: [argocd]   # [] = all namespaces
   includePrerelease: false
   checkDependencies: true     # subcharts, and their own subcharts (3 levels)
+  fetchReleaseDates: true     # when the latest versions were published (index.yaml, OCI annotation)
 security:                      # Trivy Operator security reports, see security.md
   enabled: true
   exposedSecrets: true         # false: leave the exposed secrets out

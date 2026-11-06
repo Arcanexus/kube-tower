@@ -11,7 +11,7 @@ with the chart and all its subcharts. How lists and detail panels work in genera
 | Column | Meaning |
 | --- | --- |
 | Chart | Chart name |
-| Current, Latest | Version deployed and latest version published |
+| Current, Latest | Version deployed and latest version published, with its release date: `created` in the `index.yaml` of the repository, or the `org.opencontainers.image.created` annotation of an OCI chart (pushed with Helm 3.15 or later). Off with `helm.fetchReleaseDates: false` |
 | Status | The chart and its subcharts as **one tree** (3 levels), each with its version (→ latest when behind) and its status |
 | Repository | Where the chart comes from, and its type (`helm`, `oci`, `git`) |
 | ArgoCD Application | The Application, its cluster and destination namespace |

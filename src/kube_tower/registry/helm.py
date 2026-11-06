@@ -10,6 +10,7 @@ import re
 import tarfile
 import threading
 from dataclasses import dataclass, field
+from datetime import datetime
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -19,7 +20,7 @@ from kube_tower.config import GitSettings
 from kube_tower.errors import GIT_CREDENTIALS, http_error_message
 from kube_tower.helmvalues import parse_values
 from kube_tower.registry.auth import normalize_host
-from kube_tower.registry.oci import OCIClient, RegistryError, require_https
+from kube_tower.registry.oci import OCIClient, RegistryError, parse_created, require_https
 
 log = logging.getLogger(__name__)
 
@@ -81,14 +82,26 @@ def chart_yaml_from_archive(data: bytes) -> dict:
     return chart_files_from_archive(data).metadata
 
 
+def _created(entry: dict) -> dict:
+    """{"created": date} of an index entry, as text (yaml parses an unquoted timestamp into a datetime)."""
+    value = entry.get("created")
+    if isinstance(value, datetime):
+        value = value.isoformat()
+    return {"created": value} if isinstance(value, str) and value else {}
+
+
 def _trim_index(index: dict | None) -> dict:
-    """Keep only what kube-tower reads from an index.yaml (versions and archive URLs): a parsed index
+    """Keep only what kube-tower reads from an index.yaml (versions, archive URLs, dates): a parsed index
     kept between scans then takes a fraction of the memory of the full one (descriptions, digests...).
     """
     entries = (index or {}).get("entries") or {}
     return {
         "entries": {
-            chart: [{"version": e.get("version"), "urls": e.get("urls") or []} for e in versions or [] if isinstance(e, dict)]
+            chart: [
+                {"version": e.get("version"), "urls": e.get("urls") or []} | _created(e)
+                for e in versions or []
+                if isinstance(e, dict)
+            ]
             for chart, versions in entries.items()
         }
     }
@@ -183,6 +196,15 @@ class HelmClient:
         if entries is None:
             raise RegistryError(f"chart {chart} is not published in the Helm repository {repository}: check the chart name")
         return [e["version"] for e in entries]
+
+    async def release_date(self, repository: str, chart: str, version: str) -> datetime | None:
+        """When a chart version was published: `created` in the index.yaml of an HTTP repository, the
+        `org.opencontainers.image.created` annotation (set by `helm push` since Helm 3.15) in an OCI one."""
+        if is_oci(repository):
+            registry, path = split_oci(repository, chart)
+            return await self.oci.get_created(registry, path, version)
+        entries = (await self._index(repository)).get("entries", {}).get(chart) or []
+        return parse_created(next((e.get("created") for e in entries if e.get("version") == version), None))
 
     async def chart_metadata(self, repository: str, chart: str, version: str) -> dict:
         """Return the Chart.yaml of a published chart version (used to read its dependencies)."""

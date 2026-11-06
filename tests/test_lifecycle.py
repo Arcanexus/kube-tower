@@ -5,12 +5,20 @@ import respx
 
 from kube_tower.clusterview import cluster_view
 from kube_tower.config import KubernetesVersionsSettings
-from kube_tower.lifecycle import days_left, end_of_life, lookup, osv_vulnerabilities, plain_version, platform_versions
+from kube_tower.lifecycle import (
+    days_left,
+    end_of_life,
+    lookup,
+    osv_vulnerabilities,
+    plain_version,
+    platform_versions,
+    release_dates,
+)
 from kube_tower.models import ClusterStatus, NodeInfo, PlatformVersion, Severity, Vulnerability
 
 CYCLES = [
-    {"cycle": "1.31", "eol": "2025-10-28", "latest": "1.31.4"},
-    {"cycle": "1.30", "eol": "2025-06-28", "latest": "1.30.8"},
+    {"cycle": "1.31", "eol": "2025-10-28", "latest": "1.31.4", "releaseDate": "2024-08-13", "latestReleaseDate": "2024-12-10"},
+    {"cycle": "1.30", "eol": "2025-06-28", "latest": "1.30.8", "releaseDate": "2024-04-17", "latestReleaseDate": "2024-12-10"},
     {"cycle": "1.29", "eol": "2025-02-28", "latest": "1.29.12"},
     {"cycle": "next", "eol": False},
 ]
@@ -55,6 +63,8 @@ def test_versions():
     assert end_of_life(CYCLES, "1.30.4") == ("1.30", "2025-06-28", "1.30.8", "1.31")
     assert end_of_life(CYCLES, "1.32.0") == ("1.32", "", "", "1.31")
     assert end_of_life([{"cycle": "1.28", "eol": True}], "1.28.1") == ("1.28", "", "", "1.28")
+    assert release_dates(CYCLES, "1.30", "1.31") == ("2024-12-10", "2024-08-13")
+    assert release_dates(CYCLES, "1.28", "next") == ("", "")
     assert days_left("2025-06-28", date(2025, 6, 18)) == 10 and days_left("", date(2025, 1, 1)) is None
 
 
@@ -79,6 +89,7 @@ async def test_lookup():
     found = await lookup(settings, {("kubernetes", "1.30.4"), ("containerd", "1.7.13")})
     by = {p.component: p for p in found}
     assert by["kubernetes"].cycle == "1.30" and by["kubernetes"].end_of_life == "2025-06-28"
+    assert (by["kubernetes"].latest_released, by["kubernetes"].newest_released) == ("2024-12-10", "2024-08-13")
     assert [v.id for v in by["kubernetes"].vulnerabilities] == ["CVE-2024-9042"] and by["containerd"].vulnerabilities == []
     assert by["containerd"].cycle == "" and by["kubernetes"].message is None
     # sources out of reach: a message, no failure

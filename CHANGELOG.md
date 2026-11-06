@@ -49,6 +49,11 @@ All notable changes to this project are documented here. The format follows
   versions, digests, chart names, versions and repositories, ArgoCD Applications, namespaces, clusters,
   node names and versions. A copy icon shows on hover and a check once copied; on plain http it falls back to the copy
   of the browser.
+- **Release date of the latest versions**, next to them in the lists and the detail panels: images
+  (Docker Hub API, else the `org.opencontainers.image.created` annotation or the image config), Helm
+  charts and subcharts (`index.yaml`, or the OCI annotation), and the latest patch and newest release
+  of Kubernetes on the Clusters page (endoflife.date). Read once per version; off with
+  `images.fetchReleaseDates` and `helm.fetchReleaseDates`.
 
 ### Changed
 

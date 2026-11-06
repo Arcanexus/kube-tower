@@ -272,3 +272,28 @@ async def test_chart_files_and_git_files():
             await helm.git_file("https://github.com/o/r.git", "main", "mon/values.yaml")
         with pytest.raises(RegistryError, match="403"):
             await helm.git_file("https://github.com/o/r.git", "main", "denied.yaml", missing_ok=True)
+
+
+@respx.mock
+async def test_release_date():
+    from datetime import UTC, datetime
+
+    index = (
+        "entries:\n  app:\n"
+        '  - version: 1.2.0\n    created: "2026-10-12T08:00:00.123456789Z"\n    urls: [app-1.2.0.tgz]\n'
+        "  - version: 1.1.0\n    created: 2026-09-01T00:00:00Z\n    urls: [app-1.1.0.tgz]\n"
+        "  - version: 1.0.0\n    urls: [app-1.0.0.tgz]\n"
+    )
+    respx.get("https://charts.example.com/index.yaml").respond(200, text=index)
+    respx.get("https://ghcr.io/v2/org/charts/app/manifests/1.2.0").respond(
+        200, json={"annotations": {"org.opencontainers.image.created": "2026-10-13T00:00:00Z"}}
+    )
+    async with httpx.AsyncClient() as http:
+        helm = HelmClient(http, OCIClient(http), GitSettings())
+        assert await helm.release_date("https://charts.example.com", "app", "1.2.0") == datetime(
+            2026, 10, 12, 8, 0, 0, 123456, tzinfo=UTC
+        )
+        assert await helm.release_date("https://charts.example.com", "app", "1.1.0") == datetime(2026, 9, 1, tzinfo=UTC)
+        assert await helm.release_date("https://charts.example.com", "app", "1.0.0") is None
+        assert await helm.release_date("https://charts.example.com", "nope", "1.0.0") is None
+        assert await helm.release_date("oci://ghcr.io/org/charts", "app", "1.2.0") == datetime(2026, 10, 13, tzinfo=UTC)

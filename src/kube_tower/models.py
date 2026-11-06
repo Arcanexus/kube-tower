@@ -127,6 +127,7 @@ class ImageReport:
     vulnerabilities: VulnerabilityReport | None = None  # None until scanned
     # Size in bytes reported by the nodes that pulled the image, by digest ("" when the node gives none).
     sizes: dict[str, int] = field(default_factory=dict)
+    latest_released: datetime | None = None  # when the latest tag was built or pushed
 
     @property
     def clusters(self) -> list[str]:
@@ -154,6 +155,7 @@ class ChartDependency:
     # Why Helm leaves the subchart out of the release (its condition or tags are false), None when deployed
     # or when the values could not be read. Its status is still the one of its version, ignored by worst_status.
     not_deployed: str | None = None
+    latest_released: datetime | None = None  # when the latest version was published
 
     @property
     def deployed(self) -> bool:
@@ -208,6 +210,7 @@ class ChartReport:
     value_files: list[ValueFile] = field(default_factory=list)
     ignore_missing_value_files: bool = False
     inline_values: dict = field(default_factory=dict)
+    latest_released: datetime | None = None  # when the latest version was published
 
     @property
     def key(self) -> tuple[str, str, str, str]:
@@ -387,6 +390,8 @@ class PlatformVersion:
     newest_cycle: str = ""  # most recent cycle released
     vulnerabilities: list[Vulnerability] = field(default_factory=list)
     message: str | None = None  # why the lookup failed
+    latest_released: str = ""  # YYYY-MM-DD: release of the latest patch
+    newest_released: str = ""  # YYYY-MM-DD: first release of the newest cycle
 
     def counts(self) -> dict[Severity, int]:
         out = dict.fromkeys(Severity, 0)

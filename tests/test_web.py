@@ -468,6 +468,32 @@ def test_detail_values_are_copyable():
     assert ".copyable.copied .copy-done" in client.get("/static/kube-tower.css").text
 
 
+def test_release_dates_next_to_the_latest_versions():
+    from datetime import UTC, datetime, timedelta
+
+    from kube_tower.web.ui import age
+
+    now = datetime(2026, 11, 6, tzinfo=UTC)
+    assert [age(now - timedelta(days=d), now) for d in (0, 1, 5, 20, 90, 800)] == [
+        "today",
+        "1 day ago",
+        "5 days ago",
+        "2 weeks ago",
+        "3 months ago",
+        "2 years ago",
+    ]
+    client, scanner = _client()
+    nginx = next(r for r in scanner.snapshot.images if r.latest_tag)
+    nginx.latest_released = datetime(2026, 10, 12, 8, tzinfo=UTC)
+    chart = scanner.snapshot.charts[0]
+    chart.latest_released = datetime(2026, 9, 1, tzinfo=UTC)
+    page = client.get("/images").text
+    assert '<small class="released" title="Released 2026-10-12 08:00 UTC, ' in page and "2026-10-12</small>" in page
+    detail = client.get("/images/detail", params={"ref": str(nginx.image)}).text
+    assert detail.count("2026-10-12</small>") == 2  # summary and Latest tag
+    assert "2026-09-01</small>" in client.get("/charts").text
+
+
 def test_image_size():
     from kube_tower.web.ui import image_size
 
@@ -1126,11 +1152,16 @@ def test_clusters_page():
                     "CVE-2025-1", Severity.HIGH, "k8s.io/kubernetes", "1.30.0", "1.30.9", "Kubelet flaw", "https://osv.dev/x"
                 )
             ],
+            latest_released="2025-07-15",
+            newest_released="2025-08-27",
         )
     ]
     page = " ".join(client.get("/clusters").text.split())
     assert 'Kubernetes <strong>v1.30.0</strong> <span class="eol-tag level-error"' in page
-    assert "end of life since 2025-06-28</span> · latest patch 1.30.14 · newest 1.34" in page
+    assert (
+        'end of life since 2025-06-28</span> · latest patch 1.30.14 <small class="released" title="Released 2025-07-15">' in page
+    )
+    assert "2025-07-15</small> · newest 1.34" in page and "2025-08-27</small>" in page
     assert "Kubernetes 1.30 is end of life since 2025-06-28: no more security fixes" in page
     assert 'title="1 high CVEs">1 H</span>' in page
     detail = " ".join(client.get("/clusters/node?cluster=c1&name=w-1").text.split())

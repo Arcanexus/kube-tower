@@ -61,6 +61,16 @@ def end_of_life(cycles: list[dict], version: str) -> tuple[str, str, str, str]:
     return cycle, "", "", newest
 
 
+def release_dates(cycles: list[dict], cycle: str, newest: str) -> tuple[str, str]:
+    """(date of the latest patch of `cycle`, date of the first release of `newest`), YYYY-MM-DD or ""."""
+
+    def field(name: str, key: str) -> str:
+        value = next((c.get(key) for c in cycles if str(c.get("cycle")) == name), None)
+        return value if isinstance(value, str) else ""
+
+    return field(cycle, "latestReleaseDate"), field(newest, "releaseDate")
+
+
 def _fixed_in(entry: dict, package: str, version: str) -> str:
     """The first fixed version after `version`, in its own cycle when there is one."""
     fixed = [
@@ -127,6 +137,7 @@ async def lookup(
             found = PlatformVersion(component, version, message=eol_error if component == "kubernetes" else None)
             if component == "kubernetes" and cycles:
                 found.cycle, found.end_of_life, found.latest, found.newest_cycle = end_of_life(cycles, version)
+                found.latest_released, found.newest_released = release_dates(cycles, found.cycle, found.newest_cycle)
             package = PACKAGES[component]
             try:
                 response = await http.post(
