@@ -233,7 +233,7 @@ def test_vulnerabilities_standalone_by_default(tmp_path):
     assert settings.trivy.binary == "/opt/trivy/bin/trivy"
     pod = docs[("Deployment", "kt-kube-tower")]["spec"]["template"]["spec"]
     (init,) = pod["initContainers"]
-    assert init["image"] == "ghcr.io/aquasecurity/trivy:0.75.0"
+    assert init["image"] == "ghcr.io/aquasecurity/trivy:0.76.2"
     assert init["command"] == ["cp", "/usr/local/bin/trivy", "/opt/trivy/bin/trivy"]
     assert {"name": "trivy-bin", "mountPath": "/opt/trivy/bin", "readOnly": True} in container(docs)["volumeMounts"]
     assert volumes(docs)["trivy-bin"] == {"name": "trivy-bin", "emptyDir": {}}
@@ -258,7 +258,7 @@ def test_trivy_server(tmp_path):
     assert docs[("Deployment", "kt-kube-tower")]["spec"]["selector"]["matchLabels"] == kube_tower_selector
     trivy = server["spec"]["template"]["spec"]["containers"][0]
     assert trivy["args"] == ["server", "--listen", "0.0.0.0:4954", "--cache-dir", "/cache"]
-    assert trivy["image"] == "ghcr.io/aquasecurity/trivy:0.75.0" and trivy["securityContext"]["readOnlyRootFilesystem"]
+    assert trivy["image"] == "ghcr.io/aquasecurity/trivy:0.76.2" and trivy["securityContext"]["readOnlyRootFilesystem"]
     assert "imagePullSecrets" not in server["spec"]["template"]["spec"]
 
     docs = render(

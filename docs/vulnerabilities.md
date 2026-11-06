@@ -118,7 +118,7 @@ By default the Java database (~1.5 GB more) is not downloaded and Java archives 
 
 The kube-tower image does not contain Trivy (it would add ~170 MB). With the Helm chart, an init
 container copies the `trivy` binary from the official image (`trivy.image`, default
-`ghcr.io/aquasecurity/trivy:0.75.0`) into an `emptyDir` at pod start, and the chart points
+`ghcr.io/aquasecurity/trivy:0.76.2`) into an `emptyDir` at pod start, and the chart points
 `config.vulnerabilities.trivy.binary` to it. Trivy is upgraded by changing `trivy.image.tag`,
 without a new kube-tower release.
 

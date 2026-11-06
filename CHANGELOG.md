@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Chart images updated: Dex `v2.41.1` → `v2.46.1`, Trivy `0.75.0` → `0.76.2`, Valkey `8.1.1` → `9.1.3`.
+  Valkey keeps nothing on disk (`--save ""`, no AOF): the new pod starts empty and the pods publish
+  their state again, as after any restart.
+
 ## [1.2.0] - 2026-11-06
 
 ### Added

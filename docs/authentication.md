@@ -202,7 +202,7 @@ dex:
 | `dex.name` | `Dex` | Login button: "Log in with <name>" |
 | `dex.connectors` | `[]` | [Dex connectors](https://dexidp.io/docs/connectors/) |
 | `dex.env` / `dex.envFrom` | `[]` | Secrets of the connectors, as env vars |
-| `dex.image` | `ghcr.io/dexidp/dex:v2.41.1` | Dex image |
+| `dex.image` | `ghcr.io/dexidp/dex:v2.46.1` | Dex image |
 | `dex.resources`, `.nodeSelector`, `.tolerations`, `.affinity` | 10m CPU, 32Mi | Pod settings |
 
 ### Dex of your own
