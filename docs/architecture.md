@@ -28,6 +28,8 @@ flowchart LR
     kt -->|index.yaml, OCI charts,<br/>Chart.yaml from git| helm[(Helm repositories, git)]
     kt -->|Trivy databases, image layers| trivydb[(ghcr.io / mirror)]
     kt -.->|optional copy of the inventory| redis[(Redis / Valkey)]
+    kt -.->|optional: kubeconfig of a cluster| krr[krr pod]
+    krr -.->|usage history| kprom[(Prometheus of each cluster)]
 ```
 
 The four **roles** are parts of the same program, in the same image:
@@ -36,7 +38,7 @@ The four **roles** are parts of the same program, in the same image:
 | --- | --- | --- |
 | `ui` | Pages (Jinja2 + htmx), JSON API (`/api/...`), login and roles when `auth.enabled` | the controller, the OIDC provider (SSO) |
 | `controller` | Schedules the scans, rescans and Administration actions, splits them in tasks, merges the results in the inventory (the **snapshot**), serves `/metrics` | its Kubernetes `Lease`, Redis / Valkey |
-| `worker` | Runs the `collect`, `check-images` and `check-charts` tasks | the clusters, registries, Helm repositories, git hosts |
+| `worker` | Runs the `collect`, `check-images`, `check-charts` and `resources` tasks | the clusters, registries, Helm repositories, git hosts, the krr pod |
 | `trivy` | Runs the `scan-vulnerabilities` and `trivy-admin` tasks, keeps the Trivy databases and results cache | the registries (image layers), the Trivy database registry |
 
 ## Single mode (default)
@@ -135,6 +137,8 @@ sequenceDiagram
     C->>V: inventory with versions (published state)
     C->>V: scan-vulnerabilities tasks, batches of 50
     T-->>V: vulnerabilities
+    C->>V: resources tasks, one per cluster (krr.enabled, at the same time)
+    W-->>V: CPU and memory recommendations of the krr pod
     C->>V: final inventory (published state, snapshot copy)
     U->>V: revision changed?
     V-->>U: new state and inventory
@@ -158,6 +162,7 @@ toolchain.
 | Clusters registered with Secrets, ArgoCD style, or the ArgoCD cluster Secrets reused | No new format to learn, no cluster registered twice | A CRD of its own |
 | The latest version asked to the registry referenced by the image, each repository once per scan; tags compared only with tags of the same shape and versioning scheme, floating tags by digest | The registry is the source of truth; `1.25.3-alpine` must not be "outdated" because of `1.27.0` (see [statuses and versions](statuses.md)) | A central version database |
 | Vulnerabilities from Trivy Operator reports when they exist, else the Trivy CLI copied into the pod by the chart | No scan twice; Trivy upgraded with a tag, without a kube-tower release | Trivy in the image (+170 MB) |
+| CPU and memory recommendations by [krr](resources.md), run in a pod of its own (official krr image) that kube-tower calls with the kubeconfig of a cluster | krr needs Python 3.12 and pandas, numpy and pydantic 1, which the kube-tower image cannot hold; the krr pod only accepts the kube-tower ServiceAccount (TokenReview) | krr in the kube-tower image, or reading reports that krr would publish somewhere else |
 
 ### Horizontal scaling
 
@@ -219,6 +224,7 @@ log lines.
 | `backend.py` | what the web layer uses: `LocalBackend` (same process) or `RemoteBackend` (ui pods) |
 | `election.py` | controller election with a Kubernetes `Lease`, active pod label |
 | `store.py` | where the snapshot is kept: memory, or memory + Redis / Valkey |
+| `resources.py` | CPU and memory recommendations: the kubeconfig of a cluster sent to the krr pod, its JSON result read |
 | `auth.py`, `oidc.py` | login (`auth.enabled`): local accounts, signed sessions, the auth Secret, single sign-on with OIDC |
 | `web/` | pages, API, metrics, login page and role checks (`web/login.py`), Dex proxy (`web/dex.py`) |
 

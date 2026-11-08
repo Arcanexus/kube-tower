@@ -10,8 +10,9 @@ NetworkPolicies.
 | `8080` (`http`) | every pod | pages, `/api/...`, `/metrics` (controller), `/healthz`, `/readyz`, `/leaderz` |
 | `6379` | Valkey | Redis protocol: every pod in distributed mode, the controller only in single mode |
 | `5556` | Dex (`dex.enabled`) | Dex, reached only by the pods with the `ui` role, which serve it on `/api/dex/` |
+| `8080` (`krr`) | krr (`krr.enabled`) | `POST /run` from the pods running the `worker` role (ServiceAccount token checked), `/healthz` |
 
-No other port: the pods never call each other. The tasks carry registry credentials (image pull
+No other port: the kube-tower pods never call each other. The tasks carry registry credentials (image pull
 secrets) through Valkey: set a Valkey password. With `networkPolicy.enabled`, only the kube-tower pods
 reach Valkey.
 
@@ -40,6 +41,10 @@ kube-tower connects, in `https://` only when credentials are involved:
 - from the controller, once per scan, to `endoflife.date` and `api.osv.dev` for the end of life and the
   vulnerabilities of the Kubernetes and containerd versions (`kubernetesVersions`, see the
   [Clusters page](ui-clusters.md#where-the-data-comes-from)).
+
+The krr pod (`krr.enabled`) connects to the Kubernetes API servers of the analysed clusters, and to
+Prometheus: through these API servers when krr finds it, or at the `url` of `resources.prometheus`. It
+never calls home (kube-tower turns off the greeting of krr, which asks `api.robusta.dev` for news).
 
 The browser of the user, not kube-tower, asks GitHub for the latest release on the About page.
 
@@ -76,6 +81,9 @@ networkPolicy:
       - port: 5000                                       # a private registry on port 5000
         protocol: TCP
 ```
+
+The krr pod accepts the kube-tower pods only, and reaches DNS, `networkPolicy.egress.ports` and
+`krr.networkPolicy.egressPorts` (`9090`, Prometheus reached directly) towards `networkPolicy.egress.to`.
 
 ### Distributed mode
 

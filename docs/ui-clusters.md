@@ -17,6 +17,7 @@ or *unreachable* with the error of the last scan. Then, side by side:
 | **Ring** | The nodes split by kubelet version: green on the version of the API server, orange behind it, red unsupported. The number of nodes in the middle |
 | **Versions** | The Kubernetes version of the API server with an **EOL** tag when its release cycle is at (or near) its end of life, the date it is supported until, its latest patch and the newest release with their release dates; then each kubelet version with its number of nodes |
 | **Vulnerabilities** | Two lines of critical, high and medium CVEs, each counted once: **Kubernetes**, those of the Kubernetes (API server, kubelets) and containerd versions of the cluster; **Images**, those of the images its pods run, with links to these images and to the outdated ones |
+| **CPU and memory** | With [krr](resources.md) on: the containers whose requests are *critical* or *warning* (links to the [Resources page](ui-resources.md) filtered on them), the CPU and memory requests now and as recommended, the krr score of the cluster |
 
 Under them:
 
@@ -86,7 +87,8 @@ their status and CVEs; click one for its own details.
 ## Where the data comes from
 
 kube-tower reads the nodes (`list nodes`, already needed for the images they cache) at each scan, even
-with `images.enabled: false`. Nothing else is asked from the clusters: no new permission.
+with `images.enabled: false`. Nothing else is asked from the clusters: no new permission. The CPU and
+memory block comes from the krr runs of the [Resources](resources.md) feature.
 
 The end of life of each Kubernetes release comes from [endoflife.date](https://endoflife.date/kubernetes),
 and the vulnerabilities of the Kubernetes (`k8s.io/kubernetes`) and containerd

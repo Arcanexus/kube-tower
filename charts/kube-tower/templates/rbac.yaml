@@ -32,6 +32,31 @@ rules:
       - clusterinfraassessmentreports
       - clustercompliancereports
     verbs: ["get", "list"]
+  {{- if .Values.krr.enabled }}
+  # krr (CPU and memory recommendations): the workloads it analyses, and Prometheus found in the cluster
+  # and reached through the API server when resources.prometheus gives no URL
+  - apiGroups: [""]
+    resources: ["namespaces", "services"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    verbs: ["get", "create"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list"]
+  {{- end }}
   {{- if (.Values.config.registries | default dict).useImagePullSecrets }}
   # Image pull secrets of the workloads (config.registries.useImagePullSecrets): `get` cannot be limited
   # to some Secrets by name in every namespace, so this reads any Secret whose name is known

@@ -7,7 +7,7 @@
   <script>
     // Links are relative so the UI works however it is exposed (http, https, port-forward, sub-path).
     // Under a sub-path without trailing slash (/kube-tower), add it so relative links resolve.
-    if (!location.pathname.endsWith("/") && !/\/(images|charts|security|administration|about|synthesis|vulnerabilities|clusters|logs|settings)$/.test(location.pathname)) {
+    if (!location.pathname.endsWith("/") && !/\/(images|charts|security|administration|about|synthesis|vulnerabilities|clusters|resources|logs|settings)$/.test(location.pathname)) {
       location.replace(location.pathname + "/" + location.search + location.hash);
     }
     // Theme chosen with the sidebar button (light, dark, or auto = follow the system).
@@ -31,7 +31,7 @@
       <nav>
         <ul>
           {# (key, href, label, icon, short label of the tab bar on phones) #}
-          {% for key, href, label, ico, short in [("overview", "./", "Overview", "synthesis", "Overview"), ("images", "images", "Images", "images", "Images"), ("charts", "charts", "Helm charts", "charts", "Charts"), ("security", "security", "Security", "security", "Security"), ("clusters", "clusters", "Clusters", "clusters", "Clusters"), ("administration", "administration", "Administration", "administration", "Admin")] %}
+          {% for key, href, label, ico, short in [("overview", "./", "Overview", "synthesis", "Overview"), ("images", "images", "Images", "images", "Images"), ("charts", "charts", "Helm charts", "charts", "Charts"), ("security", "security", "Security", "security", "Security"), ("clusters", "clusters", "Clusters", "clusters", "Clusters")] + ([("resources", "resources", "Resources", "cpu", "Sizing")] if show_resources else []) + [("administration", "administration", "Administration", "administration", "Admin")] %}
           <li><a href="{{ href }}" {% if tab == key %}aria-current="page"{% endif %}>{{ icon(ico) }}<span class="nav-label">{{ label }}</span><span class="nav-short" aria-hidden="true">{{ short }}</span></a></li>
           {% endfor %}
         </ul>

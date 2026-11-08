@@ -60,6 +60,19 @@
       <p class="cluster-cves"><small class="cves-label muted-text">Images</small>{{ cves(v.images) }}</p>
       <p><small class="muted-text">Kubernetes and containerd versions of the cluster, and the <a href="images?cluster={{ q }}&amp;running=1">{{ v.images.images | plural("image") }}</a> its pods run{% if v.images.outdated %} (<a href="images?cluster={{ q }}&amp;status=outdated&amp;running=1">{{ v.images.outdated }} outdated</a>){% endif %}</small></p>
     </div>
+    {% if resources_enabled %}
+    {% set res = resources.get(c.name) %}
+    <div class="cluster-fact">
+      <small class="counters-label">CPU and memory</small>
+      {% if not res %}<p><small class="muted-text">not analysed by krr yet</small></p>
+      {% elif res.scan.message and not res.containers %}<p class="level-error"><small>{{ icon("error") }}{{ res.scan.message }}</small></p>
+      {% else %}
+      <p>{% if res.to_fix %}<a href="resources?cluster={{ q }}&amp;fit=critical">{% if res.fits[Fit.CRITICAL] %}<span class="badge fit-critical">{{ res.fits[Fit.CRITICAL] }} critical</span>{% endif %}</a> <a href="resources?cluster={{ q }}&amp;fit=warning">{% if res.fits[Fit.WARNING] %}<span class="badge fit-warning">{{ res.fits[Fit.WARNING] }} warning</span>{% endif %}</a>{% else %}<small class="level-ok">{{ icon("ok") }}requests fit the usage</small>{% endif %}</p>
+      <p><small class="muted-text">Requests: CPU {{ resource_value("cpu", res.cpu[0]) or "0" }} → {{ resource_value("cpu", res.cpu[1]) or "0" }}, memory {{ resource_value("memory", res.memory[0]) or "0" }} → {{ resource_value("memory", res.memory[1]) or "0" }}
+        {%- if res.scan.score is not none %} · score {{ res.scan.score }}/100{% endif %} · <a href="resources?cluster={{ q }}">{{ res.containers | plural("container") }}</a></small></p>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
   {% set listed = v.to_check %}
   {% if listed %}

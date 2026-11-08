@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "_macros.html" import chip, icon, list_shown, load_more, more_hint, page_title, sort_th %}
+{% block layout %}list-page{% endblock %}
+{% macro fit_badge(f) -%}
+<span class="badge fit-{{ f.value }}" title="{{ fit_words[f] }}">{{ icon(fit_icons[f]) }}{{ f.value }}</span>
+{%- endmacro %}
+{% macro value_cell(resource, v) -%}
+{# Current value → recommendation, coloured by its fit #}
+<span class="resource-value fit-text-{{ v.fit.value }}">
+  {%- if v.current is not none %}{{ resource_value(resource, v.current) }}{% else %}<small class="muted-text">unset</small>{% endif -%}
+  {%- if not v.known %} <span class="arrow" aria-hidden="true">→</span> <small class="muted-text">?</small>
+  {%- elif v.recommended != v.current %} <span class="arrow" aria-hidden="true">→</span> <strong>{{ resource_value(resource, v.recommended) if v.recommended is not none else "none" }}</strong>{% endif -%}
+</span>
+{%- endmacro %}
+{% block heading %}{{ page_title("cpu", "Resources", "CPU and memory requests and limits compared with the usage of the containers, by krr.", "krr (Robusta's Kubernetes Resource Recommender) reads two weeks of CPU and memory usage of each container in Prometheus and recommends its requests and limits: CPU request from the 95th percentile of the usage, memory request and limit from its peak plus 15%, no CPU limit (strategy simple). One line per container, the ones furthest from their usage first; the arrow shows the current value then the recommended one. critical and warning: the request or limit is far from the usage (too much reserved, or too little and at risk of throttling or OOM kill). Click a line for every value and the resources block to paste in the manifest.") }}{% endblock %}
+{% block content %}
+{% if enabled and (snapshot.resources or scans) %}
+<form class="filters filters-search" hx-get="resources" hx-target="#results" hx-push-url="true"
+      hx-trigger="input changed delay:300ms from:input[name=q], change">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search a workload, a container or a namespace" aria-label="Search">
+  <input type="hidden" name="fit" value="{{ fit }}">
+  <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
+</form>
+{% endif %}
+<div id="results">{{ self.results() }}</div>
+{% endblock %}
+{% block results %}
+{% if not enabled %}
+<article class="empty-state">
+  <header>{{ icon("cpu") }}CPU and memory recommendations are off</header>
+  <p>This page compares the CPU and memory <strong>requests and limits</strong> of every container with what it really
+    uses, as <a href="https://github.com/robusta-dev/krr" target="_blank" rel="noopener">krr</a> recommends from the
+    metrics of Prometheus: what is reserved for nothing, and what is at risk of CPU throttling or OOM kills.</p>
+  <p>It needs Prometheus (or VictoriaMetrics, Thanos, Mimir) with the cAdvisor metrics of the clusters. With the Helm chart:</p>
+  <pre><code>krr:
+  enabled: true      # runs krr in its own pod and turns resources.enabled on
+config:
+  resources:
+    prometheus:      # optional: krr finds Prometheus in each cluster otherwise
+      - clusters: ["*"]
+        url: http://prometheus-operated.monitoring:9090</code></pre>
+  <p class="links">
+    <a href="https://github.com/Arcanexus/kube-tower/wiki/Resources" target="_blank" rel="noopener">{{ icon("external-link") }}CPU and memory recommendations of kube-tower</a>
+  </p>
+</article>
+{% elif not scans %}
+<p class="notice">{{ icon("info") }}{% if snapshot.finished_at %}krr has not answered yet: the recommendations show up here once it has read Prometheus (a few minutes per cluster).{% else %}No scan yet.{% endif %}</p>
+{% else %}
+<div class="resource-runs">
+  {% for s in scans %}
+  <p class="resource-run {{ 'level-error' if s.message and not s.score }}"><small>
+    {{ icon("error" if s.message else "clusters") }}<strong>{{ s.cluster }}</strong>
+    {%- if s.score is not none %} · score <strong>{{ s.score }}</strong>/100{% endif %}
+    {%- if s.scanned_at %} · krr {{ s.strategy }} {{ s.scanned_at | age }}{% endif %}
+    {%- if s.settings.history_duration %} · {{ s.settings.history_duration | float | int }} h of history{% endif %}
+    {%- if s.prometheus %} · {{ s.prometheus }}{% endif %}
+    {%- if s.message %} · <span class="level-error">{{ s.message }}</span>{% endif %}</small></p>
+  {% endfor %}
+</div>
+{% if summary.containers %}
+<div class="tiles resource-tiles">
+  {% for label, resource, pair in [("CPU requested", "cpu", summary.cpu), ("Memory requested", "memory", summary.memory)] %}
+  <div class="tile">
+    <span>{{ icon("cpu") }}{{ label }}</span>
+    <strong>{{ resource_value(resource, pair[0]) or "0" }}<small> → {{ resource_value(resource, pair[1]) or "0" }}</small></strong>
+    <small title="Requests of the containers that krr can recommend for">{% if pair[1] < pair[0] %}{{ resource_value(resource, pair[0] - pair[1]) }} less to reserve{% elif pair[1] > pair[0] %}{{ resource_value(resource, pair[1] - pair[0]) }} more to reserve{% else %}as recommended{% endif %}</small>
+  </div>
+  {% endfor %}
+  <div class="tile"><span>{{ icon("error") }}Far from the usage</span><strong class="{{ 'danger' if summary.fits[Fit.CRITICAL] }}">{{ summary.fits[Fit.CRITICAL] }}</strong><small>critical containers</small></div>
+  <div class="tile"><span>{{ icon("warning") }}To adjust</span><strong>{{ summary.fits[Fit.WARNING] }}</strong><small>warning containers</small></div>
+</div>
+{% endif %}
+<div class="chip-rows"><div class="counters">
+  {% for f in Fit %}{{ chip("fit", f.value, f.value == fit, summary.fits[f], fit_badge(f), "Show only " ~ f.value ~ ": " ~ fit_words[f]) }}{% endfor %}
+</div></div>
+<p><small>{{ listing.total | plural("container") }}{{ list_shown(listing) }}</small></p>
+<div class="overflow-auto table-wrap">
+<table class="striped resource-table stack-sm">
+  <thead><tr>{{ sort_th(listing, 0, "Workload") }}{{ sort_th(listing, 1, "CPU request") }}<th>CPU limit</th>{{ sort_th(listing, 3, "Memory request") }}<th>Memory limit</th>{{ sort_th(listing, 5, "Fit") }}{{ sort_th(listing, 6, "Namespace", False, "hide-sm") }}</tr></thead>
+  <tbody>{{ self.rows() }}</tbody>
+</table>
+{{ more_hint(listing) }}
+</div>
+{% endif %}
+{% endblock %}
+{% block rows %}
+  {% for r in rows %}
+    <tr class="clickable" tabindex="0" hx-trigger="click, keyup[key=='Enter']" hx-target="#detail"
+        hx-get="resources/detail?cluster={{ r.cluster | urlencode }}&namespace={{ r.namespace | urlencode }}&kind={{ r.kind | urlencode }}&name={{ r.name | urlencode }}&container={{ r.container | urlencode }}">
+      <td class="cell-name"><strong>{{ r.name }}</strong> <small class="muted-text">{{ r.kind }}</small>{% if r.container != r.name %}<br><small>{{ icon("box", "muted") }}{{ r.container }}</small>{% endif %}{% if r.hpa %} <small class="muted-text" title="Scaled by a HorizontalPodAutoscaler">HPA</small>{% endif %}</td>
+      <td data-label="CPU request">{{ value_cell("cpu", r.cpu_request) }}</td>
+      <td data-label="CPU limit">{{ value_cell("cpu", r.cpu_limit) }}</td>
+      <td data-label="Memory request">{{ value_cell("memory", r.memory_request) }}</td>
+      <td data-label="Memory limit">{{ value_cell("memory", r.memory_limit) }}</td>
+      <td>{{ fit_badge(r.fit) }}{% if r.info %}<br><small class="muted-text">{{ r.info }}</small>{% endif %}</td>
+      <td class="hide-sm"><small>{{ r.namespace }} · {{ r.cluster }}</small></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7">No container.</td></tr>
+  {% endfor %}
+  {{ load_more(listing, 7) }}
+{% endblock %}

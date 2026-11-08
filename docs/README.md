@@ -2,7 +2,8 @@
 
 kube-tower connects to all your Kubernetes clusters, inventories every container image and every Helm
 chart (with its subcharts), and shows their versions, their lifecycle and their vulnerabilities in one
-dashboard: which ones have a newer version, what is urgent, where each one runs.
+dashboard: which ones have a newer version, what is urgent, where each one runs. With krr, it also shows
+the CPU and memory each container reserves next to what it really uses.
 
 ![Overview](images/overview.png)
 
@@ -39,6 +40,7 @@ dashboard: which ones have a newer version, what is urgent, where each one runs.
 | [RBAC](rbac.md) | roles, permissions per action, clusters each role sees, roles from OIDC groups |
 | [Vulnerabilities](vulnerabilities.md) | CVEs from Trivy Operator reports or Trivy, the Trivy setups |
 | [Security](security.md) | Trivy Operator config audit, exposed secrets, RBAC, infrastructure and compliance reports |
+| [Resources](resources.md) | CPU and memory recommendations of krr from Prometheus: enabling, Prometheus, permissions |
 | [Scaling](scaling.md) | distributed mode: UI, controller, worker and Trivy pods, Valkey, sizing |
 | [Metrics and Grafana](metrics.md) | Prometheus metrics, PromQL examples, alerts, Grafana dashboard |
 
@@ -52,6 +54,7 @@ dashboard: which ones have a newer version, what is urgent, where each one runs.
 | [Helm charts page](ui-charts.md) | charts and subcharts, detail panel |
 | [Security page](ui-security.md) | Trivy Operator reports: tiles, list, failed checks |
 | [Clusters page](ui-clusters.md) | nodes by role and node group, their versions, what differs |
+| [Resources page](ui-resources.md) | requests and limits next to the recommendations of krr, detail panel |
 | [Administration page](ui-administration.md) | scans, clusters, pods, settings, API, logs |
 | [Statuses and versions](statuses.md) | statuses, how tags are compared, versioning schemes, floating tags, charts |
 

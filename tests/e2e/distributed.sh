@@ -90,6 +90,13 @@ snapshot | jq '{finished_at, images: (.images | length), charts: (.charts | leng
 wait_for 900 "the trivy pod scanned the vulnerabilities" vulnerabilities_scanned
 snapshot | jq '[.images[] | select(.vulnerabilities != null and .vulnerabilities.message == null)] | length'
 
+# krr ran in its pod for the cluster, called by a worker with its ServiceAccount token (no Prometheus in
+# kind: its answer is an error of krr itself, not a refusal of the krr server)
+krr_answered() { snapshot | jq -e '.resource_scans | length > 0'; }
+wait_for 600 "krr answered for the cluster" krr_answered
+snapshot | jq '.resource_scans'
+snapshot | jq -e '[.resource_scans[] | select((.message // "") | test("krr server (answered 40|.*unreachable)"))] | length == 0'
+
 # Every ui pod shows the same inventory, published by the controller in Valkey
 for pod in $(kubectl -n "$NS" get pods -l app.kubernetes.io/component=ui -o name); do
     count=$(fetch "$pod" http://127.0.0.1:8080/api/snapshot | jq '.images | length')

@@ -56,6 +56,7 @@ class SnapshotCollector(Collector):
         yield from self._security(snap)
         yield from self._charts(snap)
         yield from self._clusters(snap)
+        yield from self._resources(snap)
         yield from self._scan(snap)
 
     def _images(self, snap: Snapshot):
@@ -246,6 +247,39 @@ class SnapshotCollector(Collector):
                 if count:
                     cves.add_metric([p.component, p.version, severity.value], count)
         return reachable, info, nodes, eol, cves
+
+    def _resources(self, snap: Snapshot):
+        """The CPU and memory recommendations of krr: current and recommended values per container, and the
+        containers by fit per cluster."""
+        labels = ["cluster", "namespace", "kind", "workload", "container", "resource", "type"]
+        current = GaugeMetricFamily(
+            "kube_tower_resources_current",
+            "Current request or limit of a container (CPU in cores, memory in bytes); absent when not set",
+            labels=labels,
+        )
+        recommended = GaugeMetricFamily(
+            "kube_tower_resources_recommended",
+            "Request or limit that krr recommends (CPU in cores, memory in bytes); absent when none (no limit, not enough data)",
+            labels=labels,
+        )
+        fits = GaugeMetricFamily(
+            "kube_tower_resources_containers",
+            "Containers analysed by krr, by fit of their requests and limits (critical, warning, ok, good, unknown)",
+            labels=["cluster", "fit"],
+        )
+        for r in snap.resources:
+            for resource, kind, value in r.values:
+                series = [r.cluster, r.namespace, r.kind, r.name, r.container, resource, kind]
+                if value.current is not None:
+                    current.add_metric(series, value.current)
+                if value.known and value.recommended is not None:
+                    recommended.add_metric(series, value.recommended)
+        counts = Counter((r.cluster, r.fit.value) for r in snap.resources)
+        for (cluster, fit), n in sorted(counts.items()):
+            fits.add_metric([cluster, fit], n)
+        yield current
+        yield recommended
+        yield fits
 
     def _scan(self, snap: Snapshot):
         build = GaugeMetricFamily("kube_tower_build_info", "kube-tower version (always 1)", labels=["version"])

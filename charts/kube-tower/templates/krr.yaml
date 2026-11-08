@@ -1,0 +1,141 @@
+{{- if .Values.krr.enabled }}
+{{- $name := printf "%s-krr" (include "kube-tower.fullname" .) }}
+# krr (CPU and memory recommendations): the official krr image behind a small HTTP server (files/krr-server.py).
+# kube-tower sends it the kubeconfig of a cluster; it checks the ServiceAccount token of the caller with a
+# TokenReview, so only kube-tower may run krr.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: krr
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}-tokenreview
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: krr
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator  # create tokenreviews and subjectaccessreviews
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: krr
+data:
+  krr-server.py: |
+    {{- .Files.Get "files/krr-server.py" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: krr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kube-tower.krrSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kube-tower.krrSelectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/server: {{ .Files.Get "files/krr-server.py" | sha256sum }}
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: krr
+          image: "{{ .Values.krr.image.repository }}:{{ .Values.krr.image.tag }}"
+          imagePullPolicy: {{ .Values.krr.image.pullPolicy }}
+          command: ["python", "/etc/kube-tower-krr/krr-server.py"]
+          env:
+            - name: KRR_PORT
+              value: {{ .Values.krr.port | quote }}
+            - name: KRR_CONCURRENCY
+              value: {{ .Values.krr.concurrency | quote }}
+            - name: KRR_ALLOWED_USERS
+              value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-tower.serviceAccountName" .) | quote }}
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            {{- with .Values.krr.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: krr
+              containerPort: {{ .Values.krr.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: krr
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: krr
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.krr.resources | nindent 12 }}
+          volumeMounts:
+            - name: server
+              mountPath: /etc/kube-tower-krr
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: server
+          configMap:
+            name: {{ $name }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.krr.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.krr.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.krr.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: krr
+spec:
+  selector:
+    {{- include "kube-tower.krrSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: krr
+      port: {{ .Values.krr.port }}
+      targetPort: krr
+{{- end }}

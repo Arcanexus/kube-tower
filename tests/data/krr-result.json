@@ -1,0 +1,134 @@
+{
+ "scans": [
+  {
+   "object": {
+    "cluster": "ctx",
+    "name": "api",
+    "container": "app",
+    "pods": [
+     {
+      "name": "api-1",
+      "deleted": false
+     }
+    ],
+    "hpa": null,
+    "namespace": "shop",
+    "kind": "Deployment",
+    "allocations": {
+     "requests": {
+      "cpu": 0.5,
+      "memory": 536870912.0
+     },
+     "limits": {
+      "cpu": null,
+      "memory": 1073741824.0
+     },
+     "info": {}
+    },
+    "warnings": [],
+    "labels": {},
+    "annotations": {}
+   },
+   "recommended": {
+    "requests": {
+     "cpu": {
+      "value": 0.05,
+      "severity": "WARNING"
+     },
+     "memory": {
+      "value": 209715200.0,
+      "severity": "WARNING"
+     }
+    },
+    "limits": {
+     "cpu": {
+      "value": null,
+      "severity": "GOOD"
+     },
+     "memory": {
+      "value": 209715200.0,
+      "severity": "CRITICAL"
+     }
+    },
+    "info": {
+     "cpu": null,
+     "memory": null
+    }
+   },
+   "severity": "CRITICAL"
+  },
+  {
+   "object": {
+    "cluster": "ctx",
+    "name": "worker",
+    "container": "w",
+    "pods": [],
+    "hpa": {
+     "min_replicas": 1,
+     "max_replicas": 3,
+     "current_replicas": 1,
+     "desired_replicas": 1,
+     "target_cpu_utilization_percentage": 80.0,
+     "target_memory_utilization_percentage": null
+    },
+    "namespace": "shop",
+    "kind": "StatefulSet",
+    "allocations": {
+     "requests": {
+      "cpu": null,
+      "memory": null
+     },
+     "limits": {
+      "cpu": null,
+      "memory": null
+     },
+     "info": {}
+    },
+    "warnings": [],
+    "labels": {},
+    "annotations": {}
+   },
+   "recommended": {
+    "requests": {
+     "cpu": {
+      "value": "?",
+      "severity": "UNKNOWN"
+     },
+     "memory": {
+      "value": "?",
+      "severity": "UNKNOWN"
+     }
+    },
+    "limits": {
+     "cpu": {
+      "value": null,
+      "severity": "GOOD"
+     },
+     "memory": {
+      "value": "?",
+      "severity": "UNKNOWN"
+     }
+    },
+    "info": {
+     "cpu": "Not enough data",
+     "memory": "Not enough data"
+    }
+   },
+   "severity": "GOOD"
+  }
+ ],
+ "score": 50,
+ "resources": [
+  "cpu",
+  "memory"
+ ],
+ "description": null,
+ "strategy": {
+  "name": "simple",
+  "settings": {
+   "history_duration": 336
+  }
+ },
+ "errors": [],
+ "clusterSummary": {}
+}

@@ -15,6 +15,10 @@ distributed:
       resources: {requests: {cpu: 10m, memory: 128Mi}}
     trivy:
       resources: {requests: {cpu: 10m, memory: 256Mi}}
+# krr in its own pod: no Prometheus in kind, the test checks that krr ran and answered for the cluster
+krr:
+  enabled: true
+  resources: {requests: {cpu: 10m, memory: 128Mi}}
 redis:
   valkey:
     enabled: true

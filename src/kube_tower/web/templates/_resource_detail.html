@@ -1,0 +1,37 @@
+{% from "_macros.html" import copy, drawer, icon %}
+{% call drawer(r.name ~ " / " ~ r.container, r.kind ~ " · " ~ r.namespace ~ " · " ~ r.cluster) %}
+<p><span class="badge fit-{{ r.fit.value }}">{{ icon(fit_icons[r.fit]) }}{{ r.fit.value }}</span> <small class="muted-text">{{ fit_words[r.fit] }}</small></p>
+{% if r.info %}<p class="notice"><small>{{ icon("info") }}{{ r.info }}</small></p>{% endif %}
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th></th><th>Current</th><th>Recommended</th><th>Change</th><th>Fit</th></tr></thead>
+  <tbody>
+  {% for resource, kind, v in r.values %}
+    <tr>
+      <th scope="row">{{ "CPU" if resource == "cpu" else "Memory" }} {{ kind }}</th>
+      <td>{% if v.current is not none %}{{ copy(resource_value(resource, v.current)) }}{% else %}<small class="muted-text">unset</small>{% endif %}</td>
+      <td>{% if not v.known %}<small class="muted-text">not enough data</small>{% elif v.recommended is none %}<small class="muted-text">none (unset)</small>{% else %}<strong>{{ copy(resource_value(resource, v.recommended)) }}</strong>{% endif %}</td>
+      <td>{{ resource_change(resource, v) }}</td>
+      <td><span class="badge fit-{{ v.fit.value }}">{{ v.fit.value }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if manifest %}
+<h4>Resources to set</h4>
+<p><small class="muted-text">The resources block of the container with the recommended values; paste it in its manifest or Helm values. No CPU limit: krr advises none, to avoid throttling.</small></p>
+<pre class="copy-block">{% call copy(manifest) %}<code>{{ manifest }}</code>{% endcall %}</pre>
+{% endif %}
+<h4>Analysis</h4>
+<table>
+  <tr><th scope="row">Pods seen</th><td>{{ r.pods }}</td></tr>
+  <tr><th scope="row">Autoscaling</th><td>{{ "HorizontalPodAutoscaler" if r.hpa else "none" }}</td></tr>
+  {% if r.warnings %}<tr><th scope="row">Warnings</th><td>{{ r.warnings | join(", ") }}</td></tr>{% endif %}
+  {% if scan %}
+  <tr><th scope="row">krr</th><td>strategy {{ scan.strategy }}{% if scan.scanned_at %}, {{ scan.scanned_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}</td></tr>
+  {% if scan.settings %}<tr><th scope="row">Settings</th><td><small>{% for k, v in scan.settings | dictsort %}{{ k }} {{ v }}{{ ", " if not loop.last }}{% endfor %}</small></td></tr>{% endif %}
+  <tr><th scope="row">Prometheus</th><td>{{ scan.prometheus or "found by krr in the cluster" }}</td></tr>
+  {% endif %}
+</table>
+{% endcall %}

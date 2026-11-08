@@ -27,7 +27,16 @@ from kube_tower.clusters import Cluster, ClusterRegistry
 from kube_tower.collectors.vulnerabilities import pick_report
 from kube_tower.config import Settings
 from kube_tower.lifecycle import lookup, platform_versions
-from kube_tower.models import ChartReport, ImageRef, ImageReport, Snapshot, Status, VulnerabilityReport
+from kube_tower.models import (
+    ChartReport,
+    ImageRef,
+    ImageReport,
+    ResourceRecommendation,
+    ResourceScan,
+    Snapshot,
+    Status,
+    VulnerabilityReport,
+)
 from kube_tower.registry.auth import AuthResults, Credentials, TokenCache
 from kube_tower.registry.helm import HelmClient, IndexCache
 from kube_tower.registry.oci import OCIClient
@@ -40,6 +49,8 @@ from kube_tower.tasks import (
     CollectTask,
     LocalRunner,
     QueueRunner,
+    ResourcesResult,
+    ResourcesTask,
     Result,
     ScanVulnerabilitiesResult,
     ScanVulnerabilitiesTask,
@@ -50,6 +61,8 @@ from kube_tower.trivy import TrivyScanner, merge_scan_errors
 from kube_tower.worker import Worker, run_in_thread
 
 log = logging.getLogger(__name__)
+
+KRR_RUNS = 2  # clusters analysed by krr at the same time (each run reads two weeks of Prometheus data)
 
 
 @dataclasses.dataclass
@@ -108,6 +121,7 @@ class Scanner:
         # Start times of the scan phases in progress, and of the rescans (by key, with their name).
         self.versions_started_at: datetime | None = None
         self.trivy_started_at: datetime | None = None
+        self.resources_started_at: datetime | None = None
         self.trivy_waiting = 0  # scans whose versions are checked, waiting for the Trivy phase of another one
         self._rescan_started: dict[tuple, tuple[str, datetime]] = {}
         # Set while an administration action holds the scan lock (e.g. Trivy database update): why scans must wait.
@@ -200,9 +214,63 @@ class Scanner:
                 self.versions_started_at = None
             # Versions are shown as soon as they are checked, vulnerabilities fill in afterwards.
             self.snapshot = snap
+        # The CPU and memory recommendations (krr) and the vulnerabilities (Trivy) fill in at the same time.
+        phases = []
+        if self.settings.resources.enabled:
+            phases.append(self._resources_phase(snap))
         if self.settings.vulnerabilities.enabled:
-            await self._vulnerability_phase(snap)
+            phases.append(self._vulnerability_phase(snap))
+        await asyncio.gather(*phases)
         return snap
+
+    def _reused_resources(self, clusters: list[str]) -> tuple[list[ResourceRecommendation], list[ResourceScan]]:
+        """The krr results of the previous snapshot still fresh (resources.interval), for these clusters.
+        A failed run is not kept: krr runs again at the next scan."""
+        settings = self.settings.resources
+        if not settings.enabled:
+            return [], []
+        now = datetime.now(UTC)
+        previous = self.snapshot
+        fresh = {
+            s.cluster: s
+            for s in previous.resource_scans
+            if s.cluster in clusters
+            and not s.message
+            and s.scanned_at is not None
+            and (now - s.scanned_at).total_seconds() < settings.interval
+        }
+        return [r for r in previous.resources if r.cluster in fresh], list(fresh.values())
+
+    async def _resources_phase(self, snap: Snapshot) -> None:
+        """Ask krr for the clusters whose recommendations are missing or too old (KRR_RUNS at a time)."""
+        done = {s.cluster for s in snap.resource_scans}
+        due = [c.name for c in snap.clusters if c.reachable and c.name not in done]
+        if not due:
+            return
+        self.resources_started_at = datetime.now(UTC)
+        try:
+            await run_in_thread("krr", lambda: asyncio.run(self._recommend(snap, due)))
+        except Exception as exc:  # noqa: BLE001 - the other phases and the next scans go on
+            log.warning("CPU and memory recommendations interrupted: %s", exc)
+            now = datetime.now(UTC)
+            done = {s.cluster for s in snap.resource_scans}
+            snap.resource_scans += [ResourceScan(c, now, message=f"interrupted: {exc}") for c in due if c not in done]
+            self._changed()
+        finally:
+            self.resources_started_at = None
+
+    async def _recommend(self, snap: Snapshot, clusters: list[str]) -> None:
+        slots = asyncio.Semaphore(KRR_RUNS)
+
+        async def one(cluster: str) -> None:
+            async with slots:
+                result: ResourcesResult = await self.runner.run(ResourcesTask(cluster))
+            snap.resources = sorted([*snap.resources, *result.recommendations], key=lambda r: r.key)
+            snap.resource_scans = sorted([*snap.resource_scans, result.scan], key=lambda s: s.cluster)
+            self._changed()
+
+        log.info("CPU and memory recommendations of krr for %d cluster(s): %s", len(clusters), ", ".join(clusters))
+        await asyncio.gather(*(one(c) for c in clusters))
 
     async def _vulnerability_phase(self, snap: Snapshot) -> None:
         """The Trivy phase of a scan. When it fails, the images it did not scan get the reason (shown as
@@ -246,6 +314,8 @@ class Scanner:
             found.append(Activity("Full scan: clusters and versions", "running", self.versions_started_at))
         if self.trivy_started_at:
             found.append(Activity("Full scan: vulnerabilities (Trivy)", "running", self.trivy_started_at))
+        if self.resources_started_at:
+            found.append(Activity("Full scan: CPU and memory recommendations (krr)", "running", self.resources_started_at))
         if self.trivy_waiting:
             found.append(Activity(f"Full scan: vulnerabilities (Trivy) of {self.trivy_waiting} newer scan(s)", "waiting"))
         for name, started_at in sorted(self._rescan_started.values(), key=lambda item: item[1]):
@@ -260,6 +330,7 @@ class Scanner:
         reachable = {s.name for s in snap.clusters if s.reachable}
         clusters = [c for c in clusters if c.name in reachable]
         self._clusters = {c.name: c for c in clusters}
+        snap.resources, snap.resource_scans = self._reused_resources([c.name for c in clusters])
         log.info("%d cluster(s) to scan: %s", len(clusters), ", ".join(c.name for c in clusters) or "none")
 
         results: list[CollectResult] = await asyncio.gather(*(self.runner.run(CollectTask(c.name)) for c in clusters))

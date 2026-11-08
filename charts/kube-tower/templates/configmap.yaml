@@ -45,6 +45,17 @@
 {{- $_ := set $vulnerabilities "trivy" $trivy }}
 {{- $_ := set $config "vulnerabilities" $vulnerabilities }}
 {{- end }}
+{{- /* The krr server of the chart: CPU and memory recommendations on, unless turned off in config.resources */ -}}
+{{- if .Values.krr.enabled }}
+{{- $resources := deepCopy ($config.resources | default dict) }}
+{{- if not (hasKey $resources "enabled") }}
+{{- $_ := set $resources "enabled" true }}
+{{- end }}
+{{- if not $resources.serverUrl }}
+{{- $_ := set $resources "serverUrl" (printf "http://%s-krr:%v" (include "kube-tower.fullname" .) .Values.krr.port) }}
+{{- end }}
+{{- $_ := set $config "resources" $resources }}
+{{- end }}
 {{- /* Distributed mode: the election of the controller (its Lease, see rbac.yaml); the active controller
 labels its pod, selected by the controller Service */ -}}
 {{- if include "kube-tower.distributed" . }}

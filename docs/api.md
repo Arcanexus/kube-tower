@@ -18,6 +18,7 @@ OpenAPI documentation is served by kube-tower itself on `/api/docs`; the API tab
 | `DELETE /api/administration/trivy-cache` | Forget the cached Trivy results (`{"cleared": n}`) |
 | `POST /api/administration/connectivity` | Start a connectivity test; results with `GET /api/administration/connectivity` |
 | `GET /api/administration/unused-images` | Images cached on nodes that no workload of their cluster uses |
+| `GET /api/resources?cluster=…` | CPU and memory recommendations of [krr](resources.md) (CPU in cores, memory in bytes) and its last run per cluster; `cluster` is optional |
 | `GET /healthz` | Liveness |
 | `GET /readyz` | 200 once the first scan has finished |
 | `GET /api/docs` | Interactive OpenAPI documentation |

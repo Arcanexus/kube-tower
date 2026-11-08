@@ -42,6 +42,7 @@ src/kube_tower/
                        vulnerabilities.py (Trivy Operator VulnerabilityReports), security.py
                        (its config audit, exposed secrets, RBAC, infra and compliance reports)
   trivy.py             vulnerability scans with the Trivy CLI
+  resources.py         CPU and memory recommendations: krr run through the krr pod (or a local krr), its JSON read
   registry/            oci.py (OCI distribution API), helm.py (Helm repos, OCI charts, git), auth.py
                        (credentials), cloud.py (ECR / Artifact Registry / ACR tokens), transport.py
                        (HTTP client, timeouts, retries)
@@ -60,8 +61,9 @@ src/kube_tower/
   errors.py            explicit error messages (what failed, status, what to do)
   logger.py            log formats; logbuffer.py keeps the last lines for the Logs tab (of every pod on a controller)
   web/                 ui.py + templates/ (Jinja2, htmx), summary.py (Overview figures and To do list), api.py,
-                       metrics.py, static/ (htmx, kube-tower.css/.js, icons; cached with asset())
-charts/kube-tower/     Helm chart
+                       metrics.py, resourceview.py (Resources page), static/ (htmx, kube-tower.css/.js,
+                       icons; cached with asset())
+charts/kube-tower/     Helm chart; files/krr-server.py is the HTTP front of krr run in the krr pod (stdlib only)
 deploy/                manifests for remote clusters
 docs/                  documentation, published to the wiki
 .github/scripts/       docs_to_wiki.py (builds the wiki from docs/)

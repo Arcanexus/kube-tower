@@ -56,6 +56,14 @@ kubernetesVersions:            # end of life and CVEs of the Kubernetes and cont
   osvUrl: https://api.osv.dev/v1/query                       # or a mirror of the OSV API
   warnDays: 90                 # a release that ends within this many days is a warning
   timeout: 20
+resources:                     # CPU and memory recommendations of krr, see resources.md
+  enabled: false               # the chart sets it with krr.enabled
+  serverUrl: ""                # the krr pod of the chart (set by the chart)
+  strategy: simple
+  namespaces: []               # empty: every namespace
+  interval: 24h
+  timeout: 15m
+  prometheus: []               # per cluster: url, clusterLabel, authHeaderEnv...
 vulnerabilities:               # see "Vulnerabilities (Trivy)" below
   enabled: true
   trivyOperator: true          # read Trivy Operator VulnerabilityReports
@@ -140,6 +148,7 @@ Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `K
 | `git` | [Helm charts read from git](ui-charts.md), [troubleshooting](troubleshooting.md#helm-charts) |
 | `vulnerabilities` | [vulnerabilities](vulnerabilities.md), and the table below |
 | `security` | [security](security.md) |
+| `resources` | [resources (krr)](resources.md#settings) |
 | `auth` | [authentication](authentication.md) |
 | `roles`, `internal`, `redis` | [scaling](scaling.md) |
 | `logs` | [Logs tab](ui-administration.md#logs) |

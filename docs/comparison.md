@@ -15,6 +15,7 @@ clusters. Many of them work well **together** with kube-tower.
 | Helm charts and subcharts | ✅ from ArgoCD Applications, with subcharts | ❌ | ✅ declared in git | ❌ | ✅ Helm releases (not the charts ArgoCD renders) | ❌ |
 | Vulnerabilities (CVE) | ✅ Trivy Operator reports or Trivy | ❌ | ❌ (security advisories of dependencies) | ❌ | ❌ | ❌ |
 | Misconfigurations, secrets, compliance | ✅ Trivy Operator reports | ❌ | ❌ | ❌ | ❌ | ❌ |
+| CPU and memory recommendations | ✅ runs krr | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Several clusters in one view | ✅ | ❌ | n/a | ❌ one per cluster | ❌ one per run | per ArgoCD instance |
 | Web UI | ✅ | ❌ | ❌ (pull requests, dashboard issue) | ❌ (Grafana) | ❌ | ❌ (ArgoCD) |
 | Metrics and alerts | ✅ Prometheus, Grafana dashboard | ❌ | ❌ | ✅ | ❌ | ❌ |
@@ -65,3 +66,11 @@ writes its reports as Kubernetes resources, without a UI of its own. kube-tower 
 every cluster: the vulnerabilities next to the versions of each image, and the misconfigurations,
 exposed secrets, RBAC and compliance reports on its [Security](security.md) page. See
 [vulnerabilities](vulnerabilities.md).
+
+## krr
+
+[krr](https://github.com/robusta-dev/krr) (Robusta's Kubernetes Resource Recommender) reads the CPU and
+memory usage of the containers in Prometheus and recommends their requests and limits, in a terminal or
+a file. kube-tower runs krr itself, in a pod of the chart, for every registered cluster, and shows its
+recommendations next to the rest of the inventory, with totals per cluster, metrics and the resources
+block to paste in each manifest. See [resources](resources.md).

@@ -20,6 +20,7 @@
     "charts": "Helm charts deployed by ArgoCD, with the tree of their subcharts and the latest version of each.",
     "security": "Trivy Operator reports of every cluster: misconfigurations, exposed secrets, RBAC, infrastructure and compliance.",
     "clusters-page": "Every cluster at a glance: its nodes by Kubernetes version, the vulnerabilities of what they run, and one card per node.",
+    "resources": "CPU and memory recommendations of krr: the containers furthest from their usage, totals per cluster, the block to paste.",
     "administration": "Administration: the state of every role and pod, rescans, Trivy database, connectivity and credential tests, logs.",
     "dark": "A dark theme, chosen by your system or by you.",
     "grafana": "Prometheus metrics and a ready-made Grafana dashboard for alerts and trends."
