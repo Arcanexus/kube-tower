@@ -417,6 +417,21 @@ def test_image_pull_secrets_rbac(tmp_path):
     assert settings.use_image_pull_secrets and settings.insecure == ["registry.local:5000"] and settings.ca_file == ""
 
 
+def test_chart_sources_rbac(tmp_path):
+    list_secrets = {"apiGroups": [""], "resources": ["secrets"], "verbs": ["list"]}
+    docs = render(tmp_path, {})
+    rules = docs[("ClusterRole", "kt-kube-tower")]["rules"]
+    assert list_secrets not in rules
+    assert {"apiGroups": ["helm.toolkit.fluxcd.io"], "resources": ["helmreleases"], "verbs": ["get", "list"]} in rules
+    helm = app_settings(tmp_path, docs).helm
+    assert helm.flux and not helm.releases and helm.artifact_hub_url == "https://artifacthub.io"
+    repos = {"ingress-nginx": "https://kubernetes.github.io/ingress-nginx"}
+    docs = render(tmp_path, {"config": {"helm": {"releases": True, "repositories": repos}}})
+    assert list_secrets in docs[("ClusterRole", "kt-kube-tower")]["rules"]
+    helm = app_settings(tmp_path, docs).helm
+    assert helm.releases and helm.repositories == repos
+
+
 DISTRIBUTED = {"mode": "distributed", "redis": {"valkey": {"enabled": True}}}
 
 

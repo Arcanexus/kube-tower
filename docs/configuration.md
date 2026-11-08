@@ -47,6 +47,10 @@ helm:
   includePrerelease: false
   checkDependencies: true     # subcharts, and their own subcharts (3 levels)
   fetchReleaseDates: true     # when the latest versions were published (index.yaml, OCI annotation)
+  flux: true                  # Flux HelmReleases, see chart-sources.md
+  releases: false             # releases installed with the helm command (needs list secrets)
+  repositories: {}            # chart name or pattern -> repository, for those releases
+  artifactHubUrl: https://artifacthub.io   # else looked up there; "" = no lookup
 security:                      # Trivy Operator security reports, see security.md
   enabled: true
   exposedSecrets: true         # false: leave the exposed secrets out
@@ -143,7 +147,7 @@ Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `K
 | Section | Guide |
 | --- | --- |
 | `clusters` | [clusters](clusters.md) |
-| `images`, `helm` | [statuses and versions](statuses.md), [Images page](ui-images.md), [Helm charts page](ui-charts.md) |
+| `images`, `helm` | [statuses and versions](statuses.md), [Images page](ui-images.md), [Helm charts page](ui-charts.md), [where charts are found](chart-sources.md) |
 | `registries` | [registries](registries.md) |
 | `git` | [Helm charts read from git](ui-charts.md), [troubleshooting](troubleshooting.md#helm-charts) |
 | `vulnerabilities` | [vulnerabilities](vulnerabilities.md), and the table below |

@@ -41,7 +41,7 @@ never updates anything, you stay in control of your GitOps workflow.
 | 🔎 **Checked at the source** | Each image is compared with the registry referenced in the manifest: Docker Hub, ghcr.io, quay.io, Amazon ECR, Artifact Registry, ACR, Harbor, Artifactory, Nexus or any OCI registry. |
 | 🏷️ **Smart tag matching** | `1.25.3-alpine` is only compared with `x.y.z-alpine` tags, semver with semver, calendar or date versions with their own kind; pre-releases are ignored unless you ask for them. Each latest version shows its release date. |
 | 🔁 **Floating tags too** | `latest`, `stable`… are checked by digest, like watchtower: you know when a newer image was pushed under the same tag. |
-| ⎈ **Helm charts and subcharts** | Charts deployed by ArgoCD Applications, from Helm repositories, OCI registries or git paths, with every dependency checked. A subchart that the Helm values of the Application leave out of the release (`condition` or `tags` false) is shown *not deployed* and does not make the chart outdated. |
+| ⎈ **Helm charts and subcharts** | Charts deployed by ArgoCD Applications, Flux HelmReleases or the helm command, from Helm repositories, OCI registries or git paths, with every dependency checked. A subchart that the Helm values of the Application leave out of the release (`condition` or `tags` false) is shown *not deployed* and does not make the chart outdated. |
 | 🌐 **Multi-cluster** | Register clusters ArgoCD-style with a Secret, or reuse the cluster Secrets ArgoCD already has. A Clusters page shows each one at a glance: a ring of its nodes by Kubernetes version, the end of life of its release (endoflife.date), the vulnerabilities of its Kubernetes and containerd versions (OSV) and of the images its pods run, what to check (kubelets behind or newer than the API server, nodes not ready or cordoned), then one card per node with its version and CVEs. |
 | 🛡️ **Vulnerabilities (CVE)** | Read from Trivy Operator reports when the cluster has them, else scanned with Trivy (copied into the pod by the chart, standalone or client/server). Find the images affected by a CVE in one search. |
 | 🔒 **Security (Trivy Operator)** | A Security page shows the other reports of Trivy Operator for every cluster: misconfigurations, secrets left in images, risky RBAC roles, nodes and control plane checks, and compliance (CIS, NSA, Pod Security Standards), with how to fix each finding. |
@@ -81,7 +81,7 @@ an ingress or ArgoCD, single sign-on.
 
 ## How it works
 
-Every `refreshInterval` (6h by default), kube-tower lists the workloads, nodes and ArgoCD Applications
+Every `refreshInterval` (6h by default), kube-tower lists the workloads, nodes, ArgoCD Applications and Flux HelmReleases
 of every cluster with a read-only ServiceAccount, asks each registry for its published versions, reads
 or scans the vulnerabilities of every image, and keeps the result in memory: no database. One pod does
 it all, or the chart splits it in UI, controller, worker and Trivy pods for large inventories. See the
@@ -96,7 +96,7 @@ gives a tour of kube-tower.
 | Section | Pages |
 | --- | --- |
 | Getting started | [Quick start](https://github.com/Arcanexus/kube-tower/wiki/Quick-start) · [Prerequisites](https://github.com/Arcanexus/kube-tower/wiki/Prerequisites) · [Installation](https://github.com/Arcanexus/kube-tower/wiki/Installation) · [Upgrading](https://github.com/Arcanexus/kube-tower/wiki/Upgrading) · [Comparison](https://github.com/Arcanexus/kube-tower/wiki/Comparison) |
-| Configure | [Clusters](https://github.com/Arcanexus/kube-tower/wiki/Clusters) · [Registries](https://github.com/Arcanexus/kube-tower/wiki/Registries) · [Authentication](https://github.com/Arcanexus/kube-tower/wiki/Authentication) · [RBAC](https://github.com/Arcanexus/kube-tower/wiki/RBAC) · [Vulnerabilities](https://github.com/Arcanexus/kube-tower/wiki/Vulnerabilities) · [Security](https://github.com/Arcanexus/kube-tower/wiki/Security) · [Resources](https://github.com/Arcanexus/kube-tower/wiki/Resources) · [Scaling](https://github.com/Arcanexus/kube-tower/wiki/Scaling) · [Metrics and Grafana](https://github.com/Arcanexus/kube-tower/wiki/Metrics-and-Grafana) |
+| Configure | [Clusters](https://github.com/Arcanexus/kube-tower/wiki/Clusters) · [Registries](https://github.com/Arcanexus/kube-tower/wiki/Registries) · [Chart sources](https://github.com/Arcanexus/kube-tower/wiki/Chart-sources) · [Authentication](https://github.com/Arcanexus/kube-tower/wiki/Authentication) · [RBAC](https://github.com/Arcanexus/kube-tower/wiki/RBAC) · [Vulnerabilities](https://github.com/Arcanexus/kube-tower/wiki/Vulnerabilities) · [Security](https://github.com/Arcanexus/kube-tower/wiki/Security) · [Resources](https://github.com/Arcanexus/kube-tower/wiki/Resources) · [Scaling](https://github.com/Arcanexus/kube-tower/wiki/Scaling) · [Metrics and Grafana](https://github.com/Arcanexus/kube-tower/wiki/Metrics-and-Grafana) |
 | Use the UI | [Usage](https://github.com/Arcanexus/kube-tower/wiki/Usage) · [Overview](https://github.com/Arcanexus/kube-tower/wiki/Overview-page) · [Images](https://github.com/Arcanexus/kube-tower/wiki/Images-page) · [Helm charts](https://github.com/Arcanexus/kube-tower/wiki/Helm-charts-page) · [Security](https://github.com/Arcanexus/kube-tower/wiki/Security-page) · [Clusters](https://github.com/Arcanexus/kube-tower/wiki/Clusters-page) · [Resources](https://github.com/Arcanexus/kube-tower/wiki/Resources-page) · [Administration](https://github.com/Arcanexus/kube-tower/wiki/Administration-page) · [Statuses and versions](https://github.com/Arcanexus/kube-tower/wiki/Statuses-and-versions) |
 | Reference | [Configuration](https://github.com/Arcanexus/kube-tower/wiki/Configuration) · [Chart values](https://github.com/Arcanexus/kube-tower/wiki/Chart-values) · [API](https://github.com/Arcanexus/kube-tower/wiki/API) · [Permissions](https://github.com/Arcanexus/kube-tower/wiki/Permissions) · [Network and ports](https://github.com/Arcanexus/kube-tower/wiki/Network-and-ports) |
 | Help | [Troubleshooting](https://github.com/Arcanexus/kube-tower/wiki/Troubleshooting) · [Architecture](https://github.com/Arcanexus/kube-tower/wiki/Architecture) · [Development](https://github.com/Arcanexus/kube-tower/wiki/Development) |
@@ -107,7 +107,7 @@ gives a tour of kube-tower.
 | --- | --- | --- | --- | --- |
 | Updates things for you | ❌ never | ✅ containers | ✅ pull requests | ❌ |
 | Container images | ✅ | ✅ Docker only | ✅ from git | ✅ |
-| Helm charts and subcharts | ✅ from ArgoCD | ❌ | ✅ from git | ❌ |
+| Helm charts and subcharts | ✅ ArgoCD, Flux, helm | ❌ | ✅ from git | ❌ |
 | Vulnerabilities (CVE) | ✅ Trivy | ❌ | ❌ | ❌ |
 | Misconfigurations, secrets, compliance | ✅ Trivy Operator reports | ❌ | ❌ | ❌ |
 | Several clusters in one view | ✅ | ❌ | n/a | ❌ one per cluster |

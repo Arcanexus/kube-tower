@@ -36,6 +36,7 @@ the CPU and memory each container reserves next to what it really uses.
 | --- | --- |
 | [Clusters](clusters.md) | registering remote clusters, reusing ArgoCD clusters, EKS, GKE and AKS |
 | [Registries](registries.md) | Docker Hub, ECR, Artifact Registry, ACR, Harbor, Artifactory...: credentials, cloud identities, private CAs |
+| [Chart sources](chart-sources.md) | Helm charts of ArgoCD Applications, Flux HelmReleases and the helm command: what is read, permissions, repositories |
 | [Authentication](authentication.md) | admin account, local accounts, single sign-on with OIDC (Authentik, Dex, Keycloak) |
 | [RBAC](rbac.md) | roles, permissions per action, clusters each role sees, roles from OIDC groups |
 | [Vulnerabilities](vulnerabilities.md) | CVEs from Trivy Operator reports or Trivy, the Trivy setups |

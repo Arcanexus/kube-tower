@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 from collections import Counter, OrderedDict
 from datetime import datetime
@@ -328,7 +329,43 @@ class ChartChecker:
                 f", {len(report.dependencies)} subchart(s)" if report.dependencies else "",
             )
 
+    async def _repository(self, chart: str) -> str | None:
+        """The repository of a chart whose release does not record it: helm.repositories, then Artifact Hub."""
+        for pattern, repository in self.settings.repositories.items():
+            if fnmatch.fnmatchcase(chart, pattern):
+                return repository.rstrip("/")
+        if not self.settings.artifact_hub_url:
+            return None
+
+        async def fetch():
+            async with self.sem:
+                return await self.helm.artifact_hub_repository(self.settings.artifact_hub_url, chart)
+
+        return await self.memo.get(("artifact-hub", chart), fetch)
+
+    async def _without_repository(self, report: ChartReport) -> bool:
+        """Find the repository of a Helm release; when there is none, check only the subcharts recorded in
+        the release (their repositories are in its Chart.yaml) and return False."""
+        if report.manager == "helm":
+            try:
+                report.repository = await self._repository(report.chart) or ""
+            except Exception as exc:  # noqa: BLE001 - Artifact Hub unreachable: the subcharts are still checked
+                report.message = f"repository unknown, Artifact Hub lookup failed: {explain(exc)}"
+            else:
+                if report.repository:
+                    return True
+                report.message = "repository unknown: add the chart to helm.repositories"
+        report.status, report.message = Status.UNKNOWN, report.message or "repository unknown"
+        if report.dependencies and self.settings.check_dependencies:
+            values = report.inline_values
+            tags = values.get("tags") if isinstance(values.get("tags"), dict) else {}
+            _mark_deployed(report.dependencies, values, tags)
+            await asyncio.gather(*(self.check_dependency(d, 1, values, tags) for d in report.dependencies))
+        return False
+
     async def _check(self, report: ChartReport) -> None:
+        if not report.repository and not await self._without_repository(report):
+            return
         metadata: dict | None = None
         defaults: dict = {}
         chart_files: dict[str, str] = {}
@@ -347,7 +384,8 @@ class ChartChecker:
                 report.latest_version = await self._latest(report.repository, report.chart)
                 report.latest_released = await self._released(report.repository, report.chart, report.latest_version)
                 if parse(report.version) is None:
-                    report.status, report.message = Status.UNKNOWN, f"targetRevision '{report.version}' is not a fixed version"
+                    what = "targetRevision" if report.manager == "argocd" else "version"
+                    report.status, report.message = Status.UNKNOWN, f"{what} '{report.version}' is not a fixed version"
                 else:
                     report.status = Status.OUTDATED if is_newer(report.latest_version, report.version) else Status.UP_TO_DATE
                     if self.settings.check_dependencies:

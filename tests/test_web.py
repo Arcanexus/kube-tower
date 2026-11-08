@@ -302,8 +302,8 @@ def test_metrics():
         'kube_tower_image_workload_info{cluster="c1",container="nginx",image="docker.io/library/nginx",kind="Pod",'
         'namespace="tools",tag="1.25",workload="debug"} 1.0',
         'kube_tower_image_nodes{cluster="c2",image="ghcr.io/org/app",tag="2.0"} 2.0',
-        'kube_tower_chart_outdated{application="redis",chart="redis",cluster="c1",destination_namespace="",latest="18.0.0",source="helm",'
-        'status="outdated",update="",version="18.0.0"} 1.0',
+        'kube_tower_chart_outdated{application="redis",chart="redis",cluster="c1",destination_namespace="",latest="18.0.0",'
+        'manager="argocd",source="helm",status="outdated",update="",version="18.0.0"} 1.0',
         'kube_tower_chart_dependency_outdated{application="redis",chart="redis",cluster="c1",dependency="common",latest="2.1.0",'
         'status="outdated",update="minor",version="2.0.0"} 1.0',
         'kube_tower_cluster_reachable{cluster="c2"} 0.0',
@@ -1005,7 +1005,7 @@ def test_chart_row_shows_the_worst_status():
         "Latest",
         "Status (chart and subcharts)",
         "Repository",
-        "Application ArgoCD",
+        "Deployed by",
     ]
     assert row.count('class="clickable"') == 1
     assert (
@@ -1018,7 +1018,7 @@ def test_chart_row_shows_the_worst_status():
         r'<span class="tree-versions">2.0.0 <span class="arrow" aria-hidden="true">→</span> <strong>2.1.0</strong>',
         row,
     )
-    assert '<td class="hide-sm"><small>redis · c1</small></td>' in row
+    assert '<td class="hide-sm"><small><span class="muted-text">ArgoCD Application</span><br>redis · c1</small></td>' in row
 
 
 def test_trivy_problem_shown_everywhere():
@@ -1477,3 +1477,22 @@ def test_resources_metrics_and_api():
     assert 'kube_tower_resources_containers{cluster="c1",fit="critical"} 1.0' in metrics
     data = client.get("/api/resources?cluster=c1").json()
     assert [s["cluster"] for s in data["scans"]] == ["c1"] and data["recommendations"][0]["cpu_request"]["recommended"] == 0.05
+
+
+def test_charts_outside_argocd():
+    client, scanner = _client()
+    scanner.snapshot.charts += [
+        ChartReport("c1", "ingress", "ingress", "ingress-nginx", "", "4.10.0", "helm", "ingress", manager="helm"),
+        ChartReport(
+            "c1", "podinfo", "apps", "podinfo", "oci://ghcr.io/stefanprodan/charts", "6.5.0", "oci", "web", manager="flux"
+        ),
+    ]
+    page = client.get("/charts").text
+    assert '<span class="muted-text">Helm release</span><br>ingress · c1' in page
+    assert "helm · unknown" in page
+    assert client.get("/charts", params={"q": "flux"}).text.count('class="clickable"') == 1
+    detail = client.get("/charts/detail?cluster=c1&namespace=ingress&app=ingress&chart=ingress-nginx").text
+    assert "<h4>Helm release</h4>" in detail and "Destination namespace" not in detail
+    assert '<th scope="row">Repository</th><td>unknown' in detail
+    detail = client.get("/charts/detail?cluster=c1&namespace=apps&app=podinfo&chart=podinfo").text
+    assert "<h4>Flux HelmRelease</h4>" in detail and "Target namespace" in detail

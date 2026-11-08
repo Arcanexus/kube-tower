@@ -170,6 +170,7 @@ class SnapshotCollector(Collector):
                 "latest",
                 "status",
                 "update",
+                "manager",
             ],
         )
         dependency = GaugeMetricFamily(
@@ -190,6 +191,7 @@ class SnapshotCollector(Collector):
                     c.latest_version or "",
                     status.value,
                     update_kind(c.version, c.latest_version),
+                    c.manager,
                 ],
                 status == Status.OUTDATED,
             )

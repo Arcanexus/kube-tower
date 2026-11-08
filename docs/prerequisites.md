@@ -16,7 +16,7 @@ Optional, for the features that use them:
 
 | Component | Used for |
 | --- | --- |
-| [ArgoCD](https://argo-cd.readthedocs.io/) | The Helm charts page: charts are read from ArgoCD `Application` objects. Its cluster Secrets can be reused to scan its clusters |
+| [ArgoCD](https://argo-cd.readthedocs.io/) or [Flux](https://fluxcd.io/) | The Helm charts page: charts are read from ArgoCD `Application` objects and Flux `HelmRelease` objects (and, with `helm.releases`, from the releases installed with the helm command, see [chart sources](chart-sources.md)). The ArgoCD cluster Secrets can be reused to scan its clusters |
 | [Trivy Operator](https://aquasecurity.github.io/trivy-operator/) | Its vulnerability reports (else kube-tower scans with Trivy itself) and the [Security](security.md) page |
 | An ingress controller (and cert-manager) | Exposing the UI over HTTPS (else `kubectl port-forward`) |
 | An OIDC provider (Authentik, Keycloak, Entra ID...) | [Single sign-on](authentication.md#single-sign-on-oidc); the chart can also deploy Dex |

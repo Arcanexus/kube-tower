@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, chip, counters, filters, icon, list_shown, load_more, more_hint, page_title, released, sort_th, subchart_badge, tree_cell %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, with their subcharts.", "One line per chart. The Status column shows the chart and its subcharts as a tree, each with its version and its own status. The chips and the sort use the worst status of the chart and its deployed subcharts: a subchart that the Helm values of the Application leave out (condition or tags false) is shown as not deployed. Click a chart for its details.") }}{% endblock %}
+{% block heading %}{{ page_title("charts", "Helm charts", "Charts deployed by ArgoCD Applications, Flux HelmReleases or the helm command, with their subcharts.", "One line per chart. The Status column shows the chart and its subcharts as a tree, each with its version and its own status. The chips and the sort use the worst status of the chart and its deployed subcharts: a subchart that the Helm values of the release leave out (condition or tags false) is shown as not deployed. Click a chart for its details.") }}{% endblock %}
 {% block content %}
-{{ filters("charts", q, status, listing, "Search a chart, an ArgoCD Application or a repository") }}
+{{ filters("charts", q, status, listing, "Search a chart, an Application, a HelmRelease, a release or a repository") }}
 <div id="results">{{ self.results() }}</div>
 {% endblock %}
 {% block results %}
@@ -11,7 +11,7 @@
 <p><small>{{ listing.total | plural("chart") }}{{ list_shown(listing) }}{% if outdated_subcharts %} · {{ outdated_subcharts | plural("chart") }} up to date with an outdated subchart{% endif %}</small></p>
 <div class="overflow-auto table-wrap">
 <table class="striped chart-table stack-sm">
-  <thead><tr>{{ sort_th(listing, 0, "Chart") }}{{ sort_th(listing, 1, "Current") }}{{ sort_th(listing, 2, "Latest") }}{{ sort_th(listing, 3, "Status (chart and subcharts)") }}{{ sort_th(listing, 4, "Repository", False, "hide-sm") }}{{ sort_th(listing, 5, "Application ArgoCD", False, "hide-sm") }}</tr></thead>
+  <thead><tr>{{ sort_th(listing, 0, "Chart") }}{{ sort_th(listing, 1, "Current") }}{{ sort_th(listing, 2, "Latest") }}{{ sort_th(listing, 3, "Status (chart and subcharts)") }}{{ sort_th(listing, 4, "Repository", False, "hide-sm") }}{{ sort_th(listing, 5, "Deployed by", False, "hide-sm") }}</tr></thead>
   <tbody>{{ self.rows() }}</tbody>
 </table>
 {{ more_hint(listing) }}
@@ -41,8 +41,8 @@
           {% endfor %}
         </ul>
       </td>
-      <td class="hide-sm"><small>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }} · {{ c.repository }}</small></td>
-      <td class="hide-sm"><small>{{ c.application }} · {{ c.cluster }}{% if c.destination_namespace %} → {{ c.destination_namespace }}{% endif %}</small></td>
+      <td class="hide-sm"><small>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }} · {{ c.repository or "unknown" }}</small></td>
+      <td class="hide-sm"><small><span class="muted-text">{{ c.manager_label }}</span><br>{{ c.application }} · {{ c.cluster }}{% if c.destination_namespace %} → {{ c.destination_namespace }}{% endif %}</small></td>
     </tr>
   {% else %}
     <tr><td colspan="6">No chart.</td></tr>

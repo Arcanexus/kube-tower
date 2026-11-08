@@ -40,6 +40,13 @@ rules:
   - apiGroups: ["argoproj.io"]
     resources: ["applications"]
     verbs: ["get", "list"]
+  # Flux HelmReleases and their sources (Helm charts deployed by Flux), when Flux is installed
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["helmreleases"]
+    verbs: ["get", "list"]
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["helmrepositories", "gitrepositories", "ocirepositories"]
+    verbs: ["get", "list"]
   # Trivy Operator reports, when it is installed (vulnerabilities of the images, and the Security page)
   - apiGroups: ["aquasecurity.github.io"]
     resources:
@@ -82,6 +89,11 @@ rules:
   # - apiGroups: [""]
   #   resources: ["secrets"]
   #   verbs: ["get"]
+  # Charts installed with the helm command, only with helm.releases: true (lists every Secret of the
+  # cluster to find the release Secrets, owner=helm; see docs/chart-sources.md)
+  # - apiGroups: [""]
+  #   resources: ["secrets"]
+  #   verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

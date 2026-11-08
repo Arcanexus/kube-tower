@@ -21,17 +21,17 @@
   <tr><th scope="row">Version</th><td>{{ copy(c.version) if c.version else "n/a" }}</td></tr>
   <tr><th scope="row">Latest</th><td>{{ copy(c.latest_version) if c.latest_version else "n/a" }} {{ released(c.latest_released) }}</td></tr>
   <tr><th scope="row">Source</th><td>{{ icon("git" if c.source_type == "git" else "charts", "muted") }}{{ c.source_type }}</td></tr>
-  <tr><th scope="row">Repository</th><td>{% call copy(c.repository) %}<code>{{ c.repository }}</code>{% endcall %}</td></tr>
+  <tr><th scope="row">Repository</th><td>{% if c.repository %}{% call copy(c.repository) %}<code>{{ c.repository }}</code>{% endcall %}{% else %}unknown{% endif %}{% if c.manager == "helm" and c.repository %}<br><small>Not recorded by Helm: from <code>helm.repositories</code> or Artifact Hub</small>{% endif %}</td></tr>
   {% if c.git_ref %}<tr><th scope="row">Git revision</th><td>{% call copy(c.git_ref) %}<code>{{ c.git_ref }}</code>{% endcall %}</td></tr>{% endif %}
 </table>
 {{ links(chart_links(c)) }}
 
-<h4>ArgoCD Application</h4>
+<h4>{{ c.manager_label }}</h4>
 <table>
   <tr><th scope="row">Name</th><td>{{ copy(c.application) }}</td></tr>
   <tr><th scope="row">Namespace</th><td>{{ copy(c.app_namespace) }}</td></tr>
   <tr><th scope="row">Cluster</th><td>{{ copy(c.cluster) }}</td></tr>
-  <tr><th scope="row">Destination namespace</th><td>{{ copy(c.destination_namespace) }}</td></tr>
+  {% if c.manager != "helm" %}<tr><th scope="row">{{ "Target namespace" if c.manager == "flux" else "Destination namespace" }}</th><td>{{ copy(c.destination_namespace) }}</td></tr>{% endif %}
 </table>
 
 <h4>Subcharts</h4>

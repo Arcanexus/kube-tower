@@ -40,6 +40,7 @@ PAGES: list[tuple[str, list[tuple[str, str]]]] = [
         ("rbac.md", "RBAC"),
         ("vulnerabilities.md", "Vulnerabilities"),
         ("security.md", "Security"),
+        ("chart-sources.md", "Chart-sources"),
         ("resources.md", "Resources"),
         ("scaling.md", "Scaling"),
         ("metrics.md", "Metrics-and-Grafana"),

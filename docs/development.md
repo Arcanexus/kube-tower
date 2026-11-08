@@ -38,7 +38,8 @@ src/kube_tower/
   config.py            settings (config.yaml + env)
   models.py            data exchanged between collectors, checkers, the snapshot and the UI
   clusters.py          cluster discovery (in-cluster, Secrets, ArgoCD Secrets)
-  collectors/          inventory: images.py (workloads, nodes), helm.py (ArgoCD Applications),
+  collectors/          inventory: images.py (workloads, nodes), helm.py (ArgoCD Applications), flux.py (Flux
+                       HelmReleases), releases.py (Helm release Secrets),
                        vulnerabilities.py (Trivy Operator VulnerabilityReports), security.py
                        (its config audit, exposed secrets, RBAC, infra and compliance reports)
   trivy.py             vulnerability scans with the Trivy CLI

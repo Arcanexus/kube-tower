@@ -23,7 +23,7 @@ flowchart LR
         trv[Trivy<br/>vulnerabilities]
     end
 
-    kt -->|read-only<br/>ServiceAccount, cluster Secrets| k8s[(Kubernetes clusters<br/>workloads, nodes,<br/>ArgoCD Applications,<br/>VulnerabilityReports)]
+    kt -->|read-only<br/>ServiceAccount, cluster Secrets| k8s[(Kubernetes clusters<br/>workloads, nodes,<br/>ArgoCD Applications,<br/>Flux HelmReleases,<br/>VulnerabilityReports)]
     kt -->|tags, digests| reg[(OCI registries)]
     kt -->|index.yaml, OCI charts,<br/>Chart.yaml from git| helm[(Helm repositories, git)]
     kt -->|Trivy databases, image layers| trivydb[(ghcr.io / mirror)]

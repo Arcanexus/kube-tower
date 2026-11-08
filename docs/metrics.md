@@ -53,14 +53,16 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
 - Images only found on nodes (`node.status.images`, i.e. pulled but not necessarily running) appear
   in `kube_tower_image_nodes` only, as a node count per cluster rather than one series per node.
 
-### Helm charts (ArgoCD Applications)
+### Helm charts
 
 | Metric | Labels | Value |
 | --- | --- | --- |
-| `kube_tower_chart_outdated` | `cluster`, `application`, `destination_namespace`, `chart`, `source`, `version`, `latest`, `status`, `update` | 1 if the chart **or one of its subcharts** has a newer version |
+| `kube_tower_chart_outdated` | `cluster`, `application`, `destination_namespace`, `chart`, `source`, `version`, `latest`, `status`, `update`, `manager` | 1 if the chart **or one of its subcharts** has a newer version |
 | `kube_tower_chart_dependency_outdated` | `cluster`, `application`, `chart`, `dependency`, `version`, `latest`, `status`, `update` | 1 if the subchart has a newer version and is deployed |
 
 - `source` is `helm` (HTTP repository), `oci` or `git`.
+- `manager` is what deploys the chart: `argocd` (`application` is the Application), `flux` (the
+  HelmRelease) or `helm` (the release installed with the helm command), see [chart sources](chart-sources.md).
 - On `kube_tower_chart_outdated`, `status` is the worst status of the chart and its subcharts, while
   `latest` and `update` describe the chart itself: a chart can be `outdated` with an empty `update`
   when only a subchart is behind.
@@ -227,7 +229,7 @@ The dashboard is [`charts/kube-tower/dashboards/kube-tower.json`](../charts/kube
 - **Overview**: outdated images, major image updates, outdated charts, unreachable clusters, age of the
   last scan, scan errors; images and charts by status, image updates by type, outdated images per cluster.
 - **Container images**: outdated images (current, latest, update type) and the workloads running them.
-- **Helm charts**: every ArgoCD Application chart with its status, and the outdated subcharts.
+- **Helm charts**: every chart (ArgoCD, Flux, helm) with its status, and the outdated subcharts.
 - **Vulnerabilities**: images with critical and high vulnerabilities, fixable critical/high vulnerabilities,
   end of life OS images, failed vulnerability scans, age of the last vulnerability scan; vulnerabilities by
   severity and over time, the most vulnerable images and the workloads running an image with critical

@@ -12,7 +12,7 @@ clusters. Many of them work well **together** with kube-tower.
 | Updates things for you | ❌ never | ✅ restarts containers | ✅ pull requests | ❌ | ❌ | ✅ images of Applications |
 | Looks at | what runs in the clusters | the containers of one Docker host | git repositories | the pods of one cluster | the Helm releases and pods of one cluster | ArgoCD Applications |
 | Container images | ✅ workloads (running or not) and node caches | ✅ Docker only | ✅ declared in git | ✅ running pods | ✅ | ✅ the ones it manages |
-| Helm charts and subcharts | ✅ from ArgoCD Applications, with subcharts | ❌ | ✅ declared in git | ❌ | ✅ Helm releases (not the charts ArgoCD renders) | ❌ |
+| Helm charts and subcharts | ✅ from ArgoCD Applications, Flux HelmReleases and Helm releases, with subcharts | ❌ | ✅ declared in git | ❌ | ✅ Helm releases (not the charts ArgoCD renders) | ❌ |
 | Vulnerabilities (CVE) | ✅ Trivy Operator reports or Trivy | ❌ | ❌ (security advisories of dependencies) | ❌ | ❌ | ❌ |
 | Misconfigurations, secrets, compliance | ✅ Trivy Operator reports | ❌ | ❌ | ❌ | ❌ | ❌ |
 | CPU and memory recommendations | ✅ runs krr | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -51,7 +51,8 @@ ArgoCD with their subcharts, and the vulnerabilities.
 [Nova](https://github.com/FairwindsOps/nova) is a command line tool that lists the outdated or
 deprecated Helm releases of a cluster, and its outdated container images. It reads the Helm release
 Secrets: charts deployed by ArgoCD, which renders them without a Helm release, are not seen. kube-tower
-reads the charts from the ArgoCD Applications, with their subcharts, and runs as a service with a UI.
+also reads the charts of ArgoCD Applications and Flux HelmReleases (Helm releases too, with
+`helm.releases`), with their subcharts, across clusters, and runs as a service with a UI.
 
 ## Argo CD Image Updater
 

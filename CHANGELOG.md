@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Helm charts outside ArgoCD** (see [chart sources](docs/chart-sources.md)): the charts of **Flux
+  HelmReleases** (on by default, `helm.flux`), with the URL of their HelmRepository, OCIRepository or
+  GitRepository and the version Flux last installed; and, with `helm.releases: true`, the releases
+  installed with the **helm command**, read from their release Secrets (the chart then adds `list secrets`
+  to its ClusterRole). Helm does not record their repository: it comes from `helm.repositories` (chart name
+  or pattern), else from Artifact Hub (`helm.artifactHubUrl`, `""` for none). The Helm charts page has a
+  *Deployed by* column, and `kube_tower_chart_outdated` a `manager` label (`argocd`, `flux`, `helm`).
 - **CPU and memory recommendations with [krr](https://github.com/robusta-dev/krr)** (`krr.enabled`, see
   [resources](docs/resources.md)): the chart runs the official krr image in a pod of its own, which
   kube-tower calls at each full scan with the kubeconfig of every cluster (only the kube-tower

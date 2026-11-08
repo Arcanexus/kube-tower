@@ -166,6 +166,15 @@ config:
     includePrerelease: false
     checkDependencies: true
     fetchReleaseDates: true
+    # Charts of the Flux HelmReleases (nothing happens without Flux)
+    flux: true
+    # Charts installed with the helm command: reads their release Secrets, which needs `list secrets` in
+    # every namespace (added to the ClusterRole when true). See docs/chart-sources.md
+    releases: false
+    # chart name (or pattern) -> repository, for the charts installed with the helm command
+    repositories: {}
+    # Where the repository of the other ones is looked up ("" for none)
+    artifactHubUrl: https://artifacthub.io
   # Known vulnerabilities (CVE) of the images, see docs/vulnerabilities.md
   vulnerabilities:
     enabled: true

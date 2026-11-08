@@ -12,7 +12,7 @@ helm install kube-tower oci://ghcr.io/arcanexus/charts/kube-tower \
 ```
 
 This runs one pod that scans the cluster it runs in: its workloads, the images cached on its nodes, and
-the Helm charts of its ArgoCD Applications (when ArgoCD is installed). Vulnerabilities are read from
+the Helm charts of its ArgoCD Applications and Flux HelmReleases (when they are installed). Vulnerabilities are read from
 Trivy Operator when it is installed, else scanned with Trivy.
 
 ## 2. Open the UI
@@ -38,7 +38,7 @@ unreachable clusters, critical vulnerabilities with a fix, major updates.
 
 - **Images**: every image with its current and latest version and its vulnerabilities; click a line for
   its details and where it is used.
-- **Helm charts**: every chart of the ArgoCD Applications with its subcharts.
+- **Helm charts**: every chart of the ArgoCD Applications and Flux HelmReleases with its subcharts.
 - **Security**: the reports of Trivy Operator, when it is installed.
 - **Administration**: scans, clusters, credentials, logs.
 

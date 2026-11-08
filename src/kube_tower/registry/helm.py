@@ -188,6 +188,26 @@ class HelmClient:
                 raise RegistryError(http_error_message(f"cannot read the index.yaml of the Helm repository {repository}", resp))
         return f"index.yaml served {'with credentials' if auth else 'anonymously'}"
 
+    async def artifact_hub_repository(self, base_url: str, chart: str) -> str | None:
+        """The repository of a chart according to Artifact Hub: among the Helm packages with this exact name,
+        the official one, else one of a verified publisher, else the most starred. None when there is none."""
+        url = f"{base_url.rstrip('/')}/api/v1/packages/search"
+        resp = await self.oci.client_for(httpx.URL(url).host).get(
+            url, params={"ts_query_web": chart, "kind": "0", "limit": "60"}, follow_redirects=True
+        )
+        if resp.status_code != 200:
+            raise RegistryError(http_error_message(f"cannot search the chart {chart} on Artifact Hub", resp))
+        found = resp.json().get("packages") or []
+        packages = [p for p in found if p.get("name") == chart and (p.get("repository") or {}).get("url")]
+        if not packages:
+            return None
+
+        def rank(p: dict) -> tuple:
+            repo = p["repository"]
+            return (bool(p.get("official") or repo.get("official")), bool(repo.get("verified_publisher")), p.get("stars") or 0)
+
+        return max(packages, key=rank)["repository"]["url"].rstrip("/")
+
     async def list_versions(self, repository: str, chart: str) -> list[str]:
         if is_oci(repository):
             registry, path = split_oci(repository, chart)
