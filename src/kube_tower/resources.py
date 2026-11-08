@@ -180,6 +180,10 @@ def _service_account_token() -> str:
         return ""
 
 
+# Seconds to wait before trying again when the krr pod refuses the connection (about 3 minutes in all)
+CONNECT_RETRIES = (5, 10, 20, 30, 60, 60)
+
+
 async def run_remote(settings: ResourcesSettings, kubeconfig: str, args: list[str]) -> dict:
     """Ask the krr server (resources.serverUrl) to run krr and return its JSON result."""
     headers = {"User-Agent": "kube-tower"}
@@ -187,11 +191,17 @@ async def run_remote(settings: ResourcesSettings, kubeconfig: str, args: list[st
         headers["Authorization"] = f"Bearer {token}"
     body = {"strategy": settings.strategy, "kubeconfig": kubeconfig, "args": args, "timeout": settings.timeout}
     url = settings.server_url.rstrip("/") + "/run"
-    try:
-        async with httpx.AsyncClient(timeout=settings.timeout + 30) as http:
-            response = await http.post(url, json=body, headers=headers)
-    except httpx.HTTPError as exc:
-        raise KrrError(f"krr server {settings.server_url} unreachable: {exc.__class__.__name__} {exc}".strip()) from exc
+    async with httpx.AsyncClient(timeout=settings.timeout + 30) as http:
+        for delay in (*CONNECT_RETRIES, None):
+            try:
+                response = await http.post(url, json=body, headers=headers)
+                break
+            except httpx.HTTPError as exc:
+                # refused: the krr pod is starting (installation, upgrade, node drain), try again
+                if delay is None or not isinstance(exc, httpx.ConnectError):
+                    reason = f"{exc.__class__.__name__} {exc}".strip()
+                    raise KrrError(f"krr server {settings.server_url} unreachable: {reason}") from exc
+                await asyncio.sleep(delay)
     try:
         data = response.json()
     except ValueError:

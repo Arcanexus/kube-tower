@@ -135,6 +135,7 @@ The last run of each cluster is on top of the Resources page, with its error. Th
 | `403 Forbidden` on `services/proxy` | kube-tower may not reach Prometheus through the API server: apply the RBAC again, or give the `url` |
 | *not enough data* on every container | less than 3 hours of history, or the cAdvisor metrics are missing |
 | `NoPrometheusPods` warning | the kube-state-metrics metrics are missing: krr cannot link the pods to their workload |
+| `krr server ... unreachable` | the krr pod did not answer for about 3 minutes (kube-tower tries again while it starts): check `kubectl get pods -l app.kubernetes.io/name=<release>-krr` and the NetworkPolicy |
 | `krr server answered 401` / `403` | the token of kube-tower was refused: the krr pod only accepts the ServiceAccount of the release |
 | `krr not found` | `resources.enabled` without the krr pod: set `krr.enabled` in the chart |
 

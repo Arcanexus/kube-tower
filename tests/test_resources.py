@@ -225,9 +225,18 @@ async def test_run_remote(monkeypatch, tmp_path):
     route.mock(return_value=httpx.Response(503, text="busy"))
     with pytest.raises(KrrError, match="answered 503: busy"):
         await resources.run_remote(settings, "kc", [])
+    # the krr pod is starting: tried again, then given up
+    monkeypatch.setattr(resources, "CONNECT_RETRIES", (0, 0))
+    route.mock(side_effect=[httpx.ConnectError("refused"), httpx.Response(200, json={"result": RESULT})])
+    assert await resources.run_remote(settings, "kc", []) == RESULT
     route.mock(side_effect=httpx.ConnectError("refused"))
+    before = route.call_count
     monkeypatch.setattr(resources, "SA_TOKEN", str(tmp_path / "none"))
     with pytest.raises(KrrError, match="unreachable: ConnectError refused"):
+        await resources.run_remote(settings, "kc", [])
+    assert route.call_count - before == 3  # 2 retries
+    route.mock(side_effect=httpx.ReadTimeout("slow"))
+    with pytest.raises(KrrError, match="unreachable: ReadTimeout slow"):
         await resources.run_remote(settings, "kc", [])
 
 
