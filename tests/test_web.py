@@ -1375,3 +1375,105 @@ def test_subchart_not_deployed():
         'kube_tower_chart_dependency_outdated{application="redis",chart="redis",cluster="c1",dependency="common",latest="2.1.0",'
         'status="not-deployed",update="minor",version="2.0.0"} 0.0'
     ) in client.get("/metrics").text
+
+
+def _with_resources(scanner):
+    from kube_tower.models import Fit, ResourceRecommendation, ResourceScan, ResourceValue
+
+    now = datetime.now(UTC)
+    mi = 1024**2
+    scanner.snapshot.resources = [
+        ResourceRecommendation(
+            "c1", "shop", "Deployment", "api", "app",
+            cpu_request=ResourceValue(1.0, 0.05, True, Fit.CRITICAL),
+            cpu_limit=ResourceValue(2.0, None, True, Fit.WARNING),
+            memory_request=ResourceValue(512 * mi, 200 * mi, True, Fit.WARNING),
+            memory_limit=ResourceValue(None, 200 * mi, True, Fit.CRITICAL),
+            fit=Fit.CRITICAL, pods=3,
+        ),
+        ResourceRecommendation(
+            "c1", "shop", "StatefulSet", "db", "db",
+            cpu_request=ResourceValue(None, None, False), memory_request=ResourceValue(None, None, False),
+            fit=Fit.UNKNOWN, hpa=True, info="Not enough data",
+        ),
+    ]  # fmt: skip
+    scanner.snapshot.resource_scans = [
+        ResourceScan("c1", now, strategy="simple", score=42, settings={"history_duration": "336.0"}),
+        ResourceScan("c2", now, message="Prometheus not found", strategy="simple"),
+    ]
+
+
+def _resources_client(enabled=True):
+    scanner = FakeScanner()
+    _with_resources(scanner)
+    settings = Settings()
+    settings.resources.enabled = enabled
+    return TestClient(create_app(settings, scanner, background=False)), scanner
+
+
+def test_resources_page():
+    client, _ = _resources_client()
+    page = " ".join(client.get("/resources").text.split())
+    assert 'href="resources" aria-current="page"' in page  # in the sidebar once enabled
+    assert "score <strong>42</strong>/100" in page and "336 h of history" in page and "Prometheus not found" in page
+    # current → recommended, coloured by fit; CPU limit removed
+    assert (
+        '<span class="resource-value fit-text-critical">1 <span class="arrow" aria-hidden="true">→</span> <strong>50m</strong>'
+        in page
+    )
+    assert '2 <span class="arrow" aria-hidden="true">→</span> <strong>none</strong>' in page
+    assert "512Mi" in page and "200Mi" in page and "unset" in page and "Not enough data" in page and "HPA" in page
+    assert "1<small> → 50m</small>" in page and "950m less to reserve" in page  # requests with a recommendation
+    assert page.index("<strong>api</strong>") < page.index("<strong>db</strong>")  # critical first
+    assert "<strong>db</strong>" not in client.get("/resources?fit=critical").text
+    assert "<strong>api</strong>" not in client.get("/resources?q=db").text
+    assert "No container." in client.get("/resources?cluster=c2").text
+    assert client.get("/resources?sort=3&dir=descending").status_code == 200
+
+
+def test_resources_detail():
+    client, _ = _resources_client()
+    url = "/resources/detail?cluster=c1&namespace=shop&kind=Deployment&name=api&container=app"
+    page = " ".join(client.get(url).text.split())
+    assert "api / app" in page and "far from the usage" in page and "-950m" in page and "-312Mi" in page
+    assert "requests: cpu: 50m memory: 200Mi limits: memory: 200Mi" in page  # the block to paste
+    assert "history_duration 336.0" in page and "found by krr in the cluster" in page and "<td>3</td>" in page
+    assert client.get(url.replace("api", "nope")).status_code == 404
+
+
+def test_resources_page_off_and_empty():
+    client, scanner = _resources_client(enabled=False)
+    page = client.get("/resources").text
+    assert "CPU and memory recommendations are off" in page and 'href="resources"' not in page.split("<main")[0]
+    client, scanner = _resources_client()
+    scanner.snapshot.resources, scanner.snapshot.resource_scans = [], []
+    assert "krr has not answered yet" in client.get("/resources").text
+
+
+def test_clusters_page_shows_the_resources():
+    client, scanner = _resources_client()
+    scanner.snapshot.nodes = [NodeInfo("c1", "w-1", kubelet_version="v1.30.0")]
+    page = " ".join(client.get("/clusters").text.split())
+    assert "CPU and memory" in page and '<span class="badge fit-critical">1 critical</span>' in page
+    assert "CPU 1 → 50m, memory 512Mi → 200Mi · score 42/100" in page
+
+
+def test_resources_metrics_and_api():
+    client, _ = _resources_client()
+    metrics = client.get("/metrics").text
+    assert (
+        'kube_tower_resources_current{cluster="c1",container="app",kind="Deployment",namespace="shop",resource="cpu",'
+        'type="request",workload="api"} 1.0' in metrics
+    )
+    assert (
+        'kube_tower_resources_recommended{cluster="c1",container="app",kind="Deployment",namespace="shop",resource="cpu",'
+        'type="request",workload="api"} 0.05' in metrics
+    )
+    assert 'resource="cpu",type="limit",workload="api"} 2.0' in metrics
+    assert (
+        'kube_tower_resources_recommended{cluster="c1",container="app",kind="Deployment",namespace="shop",resource="cpu",type="limit"'
+        not in metrics
+    )  # noqa: E501
+    assert 'kube_tower_resources_containers{cluster="c1",fit="critical"} 1.0' in metrics
+    data = client.get("/api/resources?cluster=c1").json()
+    assert [s["cluster"] for s in data["scans"]] == ["c1"] and data["recommendations"][0]["cpu_request"]["recommended"] == 0.05

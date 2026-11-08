@@ -769,7 +769,7 @@ td.cell-name { max-width: 21rem; }
 .cluster-card > header { flex-wrap: wrap; }
 .cluster-card-name { font-size: 1.1rem; }
 .cluster-card-meta { margin-left: auto; font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
-.cluster-overview { display: grid; grid-template-columns: 7.5rem minmax(12rem, max-content) minmax(12rem, max-content); gap: 1.5rem 3.5rem; align-items: center; margin-bottom: 1rem; }
+.cluster-overview { display: grid; grid-template-columns: 7.5rem repeat(3, minmax(12rem, max-content)); gap: 1.5rem 3rem; align-items: center; margin-bottom: 1rem; }
 .cluster-fact > p { margin: .2rem 0; }
 .cluster-fact .counters-label { display: block; margin-bottom: .2rem; }
 .cluster-cves { font-size: 1rem; }
@@ -809,7 +809,7 @@ td.cell-name { max-width: 21rem; }
 .version-error { background: var(--kt-err-soft); color: var(--kt-err); }
 .pod-bar { display: block; height: .25rem; margin-top: .1rem; border-radius: 1rem; background: var(--kt-code-bg); overflow: hidden; }
 .pod-bar > span { display: block; height: 100%; background: var(--kt-accent); }
-@media (max-width: 900px) { .cluster-overview { grid-template-columns: 6rem minmax(0, 1fr); } .cluster-overview .cluster-fact:last-child { grid-column: 1 / -1; } .donut { width: 6rem; height: 6rem; } }
+@media (max-width: 900px) { .cluster-overview { grid-template-columns: 6rem minmax(0, 1fr); } .cluster-overview .cluster-fact:nth-child(n+3) { grid-column: 1 / -1; } .donut { width: 6rem; height: 6rem; } }
 @media (max-width: 600px) { .node-tiles { grid-template-columns: minmax(0, 1fr); } .cluster-card-meta { margin-left: 0; width: 100%; } }
 
 /* Copyable values of the detail panels (copy macro, ktCopy) */
@@ -833,3 +833,17 @@ td.cell-name { max-width: 21rem; }
 /* Release date of a latest version (released macro) */
 .released { display: inline-flex; align-items: center; color: var(--kt-muted); font-size: .72rem; white-space: nowrap; }
 .released .icon { width: .9em; height: .9em; margin-right: .25em; }
+
+/* Resources page (krr): fits of the requests and limits */
+.fit-critical { background: var(--kt-err-soft); color: var(--kt-err); }
+.fit-warning { background: var(--kt-warn-soft); color: var(--kt-warn); }
+.fit-ok { background: var(--kt-unk-soft); color: var(--kt-muted); }
+.fit-good { background: var(--kt-ok-soft); color: var(--kt-ok); }
+.fit-unknown { background: var(--kt-unk-soft); color: var(--kt-unk); }
+.fit-text-critical strong { color: var(--kt-err); } .fit-text-warning strong { color: var(--kt-warn); }
+.resource-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.resource-runs { margin-bottom: .75rem; }
+.resource-run { margin: 0 0 .2rem; }
+.resource-tiles .tile > strong small { font-size: 1.1rem; }
+.copy-block { padding: .6rem .75rem; border-radius: var(--kt-radius); background: var(--kt-hover); font-size: .8rem; }
+.copy-block code { background: none; padding: 0; white-space: pre; }

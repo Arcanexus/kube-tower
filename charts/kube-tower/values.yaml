@@ -422,6 +422,36 @@ trivy:
     tolerations: []
     affinity: {}
 
+# krr (https://github.com/robusta-dev/krr): CPU and memory recommendations of the containers from their
+# usage in Prometheus, on the Resources page. Runs in a pod of its own, the official krr image behind a small
+# HTTP server that only kube-tower may call; enabling it turns config.resources.enabled on.
+# Prometheus: see config.resources.prometheus (krr finds it in each cluster otherwise).
+krr:
+  enabled: false
+  image:
+    repository: robustadev/krr
+    tag: "v1.31.3"
+    pullPolicy: IfNotPresent
+  port: 8080
+  # Clusters analysed at the same time (each run reads Prometheus and the Kubernetes API of the cluster)
+  concurrency: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+  # e.g. CERTIFICATE (base64 PEM) to trust the private CA of a Prometheus
+  extraEnv: []
+  networkPolicy:
+    # Ports of Prometheus reached directly (not through the API server), in addition to networkPolicy.egress.ports
+    egressPorts:
+      - port: 9090
+        protocol: TCP
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # NetworkPolicies for the kube-tower pod and the Trivy server (needs a CNI that enforces them).
 networkPolicy:
   enabled: false

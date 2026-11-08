@@ -9,6 +9,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from kube_tower.administration import unused_node_images
+from kube_tower.models import encode
 from kube_tower.web.login import snapshot_of, visible_checks
 
 router = APIRouter()
@@ -141,3 +142,13 @@ async def connectivity(request: Request) -> dict:
 async def unused_images(request: Request) -> list[dict]:
     """Images cached on nodes that no workload of their cluster uses."""
     return [asdict(u) for u in unused_node_images(snapshot_of(request))]
+
+
+@router.get("/api/resources")
+async def resources(request: Request, cluster: str = "") -> dict:
+    """CPU and memory recommendations of krr (CPU in cores, memory in bytes), and its last run per cluster."""
+    snap = snapshot_of(request)
+    return {
+        "scans": [encode(s) for s in snap.resource_scans if not cluster or s.cluster == cluster],
+        "recommendations": [encode(r) for r in snap.resources if not cluster or r.cluster == cluster],
+    }

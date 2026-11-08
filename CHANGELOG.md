@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **CPU and memory recommendations with [krr](https://github.com/robusta-dev/krr)** (`krr.enabled`, see
+  [resources](docs/resources.md)): the chart runs the official krr image in a pod of its own, which
+  kube-tower calls at each full scan with the kubeconfig of every cluster (only the kube-tower
+  ServiceAccount is accepted, checked with a TokenReview). krr finds Prometheus in each cluster, or uses
+  `config.resources.prometheus`. A **Resources** page (sidebar) lists the containers whose requests and
+  limits are furthest from their usage, with totals per cluster, the analysis of krr and the resources
+  block to paste in the manifest; the Clusters cards get a *CPU and memory* block; `GET /api/resources`
+  and the `kube_tower_resources_*` metrics give the same data. Results are reused for
+  `config.resources.interval` (24h). The chart adds the read rules krr needs (ReplicaSets, Jobs, HPAs,
+  Services proxy to reach Prometheus) and a NetworkPolicy for the krr pod.
+
 ### Changed
 
 - Chart images updated: Dex `v2.41.1` → `v2.46.1`, Trivy `0.75.0` → `0.76.2`, Valkey `8.1.1` → `9.1.3`.

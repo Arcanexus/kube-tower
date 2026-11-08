@@ -777,3 +777,41 @@ def test_dex(tmp_path):
 
     assert "dex.enabled needs auth.enabled" in render_error(tmp_path, {"auth": {"enabled": False}, "dex": {"enabled": True}})
     assert "dex.enabled needs auth.url" in render_error(tmp_path, {"auth": {"enabled": True}, "dex": {"enabled": True}})
+
+
+def test_krr(tmp_path):
+    docs = render(tmp_path, {"krr": {"enabled": True}, "networkPolicy": {"enabled": True}})
+    settings = app_settings(tmp_path, docs)
+    assert settings.resources.enabled and settings.resources.server_url == "http://kt-kube-tower-krr:8080"
+    pod = docs[("Deployment", "kt-kube-tower-krr")]["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    assert container["image"] == "robustadev/krr:v1.31.3" and pod["serviceAccountName"] == "kt-kube-tower-krr"
+    env = {e["name"]: e.get("value") for e in container["env"]}
+    assert env["KRR_ALLOWED_USERS"] == "system:serviceaccount:default:kt-kube-tower"
+    assert container["securityContext"]["readOnlyRootFilesystem"]
+    # the server is the file of the chart, and only kube-tower may call it (TokenReview)
+    server = docs[("ConfigMap", "kt-kube-tower-krr")]["data"]["krr-server.py"]
+    assert server == (CHART / "files" / "krr-server.py").read_text()
+    binding = docs[("ClusterRoleBinding", "kt-kube-tower-krr-tokenreview")]
+    assert binding["roleRef"]["name"] == "system:auth-delegator"
+    assert docs[("Service", "kt-kube-tower-krr")]["spec"]["ports"][0]["port"] == 8080
+    rules = docs[("ClusterRole", "kt-kube-tower")]["rules"]
+    assert {"apiGroups": ["autoscaling"], "resources": ["horizontalpodautoscalers"], "verbs": ["get", "list"]} in rules
+    assert {"apiGroups": [""], "resources": ["services/proxy"], "verbs": ["get", "create"]} in rules
+    policy = docs[("NetworkPolicy", "kt-kube-tower-krr")]["spec"]
+    assert policy["ingress"][0]["ports"] == [{"port": "krr", "protocol": "TCP"}]
+    assert {"port": 9090, "protocol": "TCP"} in policy["egress"][1]["ports"]
+    egress = docs[("NetworkPolicy", "kt-kube-tower")]["spec"]["egress"]
+    assert any(rule.get("ports") == [{"port": 8080, "protocol": "TCP"}] for rule in egress)
+
+
+def test_krr_keeps_the_resources_settings(tmp_path):
+    values = {
+        "krr": {"enabled": True},
+        "config": {"resources": {"enabled": False, "serverUrl": "http://mine:8080", "prometheus": [{"url": "http://p:9090"}]}},
+    }
+    settings = app_settings(tmp_path, render(tmp_path, values))
+    assert not settings.resources.enabled and settings.resources.server_url == "http://mine:8080"
+    assert settings.resources.prometheus[0].url == "http://p:9090"
+    docs = render(tmp_path, {})
+    assert ("Deployment", "kt-kube-tower-krr") not in docs and not app_settings(tmp_path, docs).resources.enabled

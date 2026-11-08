@@ -400,6 +400,88 @@ class PlatformVersion:
         return out
 
 
+class Fit(StrEnum):
+    """How far the requests and limits of a container are from the recommendation of krr, worst first."""
+
+    CRITICAL = "critical"
+    WARNING = "warning"
+    OK = "ok"
+    GOOD = "good"
+    UNKNOWN = "unknown"  # not enough data in Prometheus
+
+    @classmethod
+    def parse(cls, value: str | None) -> Fit:
+        try:
+            return cls((value or "").lower())
+        except ValueError:
+            return cls.UNKNOWN
+
+
+@dataclass
+class ResourceValue:
+    """A request or a limit of a container: CPU in cores, memory in bytes. None: not set (current), or no
+    limit advised (recommended) when `known`."""
+
+    current: float | None = None
+    recommended: float | None = None
+    known: bool = True  # False: krr had not enough data to recommend a value
+    fit: Fit = Fit.UNKNOWN
+
+    @property
+    def change(self) -> float | None:
+        """recommended - current, None when one of them is missing."""
+        if not self.known or self.current is None or self.recommended is None:
+            return None
+        return self.recommended - self.current
+
+
+@dataclass
+class ResourceRecommendation:
+    """The CPU and memory that krr recommends for a container of a workload, from its usage in Prometheus."""
+
+    cluster: str
+    namespace: str
+    kind: str  # Deployment, StatefulSet, DaemonSet, Job, CronJob, Rollout...
+    name: str
+    container: str
+    cpu_request: ResourceValue = field(default_factory=ResourceValue)
+    cpu_limit: ResourceValue = field(default_factory=ResourceValue)
+    memory_request: ResourceValue = field(default_factory=ResourceValue)
+    memory_limit: ResourceValue = field(default_factory=ResourceValue)
+    fit: Fit = Fit.UNKNOWN  # the worst of the four
+    pods: int = 0  # pods seen in Prometheus over the history
+    hpa: bool = False  # scaled by a HorizontalPodAutoscaler
+    info: str = ""  # why krr could not recommend (Not enough data...)
+    warnings: list[str] = field(default_factory=list)  # NoPrometheusPods, NoPrometheusCPUMetrics...
+
+    @property
+    def key(self) -> tuple[str, str, str, str, str]:
+        return (self.cluster, self.namespace, self.kind, self.name, self.container)
+
+    @property
+    def values(self) -> list[tuple[str, str, ResourceValue]]:
+        """(resource, request|limit, value) of the four values."""
+        return [
+            ("cpu", "request", self.cpu_request),
+            ("cpu", "limit", self.cpu_limit),
+            ("memory", "request", self.memory_request),
+            ("memory", "limit", self.memory_limit),
+        ]
+
+
+@dataclass
+class ResourceScan:
+    """The last krr run of a cluster (Resources page)."""
+
+    cluster: str
+    scanned_at: datetime | None = None
+    message: str | None = None  # why krr failed
+    strategy: str = ""
+    score: int | None = None  # 0-100, the krr score of the cluster
+    prometheus: str = ""  # the Prometheus URL given to krr, "" when krr finds it in the cluster
+    settings: dict[str, str] = field(default_factory=dict)  # of the strategy: history_duration, cpu_percentile...
+
+
 @dataclass
 class ClusterStatus:
     name: str
@@ -432,6 +514,9 @@ class Snapshot:
     nodes: list[NodeInfo] = field(default_factory=list)
     # End of life and vulnerabilities of the Kubernetes and containerd versions (Clusters page)
     platform: list[PlatformVersion] = field(default_factory=list)
+    # CPU and memory recommendations of krr, and its last run per cluster (Resources page)
+    resources: list[ResourceRecommendation] = field(default_factory=list)
+    resource_scans: list[ResourceScan] = field(default_factory=list)
 
     def image(self, ref: str) -> ImageReport | None:
         return self._index("images", lambda r: str(r.image)).get(ref)

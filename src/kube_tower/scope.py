@@ -1,8 +1,8 @@
 """What a user whose roles are limited to some clusters sees (auth.roles.<role>.clusters).
 
 The snapshot is cut down to those clusters: their images (with only their usages), charts, statuses,
-Trivy Operator reports and the scan errors that name no other cluster. Built for each request from the
-snapshot of the backend, which is never changed.
+Trivy Operator reports, CPU and memory recommendations and the scan errors that name no other cluster.
+Built for each request from the snapshot of the backend, which is never changed.
 """
 
 from __future__ import annotations
@@ -44,4 +44,6 @@ def scope_snapshot(snapshot: Snapshot, patterns: tuple[str, ...] | None) -> Snap
         compliance=[r for r in snapshot.compliance if visible(r.cluster)],
         trivy_operator=[c for c in snapshot.trivy_operator if visible(c)],
         nodes=[n for n in snapshot.nodes if visible(n.cluster)],
+        resources=[r for r in snapshot.resources if visible(r.cluster)],
+        resource_scans=[s for s in snapshot.resource_scans if visible(s.cluster)],
     )

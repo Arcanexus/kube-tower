@@ -53,6 +53,30 @@ rules:
       - clusterinfraassessmentreports
       - clustercompliancereports
     verbs: ["get", "list"]
+  # krr (CPU and memory recommendations, resources.enabled / krr.enabled of the chart): the workloads it
+  # analyses, and Prometheus found in the cluster and reached through the API server (services/proxy)
+  # when resources.prometheus gives no URL
+  - apiGroups: [""]
+    resources: ["namespaces", "services"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    verbs: ["get", "create"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list"]
   # Image pull secrets of the workloads, only with registries.useImagePullSecrets: true (reads any
   # Secret whose name is known, see docs/registries.md)
   # - apiGroups: [""]

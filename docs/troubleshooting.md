@@ -86,6 +86,13 @@ every request).
   that phase) runs it at once, once only (no loop if that phase stops the controller again); a vulnerability phase that fails gives the images it did not scan
   `scan failed` with the reason (retried by *Retry what failed* on the Administration page).
 
+## CPU and memory recommendations (krr)
+
+The Resources page shows, for each cluster, the message of its last krr run. The usual ones (Prometheus
+not found, not enough history, kube-state-metrics missing, token refused) and their fix are in
+[resources](resources.md#troubleshooting). The krr pod logs each run and each refused request
+(`kubectl logs deploy/<release>-krr`).
+
 ## Performance and distributed mode
 
 | Symptom | Cause | Fix |

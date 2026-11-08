@@ -30,6 +30,11 @@ app.kubernetes.io/name: {{ include "kube-tower.name" . }}-trivy
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{- define "kube-tower.krrSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "kube-tower.name" . }}-krr
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
 {{- /* Path of the Trivy CLI copied by the init container, empty when kube-tower does not scan with Trivy */ -}}
 {{- define "kube-tower.trivyBinary" -}}
 {{- $vuln := .Values.config.vulnerabilities | default dict }}

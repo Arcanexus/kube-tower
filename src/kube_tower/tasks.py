@@ -28,6 +28,8 @@ from kube_tower.models import (
     ComplianceReport,
     ImageReport,
     NodeInfo,
+    ResourceRecommendation,
+    ResourceScan,
     SecurityReport,
     VulnerabilityReport,
     decode,
@@ -97,6 +99,13 @@ class TrivyAdminTask:
 
 
 @dataclass
+class ResourcesTask:
+    """Ask krr for the CPU and memory recommendations of one cluster."""
+
+    cluster: str
+
+
+@dataclass
 class OperatorReport:
     """A Trivy Operator VulnerabilityReport found on a cluster, for the image `image` (reference)."""
 
@@ -146,8 +155,16 @@ class TrivyAdminResult:
     error: str | None = None  # why the databases could not be refreshed
 
 
-type Task = CollectTask | CheckImagesTask | CheckChartsTask | ScanVulnerabilitiesTask | TrivyAdminTask
-type Result = CollectResult | CheckImagesResult | CheckChartsResult | ScanVulnerabilitiesResult | TrivyAdminResult
+@dataclass
+class ResourcesResult:
+    recommendations: list[ResourceRecommendation]
+    scan: ResourceScan
+
+
+type Task = CollectTask | CheckImagesTask | CheckChartsTask | ScanVulnerabilitiesTask | TrivyAdminTask | ResourcesTask
+type Result = (
+    CollectResult | CheckImagesResult | CheckChartsResult | ScanVulnerabilitiesResult | TrivyAdminResult | ResourcesResult
+)
 
 # Task kind: its task and result types, and the role that runs it.
 KINDS: dict[str, tuple[type, type, str]] = {
@@ -156,6 +173,7 @@ KINDS: dict[str, tuple[type, type, str]] = {
     "check-charts": (CheckChartsTask, CheckChartsResult, "worker"),
     "scan-vulnerabilities": (ScanVulnerabilitiesTask, ScanVulnerabilitiesResult, "trivy"),
     "trivy-admin": (TrivyAdminTask, TrivyAdminResult, "trivy"),
+    "resources": (ResourcesTask, ResourcesResult, "worker"),
 }
 
 

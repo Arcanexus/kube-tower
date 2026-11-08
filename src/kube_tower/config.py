@@ -152,6 +152,52 @@ class KubernetesVersionsSettings:
 
 
 @dataclass
+class PrometheusSettings:
+    """The Prometheus that krr reads for some clusters (resources.prometheus). The first entry whose
+    `clusters` match a cluster is used; a cluster matched by none lets krr find Prometheus in it."""
+
+    # Names of the clusters, or fnmatch patterns (prod-*).
+    clusters: list[str] = field(default_factory=lambda: ["*"])
+    # e.g. http://prometheus-operated.monitoring:9090, https://thanos.example.com. Empty: krr finds Prometheus
+    # (or VictoriaMetrics, Thanos, Mimir) in the cluster by its labels and reaches it through the API server.
+    url: str = ""
+    # One Prometheus for several clusters: the label that tells them apart (e.g. cluster), and its value for
+    # these clusters (empty: the name of the cluster in kube-tower).
+    cluster_label: str = ""
+    cluster_value: str = ""
+    # The Authorization header sent to Prometheus (e.g. "Bearer <token>"), read from an env var or a file
+    # (mounted Secret) at each run, never written in the ConfigMap.
+    auth_header_env: str = ""
+    auth_header_file: str = ""
+    # Other headers, e.g. {"X-Scope-OrgID": "team-a"} for Mimir.
+    headers: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ResourcesSettings:
+    """CPU and memory recommendations of krr (https://github.com/robusta-dev/krr), from the usage of the
+    containers in Prometheus (Resources page). Off by default: it needs Prometheus."""
+
+    enabled: bool = False
+    # krr server of the Helm chart (krr.enabled), e.g. http://kube-tower-krr:8080. Empty: the krr command
+    # below runs in the kube-tower pod (development, or an image of your own with krr).
+    server_url: str = ""
+    binary: str = "krr"
+    # krr strategy: simple (requests from the 95th percentile of CPU and the peak memory, memory limit = request,
+    # no CPU limit) or simple_limit (CPU limit too).
+    strategy: str = "simple"
+    # Other options of krr, as on its command line, e.g. ["--history_duration", "168", "--cpu_percentile", "99"].
+    args: list[str] = field(default_factory=list)
+    # Namespaces to analyse (empty: all).
+    namespaces: list[str] = field(default_factory=list)
+    # The recommendations of a cluster are reused for this long before krr runs again (they come from
+    # two weeks of history by default: they change slowly).
+    interval: int = 24 * 3600
+    timeout: int = 15 * 60  # per cluster
+    prometheus: list[PrometheusSettings] = field(default_factory=list)
+
+
+@dataclass
 class RegistryCredential:
     """Credentials for one registry host (container registry or Helm repository).
 
@@ -369,6 +415,7 @@ class Settings:
     vulnerabilities: VulnerabilitiesSettings = field(default_factory=VulnerabilitiesSettings)
     security: SecuritySettings = field(default_factory=SecuritySettings)
     kubernetes_versions: KubernetesVersionsSettings = field(default_factory=KubernetesVersionsSettings)
+    resources: ResourcesSettings = field(default_factory=ResourcesSettings)
     registries: RegistriesSettings = field(default_factory=RegistriesSettings)
     git: GitSettings = field(default_factory=GitSettings)
     internal: InternalSettings = field(default_factory=InternalSettings)

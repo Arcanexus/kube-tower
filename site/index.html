@@ -98,6 +98,11 @@
             <p>Misconfigurations, exposed secrets, risky RBAC roles and CIS, NSA or Pod Security Standards compliance, with how to fix each finding.</p>
           </article>
           <article class="card">
+            <svg><use href="icons.svg#i-cpu"/></svg>
+            <h3>CPU and memory sizing</h3>
+            <p>krr, run by the chart for every cluster, recommends requests and limits from the real usage in Prometheus. Totals per cluster and the block to paste in each manifest.</p>
+          </article>
+          <article class="card">
             <svg><use href="icons.svg#i-clusters"/></svg>
             <h3>All your clusters</h3>
             <p>Register clusters ArgoCD-style with a Secret, or reuse the cluster Secrets ArgoCD already has. See their nodes by group, with the kubelets that differ or lag behind.</p>
@@ -141,6 +146,7 @@
           <button role="tab" aria-selected="false" data-shot="charts">Helm charts</button>
           <button role="tab" aria-selected="false" data-shot="security">Security</button>
           <button role="tab" aria-selected="false" data-shot="clusters-page">Clusters</button>
+          <button role="tab" aria-selected="false" data-shot="resources">Resources</button>
           <button role="tab" aria-selected="false" data-shot="administration">Administration</button>
           <button role="tab" aria-selected="false" data-shot="dark">Dark theme</button>
           <button role="tab" aria-selected="false" data-shot="grafana">Grafana</button>
@@ -185,6 +191,7 @@
               <tr><th>Helm charts and subcharts</th><td class="me y">From ArgoCD</td><td class="n">No</td><td>From git</td><td class="n">No</td></tr>
               <tr><th>Vulnerabilities (CVE)</th><td class="me y">Trivy</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>
               <tr><th>Misconfigurations, secrets, compliance</th><td class="me y">Trivy Operator</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>
+              <tr><th>CPU and memory recommendations</th><td class="me y">krr</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>
               <tr><th>Several clusters in one view</th><td class="me y">Yes</td><td class="n">No</td><td>n/a</td><td>One per cluster</td></tr>
               <tr><th>Web UI</th><td class="me y">Yes</td><td class="n">No</td><td class="n">No</td><td>Grafana</td></tr>
               <tr><th>Updates things for you</th><td class="me">No, you decide</td><td>Containers</td><td>Pull requests</td><td>No</td></tr>

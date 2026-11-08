@@ -3,7 +3,7 @@
 Every value of the Helm chart `oci://ghcr.io/arcanexus/charts/kube-tower`. The application settings
 under `config` are listed in [configuration](configuration.md); the guides explain each feature
 ([installation](installation.md), [clusters](clusters.md), [registries](registries.md),
-[authentication](authentication.md), [vulnerabilities](vulnerabilities.md), [scaling](scaling.md)).
+[authentication](authentication.md), [vulnerabilities](vulnerabilities.md), [resources](resources.md), [scaling](scaling.md)).
 The full list with comments is the chart's
 [values.yaml](../charts/kube-tower/values.yaml).
 
@@ -59,11 +59,19 @@ The full list with comments is the chart's
 | `trivy.server.nodeSelector` / `.tolerations` / `.affinity` | | Trivy server scheduling |
 | `config.vulnerabilities.*` | see [configuration](configuration.md#vulnerabilities-trivy) | Trivy Operator reports, scan settings, ignored images |
 | `config.security.*` | `enabled: true`, `exposedSecrets: true` | Trivy Operator security reports of the [Security](security.md) page |
+| `krr.enabled` | `false` | A [krr](resources.md) Deployment and Service for the CPU and memory recommendations of the Resources page; turns `config.resources.enabled` on and sets `config.resources.serverUrl` |
+| `krr.image` | `robustadev/krr:v1.31.3` | Official krr image (amd64, arm64) |
+| `krr.port` / `.concurrency` | `8080` / `2` | Port of the krr Service; clusters analysed at the same time |
+| `krr.resources` | 100m CPU / 512Mi requests, 2Gi memory limit | krr pod resources (krr loads the history of every container of a cluster) |
+| `krr.extraEnv` | `[]` | e.g. `CERTIFICATE` (base64 PEM) to trust the private CA of a Prometheus |
+| `krr.networkPolicy.egressPorts` | `9090/TCP` | Ports of Prometheus reached directly, besides `networkPolicy.egress.ports` |
+| `krr.nodeSelector` / `.tolerations` / `.affinity` | | krr pod scheduling |
+| `config.resources.*` | see [resources](resources.md#settings) | krr strategy and options, namespaces, interval, Prometheus per cluster |
 | `startupProbe` / `livenessProbe` / `readinessProbe` | 5 min to start, then every 20s / 10s | Probes on `/healthz` (the chart sets `httpGet`); `null` disables one |
 | `resources` | 50m CPU / 256Mi requests, 1536Mi memory limit | kube-tower pod resources (Trivy scans in standalone mode need the memory) |
 | `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `podLabels`, `imagePullSecrets` | | Usual pod settings |
 | `extraInitContainers`, `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | Added to the kube-tower pod, e.g. to copy an [exec plugin](clusters.md#managed-clusters-eks-gke-aks-exec-plugins) |
 | `podSecurityContext`, `securityContext` | non-root, read-only root FS | Hardened by default |
-| `networkPolicy.enabled` | `false` | NetworkPolicies of the kube-tower pod and the Trivy server, see [network policies](network.md#network-policies) |
+| `networkPolicy.enabled` | `false` | NetworkPolicies of the kube-tower pod, the Trivy server, krr, Dex and Valkey, see [network policies](network.md#network-policies) |
 | `networkPolicy.ingress.from` | `[]` (any pod) | Who may reach the UI, API and `/metrics` (port `http` only) |
 | `networkPolicy.egress.ports` / `.to` / `.extra` | `443`, `6443` / anywhere / `[]` | What kube-tower may reach besides DNS and the Trivy server |

@@ -105,11 +105,28 @@ The reports of the [Security](security.md) page.
 | `kube_tower_scans_total` | `result` (`success`, `failure`) | scans since kube-tower started (counter) |
 | `kube_tower_build_info` | `version` (image tag: `1.2.3` for a release, the branch name otherwise) | always 1 |
 
+### CPU and memory (krr)
+
+With [krr](resources.md) enabled. CPU in cores, memory in bytes.
+
+| Metric | Labels | Value |
+| --- | --- | --- |
+| `kube_tower_resources_current` | `cluster`, `namespace`, `kind`, `workload`, `container`, `resource` (`cpu`, `memory`), `type` (`request`, `limit`) | current request or limit of the container (no series when not set) |
+| `kube_tower_resources_recommended` | same | request or limit that krr recommends (no series when it advises none, or has not enough data) |
+| `kube_tower_resources_containers` | `cluster`, `fit` (`critical`, `warning`, `ok`, `good`, `unknown`) | containers analysed by krr with this fit |
+
+```promql
+# CPU requested and not used, per cluster (cores)
+sum by (cluster) (kube_tower_resources_current{resource="cpu", type="request"}
+  - on (cluster, namespace, kind, workload, container, resource, type) kube_tower_resources_recommended)
+```
+
 ### Cardinality
 
 The number of series grows with the number of distinct images and charts, not with the number of
 pods or nodes: roughly one series per image, one per (workload, container), one per
-(cluster, image) found on nodes, one per chart and subchart, one per (node group, kubelet version). A few thousand series for a few hundred
+(cluster, image) found on nodes, one per chart and subchart, one per (node group, kubelet version), and with krr up to eight per container
+analysed. A few thousand series for a few hundred
 workloads is typical. To drop a metric you do not need, use `serviceMonitor.metricRelabelings`:
 
 ```yaml

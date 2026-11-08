@@ -14,6 +14,7 @@ import ssl
 import tempfile
 import threading
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 import certifi
@@ -27,11 +28,12 @@ from kube_tower.collectors.nodes import collect_nodes
 from kube_tower.collectors.security import collect_security_reports
 from kube_tower.collectors.vulnerabilities import collect_operator_reports
 from kube_tower.config import Settings
-from kube_tower.models import SecurityKind, VulnerabilityReport
+from kube_tower.models import ResourceScan, SecurityKind, VulnerabilityReport
 from kube_tower.registry.auth import AuthResults, Credentials, TokenCache, resolve_credentials
 from kube_tower.registry.helm import HelmClient, IndexCache
 from kube_tower.registry.oci import OCIClient
 from kube_tower.registry.transport import RateLimits, RetryingClient
+from kube_tower.resources import recommend
 from kube_tower.tasks import (
     CheckChartsResult,
     CheckChartsTask,
@@ -40,6 +42,8 @@ from kube_tower.tasks import (
     CollectResult,
     CollectTask,
     OperatorReport,
+    ResourcesResult,
+    ResourcesTask,
     Result,
     ScanVulnerabilitiesResult,
     ScanVulnerabilitiesTask,
@@ -141,6 +145,8 @@ class Worker:
                 return await self._scan_vulnerabilities(task)
             case TrivyAdminTask():
                 return await self._trivy_admin(task)
+            case ResourcesTask():
+                return await self._resources(task)
         raise TypeError(f"unknown task {task!r}")
 
     def credentials(self) -> Credentials:
@@ -210,6 +216,12 @@ class Worker:
 
         # Its own thread: a slow or large cluster does not hold back the others.
         return await run_in_thread(f"scan-{cluster.name}", collect)
+
+    async def _resources(self, task: ResourcesTask) -> ResourcesResult:
+        if (cluster := self.clusters.get(task.cluster)) is None:
+            message = "unknown cluster: it was not found by the last discovery"
+            return ResourcesResult([], ResourceScan(task.cluster, datetime.now(UTC), message=message))
+        return ResourcesResult(*await recommend(self.settings.resources, cluster))
 
     async def _check_images(self, task: CheckImagesTask) -> CheckImagesResult:
         async with self.clients() as (oci, _, credentials):

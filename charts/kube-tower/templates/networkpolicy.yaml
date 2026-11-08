@@ -42,6 +42,15 @@ spec:
         - port: {{ .Values.trivy.server.port }}
           protocol: TCP
     {{- end }}
+    {{- if .Values.krr.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.krrSelectorLabels" . | nindent 14 }}
+      ports:
+        - port: {{ .Values.krr.port }}
+          protocol: TCP
+    {{- end }}
     {{- if .Values.redis.valkey.enabled }}
     - to:
         - podSelector:
@@ -142,6 +151,42 @@ spec:
           protocol: TCP
     - ports:
         {{- toYaml $np.egress.ports | nindent 8 }}
+      {{- with $np.egress.to }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- if .Values.krr.enabled }}
+---
+# krr: only kube-tower reaches it; it reaches DNS, the API servers, and Prometheus (egress ports and krr.networkPolicy).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kube-tower.fullname" . }}-krr
+  labels:
+    {{- include "kube-tower.labels" . | nindent 4 }}
+    app.kubernetes.io/component: krr
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kube-tower.krrSelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "kube-tower.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: krr
+          protocol: TCP
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        {{- toYaml (concat $np.egress.ports .Values.krr.networkPolicy.egressPorts) | nindent 8 }}
       {{- with $np.egress.to }}
       to:
         {{- toYaml . | nindent 8 }}

@@ -23,12 +23,24 @@ from starlette.middleware.gzip import GZipMiddleware
 from kube_tower import __version__
 from kube_tower.clusterview import cluster_view, cluster_views, running_images
 from kube_tower.config import DEFAULT_CONFIG_PATH, ROLES, Settings
-from kube_tower.models import ChartDependency, ImageRef, ImageReport, SecurityKind, SecurityReport, Severity, Status, Usage
+from kube_tower.models import (
+    ChartDependency,
+    Fit,
+    ImageRef,
+    ImageReport,
+    SecurityKind,
+    SecurityReport,
+    Severity,
+    Status,
+    Usage,
+)
 from kube_tower.processes import roles_status
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
 from kube_tower.web.login import can, can_act, current_permissions, current_user, snapshot_of, visible_checks
 from kube_tower.web.metrics import image_update
+from kube_tower.web.resourceview import FIT_ICONS, FIT_RANK, FIT_WORDS, by_cluster, change_text, manifest, shown, text_of
+from kube_tower.web.resourceview import summarize as summarize_resources
 from kube_tower.web.summary import UPDATE_KINDS, fixable_critical, summarize, todo, workloads
 
 HERE = Path(__file__).parent
@@ -37,6 +49,7 @@ templates.env.globals["version"] = __version__
 templates.env.globals["Status"] = Status
 templates.env.globals["Severity"] = Severity
 templates.env.globals["SecurityKind"] = SecurityKind
+templates.env.globals.update(Fit=Fit, fit_icons=FIT_ICONS, fit_words=FIT_WORDS, resource_value=shown, resource_change=change_text)
 templates.env.globals.update(can=can, can_act=can_act, current_permissions=current_permissions, current_user=current_user)
 # Static files are cached by browsers for a year: their URLs change with their content (see asset()).
 STATIC_VERSION = hashlib.sha256(b"".join(f.read_bytes() for f in sorted((HERE / "static").iterdir()) if f.is_file())).hexdigest()[
@@ -257,6 +270,16 @@ CHART_COLUMNS = [
     Column(lambda c: STATUS_RANK[c.worst_status]),
     Column(lambda c: c.repository),
     Column(lambda c: natural(c.application)),
+]
+
+RESOURCE_COLUMNS = [
+    Column(lambda r: (natural(r.name), r.container)),
+    Column(lambda r: r.cpu_request.current if r.cpu_request.current is not None else ""),
+    Column(lambda r: r.cpu_request.recommended if r.cpu_request.known and r.cpu_request.recommended is not None else ""),
+    Column(lambda r: r.memory_request.current if r.memory_request.current is not None else ""),
+    Column(lambda r: r.memory_request.recommended if r.memory_request.known and r.memory_request.recommended is not None else ""),
+    Column(lambda r: (FIT_RANK[r.fit], natural(r.name))),
+    Column(lambda r: (r.cluster, r.namespace)),
 ]
 
 
@@ -544,6 +567,8 @@ def mount(app: FastAPI) -> None:
                 "warnings": warnings(request),
                 "partial": partial,
                 "rows_only": rows_only,
+                # The Resources page is in the sidebar once krr is enabled (its URL works anyway)
+                "show_resources": request.app.state.settings.resources.enabled,
                 **context,
             },
         )
@@ -749,6 +774,39 @@ def mount(app: FastAPI) -> None:
             return Response(status_code=404)
         return render(request, "_compliance_detail", c=report)
 
+    @app.get("/resources", response_class=HTMLResponse, include_in_schema=False)
+    async def resources(request: Request):
+        q, fit = request.query_params.get("q", ""), request.query_params.get("fit", "")
+        cluster, _ = global_filters(request)
+        snapshot = snapshot_of(request)
+        scans = [s for s in snapshot.resource_scans if not cluster or s.cluster == cluster]
+        matching = [r for r in snapshot.resources if (not cluster or r.cluster == cluster) and _matches(text_of(r), q)]
+        rows = sorted((r for r in matching if not fit or r.fit.value == fit), key=lambda r: (FIT_RANK[r.fit], r.key))
+        listing = list_page(request, "resources", rows, RESOURCE_COLUMNS)
+        return render(
+            request,
+            "resources",
+            tab="resources",
+            listing=listing,
+            rows=listing.items,
+            q=q,
+            fit=fit,
+            summary=summarize_resources(matching),
+            scans=scans,
+            enabled=request.app.state.settings.resources.enabled,
+        )
+
+    @app.get("/resources/detail", response_class=HTMLResponse, include_in_schema=False)
+    async def resource_detail(
+        request: Request, cluster: str = "", namespace: str = "", kind: str = "", name: str = "", container: str = ""
+    ):
+        snapshot = snapshot_of(request)
+        key = (cluster, namespace, kind, name, container)
+        if (report := next((r for r in snapshot.resources if r.key == key), None)) is None:
+            return Response(status_code=404)
+        scan = next((s for s in snapshot.resource_scans if s.cluster == cluster), None)
+        return render(request, "_resource_detail", r=report, scan=scan, manifest=manifest(report))
+
     @app.get("/clusters", response_class=HTMLResponse, include_in_schema=False)
     async def clusters(request: Request):
         cluster, _ = global_filters(request)
@@ -757,7 +815,14 @@ def mount(app: FastAPI) -> None:
         warn_days = request.app.state.settings.kubernetes_versions.warn_days
         views = cluster_views(statuses, snapshot.nodes, snapshot.images, snapshot.platform, warn_days)
         return render(
-            request, "clusters", tab="clusters", views=views, warn_days=warn_days, nodes=sum(len(v.nodes) for v in views)
+            request,
+            "clusters",
+            tab="clusters",
+            views=views,
+            warn_days=warn_days,
+            nodes=sum(len(v.nodes) for v in views),
+            resources=by_cluster(snapshot.resources, snapshot.resource_scans),
+            resources_enabled=request.app.state.settings.resources.enabled,
         )
 
     @app.get("/clusters/node", response_class=HTMLResponse, include_in_schema=False)
