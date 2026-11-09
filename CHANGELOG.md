@@ -67,6 +67,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The Grafana dashboard is in the format Grafana exports for sharing externally (`__inputs` with a
+  `DS_PROMETHEUS` data source, `__requires`, `id: null`): grafana.com no longer warns *Old dashboard JSON
+  format* when it is uploaded, and the import asks for the Prometheus data source. The Grafana sidecar
+  still loads it as is, with the default Prometheus data source (see [Grafana dashboard](docs/metrics.md#grafana-dashboard)).
 - krr reached the local cluster (`in-cluster`) and the clusters read from a kubeconfig without a token:
   the kubernetes client 37 keeps it under another key. The API server answered 401, so krr found no
   Prometheus. The kubeconfig given to krr now also carries the `proxy-url` of a cluster, and a test checks
