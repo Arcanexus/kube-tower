@@ -29,7 +29,8 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - Detail panels: the **rescan buttons** sit at the top, next to the full screen and close buttons.
-- Image details reorganised: two cards at the top (the version change, and the vulnerability counts),
+- Image details reorganised: two cards at the top (the version change, with the release date of the
+  current tag next to the latest one's, and the vulnerability counts as severity tiles),
   then foldable sections: **Used by** (open), **Versions and digests** (folded), **Vulnerabilities**
   (open) and **All vulnerabilities** (folded, open after a CVE search).
 - Chart details: the **Subcharts** tree comes first.

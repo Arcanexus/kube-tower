@@ -176,14 +176,19 @@ class ImageChecker:
             log.debug("cannot read digests of %s: %s", ref, explain(exc))
 
     async def _fetch_release_date(self, report: ImageReport) -> None:
-        """Best effort: when the latest tag was built or pushed, shown next to it."""
+        """Best effort: when the current and latest tags were built or pushed, shown next to them."""
         if not self.settings.fetch_release_dates or not report.latest_tag:
             return
         ref = report.image
-        key = ("image", ref.registry, ref.repository, report.latest_tag)
-        report.latest_released = await _release_date(
-            self.memo, self.sem, key, lambda: self.oci.get_created(ref.registry, ref.repository, report.latest_tag)
-        )
+
+        def released(tag: str):
+            key = ("image", ref.registry, ref.repository, tag)
+            return _release_date(self.memo, self.sem, key, lambda: self.oci.get_created(ref.registry, ref.repository, tag))
+
+        if ref.tag == report.latest_tag:
+            report.latest_released = report.current_released = await released(ref.tag)
+        else:
+            report.latest_released, report.current_released = await asyncio.gather(released(report.latest_tag), released(ref.tag))
 
     async def check_all(self, reports: list[ImageReport]) -> None:
         log.info("checking %d image(s) against their registries", len(reports))

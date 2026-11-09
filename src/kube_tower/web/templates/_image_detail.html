@@ -38,7 +38,7 @@
   <section class="detail-card" aria-label="Version">
     <small class="counters-label">Version</small>
     <p>{{ update_badge(r) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
-    <p class="drawer-summary" aria-label="Current and latest version">{{ version_cell(current[0], current[1], copyable=True) }}<span class="arrow" aria-hidden="true">→</span>
+    <p class="drawer-summary" aria-label="Current and latest version">{{ version_cell(current[0], current[1], copyable=True, released_at=r.current_released if current[0] == r.image.tag else None) }}<span class="arrow" aria-hidden="true">→</span>
       {%- if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False, copyable=True, released_at=r.latest_released if latest[0] == r.latest_tag) }}{% else %}<small class="muted-text">latest unknown</small>{% endif %}</p>
     {% if r.image.is_latest %}
     <p class="tag-latest">{{ icon("warning") }}This image uses <code>latest</code> (or no tag): the running version changes on every pull. Pin a version instead.</p>

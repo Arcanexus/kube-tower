@@ -609,8 +609,10 @@ td.cell-name { max-width: 21rem; }
 .version-tag { display: inline-block; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .digest-short { font-family: var(--kt-mono); font-size: .72rem; color: var(--kt-muted); }
 .digest-differs { color: var(--kt-warn); font-weight: 600; }
-.drawer-summary { display: flex; align-items: center; gap: .75rem; font-size: 1.1rem; }
-.drawer-summary .arrow { color: var(--kt-muted); }
+.drawer-summary { display: flex; align-items: flex-start; gap: .75rem; font-size: 1.1rem; }
+/* current and latest in two equal columns: their version, digest and date lines align */
+.drawer-summary > .version-cell { flex: 1 1 0; }
+.drawer-summary .arrow { color: var(--kt-muted); line-height: 1.25; }
 
 /* Counters of the Vulnerabilities page: number of images */
 .counter-value { display: flex; align-items: baseline; gap: .3rem; }
