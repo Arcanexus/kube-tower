@@ -34,6 +34,7 @@ All notable changes to this project are documented here. The format follows
   then foldable sections: **Used by** (open), **Versions and digests** (folded), **Vulnerabilities**
   (open) and **All vulnerabilities** (folded, open after a CVE search).
 - Chart details: the **Subcharts** tree comes first.
+- A click outside an open detail panel only closes it: it no longer opens the line under the pointer.
 - Chart images updated: Dex `v2.41.1` → `v2.46.1`, Trivy `0.75.0` → `0.76.2`, Valkey `8.1.1` → `9.1.3`.
   Valkey keeps nothing on disk (`--save ""`, no AOF): the new pod starts empty and the pods publish
   their state again, as after any restart.

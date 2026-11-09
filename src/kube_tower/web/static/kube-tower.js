@@ -120,15 +120,16 @@ document.addEventListener("htmx:afterRequest", (e) => {
     panel.removeAttribute("aria-busy");
   }
 });
-// A click beside the panel closes it and still does what it was meant to (focus a filter, open another row,
-// follow a link): the backdrop only dims the page and lets clicks through (pointer-events: none), so one
-// click is enough. A click that loads another detail panel (hx-target="#detail") keeps the panel to fill.
+// A click beside the open panel only closes it: it does not open the row, follow the link or press the
+// button under the pointer (listened to in the capture phase, before htmx and the page handlers).
 document.addEventListener("click", (e) => {
   const detail = document.getElementById("detail");
   if (!detail || !detail.querySelector(".drawer-panel") || !e.target.closest) return;
-  if (e.target.closest(".drawer-panel") || e.target.closest('[hx-target="#detail"]')) return;
+  if (e.target.closest(".drawer-panel") || e.target.closest(".drawer-resize")) return;
+  e.preventDefault();
+  e.stopPropagation();
   ktCloseDetail();
-});
+}, true);
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") ktCloseDetail();
 });

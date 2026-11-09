@@ -53,8 +53,8 @@ Click a line to open its details on the right:
   again come near the end;
 - resize it by dragging its left edge (the ⋮ grip), or open it **full screen** with the button next to
   the close one;
-- close it with its button, `Esc`, or a click outside (which also does what it was meant to, e.g.
-  open another line).
+- close it with its button, `Esc`, or a click outside: that click only closes the panel, it does not
+  open the line or follow the link under it (click again for that).
 - **click a value to copy it**: names, versions, digests, namespaces, clusters, repositories, node
   names… A dashed outline and a copy icon show what can be copied on hover, and a green check confirms
   the copy (a red cross if the browser refused it). `Enter` copies the focused value too.

@@ -437,10 +437,11 @@ def test_image_detail():
     sprite = (Path(__file__).parents[1] / "src/kube_tower/web/static/icons.svg").read_text()
     assert all(f'id="i-{name}"' in sprite for name in re.findall(r"icons\.svg\?v=\w+#i-([\w-]+)", detail))
     assert re.findall(r"icons\.svg\?v=\w+#i-([\w-]+)", detail)
-    # the backdrop lets clicks through: one click beside the panel closes it and does what it was meant to
+    # a click beside the panel only closes it: caught before htmx (capture phase), the row under it stays closed
     assert '<div class="drawer-backdrop"></div>' in detail
-    css = client.get("/static/kube-tower.css").text
-    assert "z-index: 10; pointer-events: none; }" in css[css.index(".drawer-backdrop {") :]
+    js = client.get("/static/kube-tower.js").text
+    outside = js[js.index("A click beside the open panel") :]
+    assert "e.stopPropagation();\n  ktCloseDetail();\n}, true);" in outside
     assert "https://hub.docker.com/_/redis/tags" in detail
     assert "sha256:new" in detail and "Pin a version" in detail and "Versioning" not in detail
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
