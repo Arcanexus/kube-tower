@@ -24,7 +24,9 @@ All notable changes to this project are documented here. The format follows
   block to paste in the manifest; the Clusters cards get a *CPU and memory* block; `GET /api/resources`
   and the `kube_tower_resources_*` metrics give the same data. Results are reused for
   `config.resources.interval` (24h). The chart adds the read rules krr needs (ReplicaSets, Jobs, HPAs,
-  Services proxy to reach Prometheus) and a NetworkPolicy for the krr pod.
+  Services proxy to reach Prometheus) and a NetworkPolicy for the krr pod. A controller that starts from
+  the inventory kept in Valkey (krr just enabled, restart) analyses at once the clusters without
+  recommendations yet, instead of waiting for the next scan.
 
 - **Deprecated APIs** on the Clusters page (see [Clusters page](docs/ui-clusters.md#deprecated-apis)):
   the API versions clients still request that a coming Kubernetes release removes, read from the

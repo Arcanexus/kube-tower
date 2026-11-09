@@ -481,3 +481,49 @@ def test_server_timeout_and_busy(krr_server, monkeypatch):
     monkeypatch.setattr(server, "_slots", threading.BoundedSemaphore(1))
     server._slots.acquire()
     assert _post(f"{url}/run", {"kubeconfig": "x", "timeout": 1})[0] == 503
+
+
+async def test_controller_asks_krr_at_start_for_the_clusters_of_a_stored_snapshot_without_results(monkeypatch):
+    """krr enabled on a running install: the controller restarts with the stored snapshot, whose clusters have no
+    krr result yet. They are analysed at once, not after refreshInterval; a cluster already analysed is not."""
+    from kube_tower.store import MemorySnapshotStore
+
+    settings = Settings()
+    settings.resources.enabled = True
+    settings.vulnerabilities.enabled = False
+    settings.refresh_interval = 3600
+    snap = Snapshot(
+        clusters=[
+            ClusterStatus("prod", "https://prod", "secret", True, "v1.30.0"),
+            ClusterStatus("edge", "https://edge", "secret", True, "v1.30.0"),
+            ClusterStatus("down", "https://down", "secret", False, None),
+        ],
+        resource_scans=[ResourceScan("edge", datetime.now(UTC), score=80)],
+        finished_at=datetime.now(UTC) - timedelta(minutes=10),
+    )
+    scanner = Scanner(settings, store=MemorySnapshotStore(snap))
+    asked = []
+
+    async def recommend(s, clusters):
+        asked.extend(clusters)
+        s.resource_scans.append(ResourceScan("prod", datetime.now(UTC), score=70))
+
+    async def sleep(seconds):
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(scanner, "_recommend", recommend)
+    monkeypatch.setattr("kube_tower.scanner.asyncio.sleep", sleep)
+    with pytest.raises(RuntimeError, match="stop"):
+        await scanner.run_forever()
+    assert asked == ["prod"]  # not edge (analysed), not down (unreachable)
+
+    asked.clear()  # restarted again: nothing left to ask
+    with pytest.raises(RuntimeError, match="stop"):
+        await scanner.run_forever()
+    assert asked == []
+
+    settings.resources.enabled = False  # krr off: never asked
+    snap.resource_scans = []
+    with pytest.raises(RuntimeError, match="stop"):
+        await scanner.run_forever()
+    assert asked == []

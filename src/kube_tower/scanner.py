@@ -725,6 +725,11 @@ class Scanner:
                 await self._vulnerability_phase(snap)
             except Exception:  # noqa: BLE001 - the images got the reason, the loop goes on
                 log.exception("vulnerability scan of the stored snapshot failed")
+        if snap.finished_at is not None and self.settings.resources.enabled:
+            # krr just enabled (or a cluster added) and the controller restarted with the stored snapshot: the
+            # clusters without krr results get them now instead of after refreshInterval. Those analysed keep
+            # theirs; _resources_phase stores each result as it comes, so a restart does not ask twice.
+            await self._resources_phase(snap)
         if (finished := self.snapshot.finished_at) is not None:  # read from the store (Redis)
             wait = self.settings.refresh_interval - (datetime.now(UTC) - finished).total_seconds()
             if wait > 0:

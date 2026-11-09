@@ -101,6 +101,10 @@ the same time as the vulnerability scans. A worker builds a kubeconfig of the cl
 and the token or certificate kube-tower uses for it) and sends it, with the krr options, to the krr pod,
 which runs krr against that cluster and answers its JSON result.
 
+When the controller starts from the inventory kept in Valkey (restart, upgrade, krr just enabled), it does
+not wait for the next scan: the reachable clusters without recommendations yet are analysed at once. The krr
+pod logs nothing until it is asked: with no scan running, `listening on :8080` is its only line.
+
 The krr pod only accepts the requests of the kube-tower ServiceAccount: it checks the token of the caller
 with a `TokenReview` (its ServiceAccount is bound to `system:auth-delegator`), and a NetworkPolicy lets only
 the kube-tower pods reach it when `networkPolicy.enabled`. The kubeconfigs are written in its `/tmp`
