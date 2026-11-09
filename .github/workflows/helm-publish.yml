@@ -18,6 +18,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - uses: azure/setup-helm@v5
+      - name: Check the tag against the versions of the repository
+        run: python3 .github/scripts/release.py "$GITHUB_REF_NAME" > /dev/null
       - name: Package and push
         env:
           OWNER: ${{ github.repository_owner }}
