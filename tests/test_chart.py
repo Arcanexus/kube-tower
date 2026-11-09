@@ -238,7 +238,7 @@ def test_vulnerabilities_standalone_by_default(tmp_path):
     assert {"name": "trivy-bin", "mountPath": "/opt/trivy/bin", "readOnly": True} in container(docs)["volumeMounts"]
     assert volumes(docs)["trivy-bin"] == {"name": "trivy-bin", "emptyDir": {}}
     rules = docs[("ClusterRole", "kt-kube-tower")]["rules"]
-    (trivy_rule,) = [r for r in rules if r["apiGroups"] == ["aquasecurity.github.io"]]
+    (trivy_rule,) = [r for r in rules if r.get("apiGroups") == ["aquasecurity.github.io"]]
     assert trivy_rule["verbs"] == ["get", "list"]
     assert {"vulnerabilityreports", "configauditreports", "exposedsecretreports", "clustercompliancereports"} <= set(
         trivy_rule["resources"]
@@ -422,6 +422,7 @@ def test_chart_sources_rbac(tmp_path):
     docs = render(tmp_path, {})
     rules = docs[("ClusterRole", "kt-kube-tower")]["rules"]
     assert list_secrets not in rules
+    assert {"nonResourceURLs": ["/metrics"], "verbs": ["get"]} in rules  # deprecated APIs
     assert {"apiGroups": ["helm.toolkit.fluxcd.io"], "resources": ["helmreleases"], "verbs": ["get", "list"]} in rules
     helm = app_settings(tmp_path, docs).helm
     assert helm.flux and not helm.releases and helm.artifact_hub_url == "https://artifacthub.io"

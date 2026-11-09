@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from kube_tower.lifecycle import days_left, plain_version
-from kube_tower.models import ClusterStatus, ImageReport, NodeInfo, PlatformVersion, Severity, Status
+from kube_tower.models import ClusterStatus, DeprecatedApi, ImageReport, NodeInfo, PlatformVersion, Severity, Status
 
 MAX_KUBELET_SKEW = 3  # minor versions a kubelet may be behind the API server
 LEVELS = ("ok", "info", "warning", "error")
@@ -152,6 +152,23 @@ def platform_cves(found: list[PlatformVersion]) -> ImagesOn:
         unscanned=sum(1 for p in found if p.message and not p.vulnerabilities),
         vulnerabilities={s: len(ids[s]) for s in Severity},
     )
+
+
+def deprecated_findings(apis: list[DeprecatedApi], api_version: str | None) -> list[Finding]:
+    """The deprecated APIs still requested: an error when the next minor version no longer serves them, a
+    warning when a later one does not, a note when no removal is planned."""
+    current = k8s_version(api_version)
+    found = []
+    for a in apis:
+        removed = k8s_version(a.removed_release)
+        if removed is None:
+            found.append(Finding("info", f"Deprecated API still requested: {a.name} (no removal planned)", kind="deprecated-api"))
+            continue
+        soon = current is not None and removed[:2] <= (current[0], current[1] + 1)
+        level, when = ("error", "the next upgrade") if soon else ("warning", "a later release")
+        text = f"Deprecated API still requested: {a.name}, removed in Kubernetes {a.removed_release} ({when})"
+        found.append(Finding(level, text, kind="deprecated-api"))
+    return found
 
 
 def eol_findings(p: PlatformVersion | None, what: str, node: str, warn_days: int, today: date | None) -> list[Finding]:
@@ -327,6 +344,7 @@ def cluster_view(
     platform: list[PlatformVersion] | None = None,
     warn_days: int = 90,
     today: date | None = None,
+    deprecated_apis: list[DeprecatedApi] | None = None,
 ) -> ClusterView:
     nodes = sorted(nodes, key=lambda n: (ROLE_ORDER.get(n.role, 1), n.role, n.pool, n.name))
     groups: dict[tuple[str, str], NodeGroup] = {}
@@ -348,6 +366,7 @@ def cluster_view(
         kubelet = versions.get(("kubernetes", plain_version(n.kubelet_version)))
         if kubelet and api and kubelet.cycle != api.cycle:  # the cycle of the API server is said once above
             findings += eol_findings(kubelet, "kubelet", n.name, warn_days, today)
+    findings += deprecated_findings([a for a in deprecated_apis or [] if a.cluster == status.name], status.version)
     levels = {n.name: worst(f.level for f in findings if f.node == n.name) for n in nodes}
     per_node = running_images(images or [], status.name)
     in_cluster = {str(r.image): r for reports in per_node.values() for r in reports}
@@ -371,8 +390,12 @@ def cluster_views(
     images: list[ImageReport] | None = None,
     platform: list[PlatformVersion] | None = None,
     warn_days: int = 90,
+    deprecated_apis: list[DeprecatedApi] | None = None,
 ) -> list[ClusterView]:
     by_cluster: dict[str, list[NodeInfo]] = {}
     for n in nodes:
         by_cluster.setdefault(n.cluster, []).append(n)
-    return [cluster_view(s, by_cluster.get(s.name, []), images, platform, warn_days) for s in statuses]
+    return [
+        cluster_view(s, by_cluster.get(s.name, []), images, platform, warn_days, deprecated_apis=deprecated_apis)
+        for s in statuses
+    ]

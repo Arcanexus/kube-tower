@@ -85,7 +85,7 @@
   {% endif %}
   {% if v.details %}
   <details class="cluster-findings cluster-differences">
-    <summary>{{ v.details | length | plural("note") }}: newer patch, differences between the nodes (OS, runtime, kernel)</summary>
+    <summary>{{ v.details | length | plural("note") }}: newer patch, deprecated APIs without a removal date, differences between the nodes (OS, runtime, kernel)</summary>
     <ul>
       {% for f in v.details %}<li class="finding finding-info">{{ icon("info") }}<span>{{ f.text }}</span></li>{% endfor %}
     </ul>

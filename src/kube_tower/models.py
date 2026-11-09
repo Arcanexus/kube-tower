@@ -494,6 +494,28 @@ class ResourceScan:
 
 
 @dataclass
+class DeprecatedApi:
+    """A deprecated API version that clients still request on a cluster, as its API server counts them
+    (apiserver_requested_deprecated_apis, since the API server started)."""
+
+    cluster: str
+    group: str  # "" for the core group
+    version: str
+    resource: str
+    subresource: str = ""
+    removed_release: str = ""  # 1.32: the Kubernetes release that no longer serves it, "" when not planned
+
+    @property
+    def api_version(self) -> str:
+        return f"{self.group}/{self.version}" if self.group else self.version
+
+    @property
+    def name(self) -> str:
+        """policy/v1beta1 podsecuritypolicies, apps/v1beta1 deployments/scale"""
+        return f"{self.api_version} {self.resource}" + (f"/{self.subresource}" if self.subresource else "")
+
+
+@dataclass
 class ClusterStatus:
     name: str
     server: str
@@ -528,6 +550,7 @@ class Snapshot:
     # CPU and memory recommendations of krr, and its last run per cluster (Resources page)
     resources: list[ResourceRecommendation] = field(default_factory=list)
     resource_scans: list[ResourceScan] = field(default_factory=list)
+    deprecated_apis: list[DeprecatedApi] = field(default_factory=list)  # Clusters page
 
     def image(self, ref: str) -> ImageReport | None:
         return self._index("images", lambda r: str(r.image)).get(ref)

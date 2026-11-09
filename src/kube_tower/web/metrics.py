@@ -248,7 +248,14 @@ class SnapshotCollector(Collector):
             for severity, count in p.counts().items():
                 if count:
                     cves.add_metric([p.component, p.version, severity.value], count)
-        return reachable, info, nodes, eol, cves
+        deprecated = GaugeMetricFamily(
+            "kube_tower_deprecated_api_requested",
+            "Deprecated APIs requested since the API server started (always 1), with the release that removes them",
+            labels=["cluster", "group", "version", "resource", "subresource", "removed_release"],
+        )
+        for a in snap.deprecated_apis:
+            deprecated.add_metric([a.cluster, a.group, a.version, a.resource, a.subresource, a.removed_release], 1)
+        return reachable, info, nodes, eol, cves, deprecated
 
     def _resources(self, snap: Snapshot):
         """The CPU and memory recommendations of krr: current and recommended values per container, and the

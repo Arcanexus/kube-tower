@@ -60,6 +60,7 @@ kubernetesVersions:            # end of life and CVEs of the Kubernetes and cont
   osvUrl: https://api.osv.dev/v1/query                       # or a mirror of the OSV API
   warnDays: 90                 # a release that ends within this many days is a warning
   timeout: 20
+  deprecatedApis: true         # deprecated APIs still requested (API server /metrics, needs get /metrics)
 resources:                     # CPU and memory recommendations of krr, see resources.md
   enabled: false               # the chart sets it with krr.enabled
   serverUrl: ""                # the krr pod of the chart (set by the chart)

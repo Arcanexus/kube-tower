@@ -161,6 +161,9 @@ class KubernetesVersionsSettings:
     # A cycle that reaches its end of life within this many days is shown as a warning.
     warn_days: int = 90
     timeout: int = 20
+    # Deprecated APIs still requested, read from the apiserver_requested_deprecated_apis metric of the API
+    # servers (needs `get` on the /metrics non-resource URL).
+    deprecated_apis: bool = True
 
 
 @dataclass

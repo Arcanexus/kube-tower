@@ -26,6 +26,7 @@ from kube_tower.bus import Bus, Message, pack, unpack
 from kube_tower.models import (
     ChartReport,
     ComplianceReport,
+    DeprecatedApi,
     ImageReport,
     NodeInfo,
     ResourceRecommendation,
@@ -62,6 +63,7 @@ class CollectTask:
     operator_reports: bool = True
     security: bool = True
     image_name: str | None = None
+    deprecated_apis: bool = True
 
 
 @dataclass
@@ -125,6 +127,7 @@ class CollectResult:
     # Registry credentials of the image pull secrets of the cluster (registries.useImagePullSecrets)
     pull_secrets: dict[str, tuple[str, str]] = field(default_factory=dict)
     nodes: list[NodeInfo] = field(default_factory=list)  # Clusters page
+    deprecated_apis: list[DeprecatedApi] = field(default_factory=list)  # Clusters page
 
 
 @dataclass

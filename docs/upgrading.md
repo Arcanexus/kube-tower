@@ -20,6 +20,13 @@ Bump `targetRevision` to the new chart version in the Application and sync.
 
 Read the [changelog](../CHANGELOG.md) for every change. What needs a step of yours:
 
+### 1.3.0: Flux, Helm releases and deprecated APIs
+
+- On remote clusters, apply [`deploy/remote-cluster-rbac.yaml`](../deploy/remote-cluster-rbac.yaml)
+  again: it adds the Flux HelmReleases and their sources, and `get` on the `/metrics` URL of the API
+  server (the [deprecated APIs](ui-clusters.md#deprecated-apis)). Without them the scan reports a
+  permission error for these parts and carries on. The chart updates the ClusterRole of the local cluster.
+
 ### 1.2.0: Clusters page and custom roles
 
 - Nothing to do: the new settings have defaults, and `readonly` and `admin` keep their rights. Custom

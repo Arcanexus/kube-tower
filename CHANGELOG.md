@@ -26,6 +26,13 @@ All notable changes to this project are documented here. The format follows
   `config.resources.interval` (24h). The chart adds the read rules krr needs (ReplicaSets, Jobs, HPAs,
   Services proxy to reach Prometheus) and a NetworkPolicy for the krr pod.
 
+- **Deprecated APIs** on the Clusters page (see [Clusters page](docs/ui-clusters.md#deprecated-apis)):
+  the API versions clients still request that a coming Kubernetes release removes, read from the
+  `apiserver_requested_deprecated_apis` metric of the API server. An error when the next minor release
+  removes them, a warning for a later one, a note without a planned removal. The chart adds `get` on the
+  `/metrics` URL to its ClusterRole (and `deploy/remote-cluster-rbac.yaml` for remote clusters);
+  `kubernetesVersions.deprecatedApis: false` turns it off. Metric `kube_tower_deprecated_api_requested`.
+
 ### Changed
 
 - Detail panels: the **rescan buttons** sit at the top, next to the full screen and close buttons.

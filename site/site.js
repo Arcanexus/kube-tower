@@ -19,7 +19,7 @@
     "image-detail": "Image details: rescans at hand, the version change and the CVEs by severity at a glance, then where the image runs, its versions and digests and its CVE list, each section foldable.",
     "charts": "Helm charts deployed by ArgoCD, with the tree of their subcharts and the latest version of each.",
     "security": "Trivy Operator reports of every cluster: misconfigurations, exposed secrets, RBAC, infrastructure and compliance.",
-    "clusters-page": "Every cluster at a glance: its nodes by Kubernetes version, the vulnerabilities of what they run, and one card per node.",
+    "clusters-page": "Every cluster at a glance: its nodes by Kubernetes version, the vulnerabilities of what they run, the deprecated APIs still requested, and one card per node.",
     "resources": "CPU and memory recommendations of krr: the containers furthest from their usage, totals per cluster, the block to paste.",
     "administration": "Administration: the state of every role and pod, rescans, Trivy database, connectivity and credential tests, logs.",
     "dark": "A dark theme, chosen by your system or by you.",

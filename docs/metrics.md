@@ -99,6 +99,7 @@ The reports of the [Security](security.md) page.
 | `kube_tower_cluster_info` | `cluster`, `source`, `version` | always 1 (`source`: `in-cluster`, `secret`, `argocd-secret`; `version`: Kubernetes version) |
 | `kube_tower_kubernetes_end_of_life_days` | `cluster`, `version`, `cycle` | days until the end of life of the Kubernetes release of the API server (negative once passed) |
 | `kube_tower_platform_vulnerabilities` | `component` (`kubernetes`, `containerd`), `version`, `severity` | known vulnerabilities of a version run by the clusters (OSV) |
+| `kube_tower_deprecated_api_requested` | `cluster`, `group`, `version`, `resource`, `subresource`, `removed_release` | always 1: a deprecated API requested since the API server started (`removed_release`: the Kubernetes release that removes it, `""` when none is planned) |
 | `kube_tower_nodes` | `cluster`, `role`, `pool`, `kubelet_version`, `ready` (`true` / `false`) | nodes of each group with this kubelet version (see the [Clusters page](ui-clusters.md)) |
 | `kube_tower_last_scan_timestamp_seconds` | | end of the last scan (Unix time) |
 | `kube_tower_last_scan_duration_seconds` | | duration of the last scan |
@@ -171,6 +172,9 @@ count by (cluster) (count by (cluster, kubelet_version) (kube_tower_nodes)) > 1
 
 # Clusters whose Kubernetes release ends within 90 days, or has ended
 kube_tower_kubernetes_end_of_life_days < 90
+
+# Deprecated APIs still requested, by cluster and release that removes them
+count by (cluster, removed_release) (kube_tower_deprecated_api_requested{removed_release!=""})
 ```
 
 ```promql
