@@ -221,6 +221,25 @@ def test_monitoring(tmp_path):
     assert json.loads(dashboard["data"]["kube-tower.json"])["uid"] == "kube-tower"
 
 
+def test_dashboard_sharing_format():
+    """Exported "for sharing externally": grafana.com accepts it, the import form asks for the data source."""
+    dashboard = json.loads((CHART / "dashboards" / "kube-tower.json").read_text())
+    assert dashboard["id"] is None
+    assert [(i["name"], i["type"], i["pluginId"]) for i in dashboard["__inputs"]] == [
+        ("DS_PROMETHEUS", "datasource", "prometheus")
+    ]
+    requires = {(r["type"], r["id"]) for r in dashboard["__requires"]}
+    assert {("grafana", "grafana"), ("datasource", "prometheus")} <= requires
+    panels = {p["type"] for p in dashboard["panels"] if p["type"] != "row"}
+    assert panels == {r["id"] for r in dashboard["__requires"] if r["type"] == "panel"}
+    variable = dashboard["templating"]["list"][0]
+    assert (variable["type"], variable["current"]["value"]) == ("datasource", "${DS_PROMETHEUS}")
+    sources = [p.get("datasource") for p in dashboard["panels"]] + [
+        t.get("datasource") for p in dashboard["panels"] for t in p.get("targets", [])
+    ]
+    assert all(s is None or s["uid"] == "${datasource}" for s in sources)
+
+
 def test_vulnerabilities_standalone_by_default(tmp_path):
     docs = render(tmp_path, {})
     settings = app_settings(tmp_path, docs).vulnerabilities

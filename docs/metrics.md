@@ -225,7 +225,8 @@ groups:
 ## Grafana dashboard
 
 The dashboard is [`charts/kube-tower/dashboards/kube-tower.json`](../charts/kube-tower/dashboards/kube-tower.json)
-(Grafana 10 or later). It has a data source selector and `cluster` / `namespace` filters, and shows:
+(Grafana 10 or later), in the format Grafana exports for sharing externally (it can be uploaded to
+[grafana.com](https://grafana.com/grafana/dashboards/) as is). It has a data source selector and `cluster` / `namespace` filters, and shows:
 
 ![kube-tower Grafana dashboard](images/grafana.png)
 
@@ -260,5 +261,7 @@ Grafana chart, or deploy the ConfigMap in Grafana's namespace with `grafanaDashb
 ### Manual import
 
 In Grafana, **Dashboards › New › Import**, upload `kube-tower.json` and pick your Prometheus data
-source in the **Data source** selector at the top of the dashboard. Grafana operator users can
+source in the **Prometheus** field of the import form (the **Data source** selector at the top of the
+dashboard changes it later). With the sidecar or file provisioning, the dashboard opens on the default
+Prometheus data source. Grafana operator users can
 reference the same file from a `GrafanaDashboard` resource.
