@@ -37,7 +37,7 @@ images:
   includePrerelease: false
   checkFloatingDigests: true   # compare digests for latest/stable tags
   fetchTagDigests: true        # published digests of the current/latest tags (image details)
-  fetchReleaseDates: true      # when the latest tags were built (Docker Hub API, OCI annotation or image config)
+  fetchReleaseDates: true      # when the current and latest tags were built (Docker Hub API, OCI annotation or image config)
   ignore:                      # fnmatch patterns on registry/repository[:tag]
     - registry.k8s.io/pause*
   maxTagPages: 50              # 1000 tags per page

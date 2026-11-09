@@ -26,16 +26,68 @@
 </li>
 {%- endmacro %}
 
-{% call drawer(r.image.name, r.image.registry) %}
-<p>{{ update_badge(r) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
+{# Rescans cover every image with this name (all tags, used or not, new ones found on the clusters), see Scanner.rescan_image. #}
+{% set tags = "" if same_name < 2 else " (" ~ same_name ~ " tags)" %}
+{% set scope = "every tag of " ~ r.image.name ~ ", used or not, and the new ones found on the clusters" %}
+{% set buttons = [("Check version" ~ ("s" if tags) ~ tags, "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false", "Check the latest version again: " ~ scope)] %}
+{% if can_rescan_vulnerabilities %}{% set buttons = buttons + [("Scan vulnerabilities" ~ tags, "api/rescan/image?ref=" ~ ref ~ "&versions=false", "Scan the vulnerabilities again: " ~ scope)] %}{% endif %}
+{% set actions %}{{ rescan(buttons, "images/detail?ref=" ~ ref ~ ("&cve=" ~ (cve | urlencode) if cve else ""), rescanning, checking_versions) }}{% endset %}
+{% call drawer(r.image.name, r.image.registry, actions) %}
 {% set current, latest = image_versions(r) %}
-<p class="drawer-summary" aria-label="Current and latest version">{{ version_cell(current[0], current[1], copyable=True) }}<span class="arrow" aria-hidden="true">→</span>
-  {%- if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False, copyable=True, released_at=r.latest_released if latest[0] == r.latest_tag) }}{% else %}<small class="muted-text">latest unknown</small>{% endif %}</p>
-{% if r.image.is_latest %}
-<p class="tag-latest">{{ icon("warning") }}This image uses <code>latest</code> (or no tag): the running version changes on every pull. Pin a version instead.</p>
-{% endif %}
+<div class="detail-cards">
+  <section class="detail-card" aria-label="Version">
+    <small class="counters-label">Version</small>
+    <p>{{ update_badge(r) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
+    <p class="drawer-summary" aria-label="Current and latest version">{{ version_cell(current[0], current[1], copyable=True, released_at=r.current_released if current[0] == r.image.tag else None) }}<span class="arrow" aria-hidden="true">→</span>
+      {%- if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False, copyable=True, released_at=r.latest_released if latest[0] == r.latest_tag) }}{% else %}<small class="muted-text">latest unknown</small>{% endif %}</p>
+    {% if r.image.is_latest %}
+    <p class="tag-latest">{{ icon("warning") }}This image uses <code>latest</code> (or no tag): the running version changes on every pull. Pin a version instead.</p>
+    {% endif %}
+  </section>
+  <section class="detail-card" aria-label="Vulnerabilities">
+    <small class="counters-label">Vulnerabilities{% if v and v.vulnerabilities %} <span class="vuln-total">{{ v.vulnerabilities | length }}</span>{% endif %}</small>
+    {% if v is none %}
+    <p><small>{{ "Not scanned yet (scan in progress)." if scanning else "Not scanned." }}</small></p>
+    {% elif v.message %}
+    <p><span class="badge badge-error">{{ icon("error") }}scan failed</span> <small>{{ v.message }}</small></p>
+    {% else %}
+    {% if v.vulnerabilities %}
+    {% set counts = v.counts() %}
+    <div class="vuln-tiles">
+      {% for s in Severity if s != Severity.UNKNOWN or counts[s] %}
+      <span class="vuln-tile vuln-tile-{{ s.value }}{% if not counts[s] %} vuln-tile-zero{% endif %}" title="{{ counts[s] }} {{ s.value }}">
+        <strong>{{ counts[s] }}</strong><small>{{ s.value }}</small></span>
+      {% endfor %}
+    </div>
+    {% set ratio = (v.fixable * 100 / (v.vulnerabilities | length)) | round | int %}
+    <div class="vuln-fix" title="{{ v.fixable }} of {{ v.vulnerabilities | length }} have a fixed version">
+      <span class="vuln-fix-bar" role="img" aria-label="{{ ratio }}% with a fix"><span style="width: {{ ratio }}%"></span></span>
+      <small><strong>{{ v.fixable }}</strong> / {{ v.vulnerabilities | length }} with a fix</small>
+    </div>
+    {% else %}
+    <p><span class="badge badge-up-to-date">{{ icon("ok") }}no known vulnerability</span></p>
+    {% endif %}
+    {% if v.os_eosl %}
+    <p class="tag-latest">{{ icon("warning") }}The OS of this image ({{ v.os }}) is end of life: it gets no more security fixes. Use a newer base image.</p>
+    {% endif %}
+    <p class="vuln-source"><small class="muted-text">{{ "Trivy Operator" if v.source == "trivy-operator" else "Trivy" }}
+      {%- if v.scanned_at %} · {{ v.scanned_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}{% if v.os %} · {{ v.os }}{% endif %}</small></p>
+    {% endif %}
+  </section>
+</div>
 
-<h4>Versions</h4>
+<details class="drawer-section" open>
+<summary><h4>Used by</h4></summary>
+{% set tree = usage_tree(r.usages) %}
+{% if tree %}
+<ul class="tree-list" aria-label="Where the image is used">
+  {% for c in tree %}{{ usage_item(c) }}{% endfor %}
+</ul>
+{% else %}<p><small>Not found on the clusters any more.</small></p>{% endif %}
+</details>
+
+<details class="drawer-section">
+<summary><h4>Versions and digests</h4></summary>
 <table>
   <tr><th scope="row">Reference</th><td>{% call copy(r.image | string) %}<code>{{ r.image }}</code>{% endcall %}</td></tr>
   <tr><th scope="row">Current tag</th><td>{% call copy(r.image.tag) %}{{ tag(r.image.tag) }}{% endcall %}</td></tr>
@@ -48,37 +100,7 @@
   <tr><th scope="row">Upgrade to</th><td>{% call copy(r.image.name ~ ":" ~ r.latest_tag) %}<code>{{ r.image.name }}:{{ r.latest_tag }}</code>{% endcall %}</td></tr>
   {% endif %}
 </table>
-{{ links(registry_links(r.image)) }}
-
-<h4>Vulnerabilities</h4>
-{% if v is none %}
-<p><small>{{ "Not scanned yet (scan in progress)." if scanning else "Not scanned." }}</small></p>
-{% elif v.message %}
-<p><span class="badge badge-error">{{ icon("error") }}scan failed</span> <small>{{ v.message }}</small></p>
-{% else %}
-<p>{{ severity_counts(v) }}{% if v.vulnerabilities %} <small>· {{ v.fixable }} / {{ v.vulnerabilities | length }} with a fix, listed below</small>{% endif %}</p>
-{% if v.os_eosl %}
-<p class="tag-latest">{{ icon("warning") }}The OS of this image ({{ v.os }}) is end of life: it gets no more security fixes. Use a newer base image.</p>
-{% endif %}
-{% endif %}
-{% if v %}
-<table>
-  <tr><th scope="row">Source</th><td>{{ "Trivy Operator report" if v.source == "trivy-operator" else "Trivy scan by kube-tower" }}</td></tr>
-  {% if v.scanned_at %}<tr><th scope="row">Scanned at</th><td>{{ v.scanned_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endif %}
-  {% if v.digest %}<tr><th scope="row">Scanned digest</th><td>{{ digest(v.digest) }}</td></tr>{% endif %}
-  {% if v.os %}<tr><th scope="row">OS</th><td>{{ copy(v.os) }}</td></tr>{% endif %}
-</table>
-{% endif %}
-
-<h4>Used by</h4>
-{% set tree = usage_tree(r.usages) %}
-{% if tree %}
-<ul class="tree-list" aria-label="Where the image is used">
-  {% for c in tree %}{{ usage_item(c) }}{% endfor %}
-</ul>
-{% else %}<p><small>Not found on the clusters any more.</small></p>{% endif %}
-
-<h4>Digests</h4>
+<h5>Digests</h5>
 {% set published = r.latest_digest if not r.latest_tag else r.tag_digest %}
 <table>
   {% if r.image.digest %}<tr><th scope="row">Pinned in the manifest</th><td>{{ digest(r.image.digest) }}</td></tr>{% endif %}
@@ -97,18 +119,25 @@
 {% if r.running_digests and published and published not in r.running_digests %}
 <p><small>{{ icon("warning") }}The tag now points to another image than the one running: the tag was pushed again since the pods started.</small></p>
 {% endif %}
+{{ links(registry_links(r.image)) }}
+</details>
 
-<h4>Check again</h4>
-{# Rescans cover every image with this name (all tags, used or not, new ones found on the clusters), see Scanner.rescan_image. #}
-{% set tags = "" if same_name < 2 else " (" ~ same_name ~ " tags)" %}
-{% set buttons = [("Check version" ~ ("s" if tags) ~ tags, "api/rescan/image?ref=" ~ ref ~ "&vulnerabilities=false")] %}
-{% if can_rescan_vulnerabilities %}{% set buttons = buttons + [("Scan vulnerabilities" ~ tags, "api/rescan/image?ref=" ~ ref ~ "&versions=false")] %}{% endif %}
-{{ rescan(buttons, "images/detail?ref=" ~ ref ~ ("&cve=" ~ (cve | urlencode) if cve else ""), rescanning, checking_versions) }}
-{% if not rescanning %}<p><small>Rescans cover every tag of <code>{{ r.image.name }}</code>, used or not, and the new ones found on the clusters.</small></p>{% endif %}
-
+<details class="drawer-section" open>
+<summary><h4>Vulnerabilities</h4></summary>
+{% if not v %}<p><small>{{ "Not scanned yet (scan in progress)." if scanning else "Not scanned." }}</small></p>
+{% else %}
+<table>
+  <tr><th scope="row">Source</th><td>{{ "Trivy Operator report" if v.source == "trivy-operator" else "Trivy scan by kube-tower" }}</td></tr>
+  {% if v.scanned_at %}<tr><th scope="row">Scanned at</th><td>{{ v.scanned_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endif %}
+  {% if v.digest %}<tr><th scope="row">Scanned digest</th><td>{{ digest(v.digest) }}</td></tr>{% endif %}
+  {% if v.os %}<tr><th scope="row">OS</th><td>{{ copy(v.os) }}</td></tr>{% endif %}
+</table>
+{% endif %}
+</details>
 
 {% if v and v.vulnerabilities %}
-<h4>All vulnerabilities ({{ v.vulnerabilities | length }})</h4>
+<details class="drawer-section"{% if highlighted %} open{% endif %}>
+<summary><h4>All vulnerabilities ({{ v.vulnerabilities | length }})</h4></summary>
 {% if highlighted %}<p><small>{{ v.vulnerabilities | selectattr("id", "in", highlighted) | list | length }} matching <code>{{ cve }}</code> ({{ highlighted | sort | join(", ") }}), listed first and highlighted.</small></p>{% endif %}
 <div class="overflow-auto">
 <table class="striped cve-table">
@@ -127,5 +156,6 @@
   </tbody>
 </table>
 </div>
+</details>
 {% endif %}
 {% endcall %}

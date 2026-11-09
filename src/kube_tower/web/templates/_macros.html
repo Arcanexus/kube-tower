@@ -99,8 +99,9 @@
 {% if value %}{% call copy(value) %}<code class="digest">{{ value[:19] ~ "…" if short else value }}</code>{% endcall %}{% endif %}
 {%- endmacro %}
 
-{% macro drawer(title, subtitle="") -%}
-{# Detail panel, loaded by htmx into #detail (see base.html). #}
+{% macro drawer(title, subtitle="", actions="") -%}
+{# Detail panel, loaded by htmx into #detail (see base.html). `actions`: buttons shown before the
+   full screen and close buttons (the rescans, see the rescan macro). #}
 <div class="drawer-backdrop"></div>
 <article class="drawer-panel" role="dialog" aria-label="{{ title }}">
   {# Drag (or arrow keys) to resize, or open full screen: until the panel is closed (the next one opens at the default size). #}
@@ -109,6 +110,7 @@
   <header>
     <hgroup><h3>{{ copy(title) }}</h3>{% if subtitle %}<p>{{ subtitle }}</p>{% endif %}</hgroup>
     <div class="drawer-buttons">
+      {{ actions }}
       <button type="button" class="drawer-full-toggle outline secondary" onclick="ktToggleFull()" aria-label="Full screen" title="Full screen">
         {{- icon("maximize", "when-normal") }}{{ icon("minimize", "when-full") -}}
       </button>
@@ -176,18 +178,18 @@
 {% macro rescan(buttons, detail_url, busy, checking_versions) -%}
 {# Buttons of a detail panel that check its item again: each starts the rescan with the API, then the
    panel polls itself while it runs (the poll that sees it over reloads the results, see kube-tower.js). #}
-<p class="rescan">
+<span class="rescan">
 {% if not can("rescan") %}
-  <small>{{ icon("lock") }}Your role does not allow rescans.</small>
+  <small class="muted-text" title="Your role does not allow rescans.">{{ icon("lock") }}No rescan</small>
 {% elif busy %}
   <small aria-busy="true">Rescanning…</small>
   <span hidden hx-get="{{ detail_url }}&amp;polling=1" hx-trigger="every 3s [document.visibilityState=='visible']" hx-target="#detail"></span>
 {% else %}
-  {% for label, api in buttons %}
+  {% for label, api, hint in buttons %}
   <button type="button" class="outline secondary small" hx-post="{{ api }}" hx-swap="none"
-          {% if checking_versions %}disabled title="A scan is running: it checks everything again"{% endif %}
+          {% if checking_versions %}disabled title="A scan is running: it checks everything again"{% elif hint %}title="{{ hint }}"{% endif %}
           hx-on::after-request="htmx.ajax('GET', '{{ detail_url }}&amp;polling=1', {target: '#detail'})">{{ icon("refresh") }}{{ label }}</button>
   {% endfor %}
 {% endif %}
-</p>
+</span>
 {%- endmacro %}

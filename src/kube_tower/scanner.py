@@ -743,6 +743,7 @@ def _fresh_image(report: ImageReport) -> ImageReport:
         latest_digest=None,
         tag_digest=None,
         latest_released=None,
+        current_released=None,
         message=None,
     )
 
@@ -750,7 +751,7 @@ def _fresh_image(report: ImageReport) -> ImageReport:
 def _apply_image(report: ImageReport, fresh: ImageReport) -> None:
     report.status, report.message = fresh.status, fresh.message
     report.latest_tag, report.latest_digest, report.tag_digest = fresh.latest_tag, fresh.latest_digest, fresh.tag_digest
-    report.latest_released = fresh.latest_released
+    report.latest_released, report.current_released = fresh.latest_released, fresh.current_released
 
 
 def _fresh_chart(report: ChartReport) -> ChartReport:

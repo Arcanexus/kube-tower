@@ -12,9 +12,20 @@
 </li>
 {%- endmacro %}
 
-{% call drawer(c.chart, c.application ~ " · " ~ c.cluster) %}
+{% set actions %}{{ rescan([("Check versions", "api/rescan/chart?" ~ query, "Check the versions of this chart and its subcharts again")], "charts/detail?" ~ query, rescanning, checking_versions) }}{% endset %}
+{% call drawer(c.chart, c.application ~ " · " ~ c.cluster, actions) %}
 <p>{{ badge(c.status) }}{% if c.message %} <small>{{ c.message }}</small>{% endif %}
   {% if c.worst_status != c.status %}<br><small>Subcharts: </small>{{ badge(c.worst_status) }}{% endif %}</p>
+
+<h4>Subcharts</h4>
+{% if c.dependencies %}
+<ul class="tree-list" aria-label="Subchart tree">
+  <li>{{ icon("charts") }}<strong>{{ copy(c.chart) }}</strong> {{ chart_versions(c.version, c.latest_version, c.latest_released) }} {{ badge(c.status) }}
+    <ul>{% for d in c.dependencies %}{{ subchart_item(d) }}{% endfor %}</ul></li>
+</ul>
+{% else %}
+<p><small>No subchart.</small></p>
+{% endif %}
 
 <h4>Chart</h4>
 <table>
@@ -33,17 +44,4 @@
   <tr><th scope="row">Cluster</th><td>{{ copy(c.cluster) }}</td></tr>
   {% if c.manager != "helm" %}<tr><th scope="row">{{ "Target namespace" if c.manager == "flux" else "Destination namespace" }}</th><td>{{ copy(c.destination_namespace) }}</td></tr>{% endif %}
 </table>
-
-<h4>Subcharts</h4>
-{% if c.dependencies %}
-<ul class="tree-list" aria-label="Subchart tree">
-  <li>{{ icon("charts") }}<strong>{{ copy(c.chart) }}</strong> {{ chart_versions(c.version, c.latest_version, c.latest_released) }} {{ badge(c.status) }}
-    <ul>{% for d in c.dependencies %}{{ subchart_item(d) }}{% endfor %}</ul></li>
-</ul>
-{% else %}
-<p><small>No subchart.</small></p>
-{% endif %}
-
-<h4>Check again</h4>
-{{ rescan([("Check versions", "api/rescan/chart?" ~ query)], "charts/detail?" ~ query, rescanning, checking_versions) }}
 {% endcall %}

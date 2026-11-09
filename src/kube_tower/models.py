@@ -128,6 +128,7 @@ class ImageReport:
     # Size in bytes reported by the nodes that pulled the image, by digest ("" when the node gives none).
     sizes: dict[str, int] = field(default_factory=dict)
     latest_released: datetime | None = None  # when the latest tag was built or pushed
+    current_released: datetime | None = None  # when the current tag was built or pushed
 
     @property
     def clusters(self) -> list[str]:

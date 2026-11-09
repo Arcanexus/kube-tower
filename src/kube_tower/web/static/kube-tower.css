@@ -446,7 +446,9 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--kt-hover);
 .drawer-resizing { user-select: none; cursor: ew-resize; }
 .drawer-full .drawer-resize { display: none; }
 @media (max-width: 700px) { .drawer-resize, .drawer-full-toggle { display: none; } }
-.drawer-buttons { display: flex; gap: .4rem; flex-shrink: 0; }
+.drawer-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .4rem; flex-shrink: 1; }
+.drawer-buttons .rescan { margin: 0; gap: .4rem; }
+.drawer-buttons .rescan button.small { padding: .3rem .6rem; }
 .drawer-full-toggle { margin: 0; padding: .3rem .5rem; width: auto; }
 .drawer-full-toggle .icon { margin: 0; }
 .drawer-full-toggle .when-full, .drawer-full .drawer-full-toggle .when-normal { display: none; }
@@ -455,6 +457,38 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--kt-hover);
 .drawer-panel > header hgroup { margin: 0; overflow-wrap: anywhere; }
 .drawer-panel > header h3 { margin: 0; }
 .drawer-panel h4 { margin: 1.25rem 0 .5rem; font-size: 1rem; }
+.drawer-panel h5 { margin: 1rem 0 .4rem; font-size: .9rem; color: var(--kt-muted); }
+/* Foldable sections of a detail panel: the title is the summary */
+.drawer-section { margin: 0; border-top: 1px solid var(--kt-line); padding: .25rem 0; }
+.drawer-section > summary { display: flex; align-items: center; gap: .4rem; padding: .5rem 0; list-style: none; }
+.drawer-section > summary::-webkit-details-marker { display: none; }
+.drawer-section > summary::before { content: "▸"; color: var(--kt-muted); transition: transform .15s; }
+.drawer-section[open] > summary::before { transform: rotate(90deg); }
+.drawer-section > summary h4 { margin: 0; }
+.drawer-section[open] > summary { margin-bottom: .25rem; }
+/* Summary cards at the top of a detail panel, side by side when there is room */
+.detail-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.detail-card { padding: .75rem 1rem; border: 1px solid var(--kt-line); border-radius: var(--kt-radius-lg); background: var(--kt-surface); }
+.detail-card > * { margin-bottom: .4rem; }
+.detail-card > :last-child { margin-bottom: 0; }
+.detail-card .counters-label { display: block; }
+/* Vulnerabilities card of the image details: one tile per severity, then the share with a fix */
+.vuln-total { margin-left: .3rem; padding: 0 .4rem; border-radius: 1rem; background: var(--kt-line); color: var(--kt-text); }
+.vuln-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr)); gap: .4rem; }
+.vuln-tile { display: flex; flex-direction: column; align-items: center; padding: .35rem .25rem; border-radius: var(--kt-radius); color: #fff; line-height: 1.15; }
+.vuln-tile strong { font-size: 1.25rem; }
+.vuln-tile small { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; opacity: .9; }
+.vuln-tile-critical { background: #b71c1c; }
+.vuln-tile-high { background: #c2410c; }
+.vuln-tile-medium { background: #f9a825; color: #222; }
+.vuln-tile-low { background: #1565c0; }
+.vuln-tile-unknown { background: #757575; }
+.vuln-tile-zero { background: transparent; color: var(--kt-muted); box-shadow: inset 0 0 0 1px var(--kt-line); }
+.vuln-fix { display: flex; align-items: center; gap: .6rem; }
+.vuln-fix-bar { flex: 1; height: .45rem; border-radius: 1rem; background: var(--kt-line); overflow: hidden; }
+.vuln-fix-bar > span { display: block; height: 100%; background: var(--kt-ok); border-radius: 1rem; }
+.vuln-fix small { white-space: nowrap; }
+.vuln-source { margin-top: .2rem; }
 .drawer-panel table th[scope="row"] { width: 35%; color: var(--kt-muted); font-weight: normal; }
 .close-detail { margin: 0; padding: .3rem .5rem; width: auto; }
 .close-detail .icon { margin: 0; }
@@ -575,8 +609,10 @@ td.cell-name { max-width: 21rem; }
 .version-tag { display: inline-block; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .digest-short { font-family: var(--kt-mono); font-size: .72rem; color: var(--kt-muted); }
 .digest-differs { color: var(--kt-warn); font-weight: 600; }
-.drawer-summary { display: flex; align-items: center; gap: .75rem; font-size: 1.1rem; }
-.drawer-summary .arrow { color: var(--kt-muted); }
+.drawer-summary { display: flex; align-items: flex-start; gap: .75rem; font-size: 1.1rem; }
+/* current and latest in two equal columns: their version, digest and date lines align */
+.drawer-summary > .version-cell { flex: 1 1 0; }
+.drawer-summary .arrow { color: var(--kt-muted); line-height: 1.25; }
 
 /* Counters of the Vulnerabilities page: number of images */
 .counter-value { display: flex; align-items: baseline; gap: .3rem; }

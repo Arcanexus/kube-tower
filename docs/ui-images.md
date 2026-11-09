@@ -38,14 +38,19 @@ Also shown:
 
 ![Image details](images/image-detail.png)
 
-| Section | Content |
-| --- | --- |
-| Versions | Reference, versioning scheme, latest tag, upgrade target, **size**, links to the registry page |
-| Vulnerabilities | Counts by severity and with a fix, source (Trivy Operator or Trivy), scan date, scanned digest, OS |
-| Used by | Tree cluster › namespace › workload › pods, with nodes and containers; the nodes caching the image close each cluster |
-| Digests | Digests of the running pods, digest published for the same tag (different: the tag was pushed again), digest of the latest tag |
-| Check again | The [rescan](usage.md#rescan-one-image-or-chart) buttons |
-| All vulnerabilities | Each one with severity, score, package, installed and fixed version, linked to its advisory |
+The [rescan](usage.md#rescan-one-image-or-chart) buttons sit at the top, next to the full screen and
+close buttons. Below, two cards side by side: the **version** (status, current → latest, each with its
+digest and release date) and the
+**vulnerabilities** (total, one tile per severity, a bar of how many have a fix, an end of life OS, and
+the source, date and OS of the scan). Then the sections, each
+folded or unfolded with a click on its title:
+
+| Section | Opened | Content |
+| --- | --- | --- |
+| Used by | yes | Tree cluster › namespace › workload › pods, with nodes and containers; the nodes caching the image close each cluster |
+| Versions and digests | no | Reference, versioning scheme, latest tag, upgrade target, **size**; digests of the running pods, digest published for the same tag (different: the tag was pushed again), digest of the latest tag; links to the registry page |
+| Vulnerabilities | yes | Source (Trivy Operator or Trivy), scan date, scanned digest, OS |
+| All vulnerabilities | no (yes after a CVE search) | Each one with severity, score, package, installed and fixed version, linked to its advisory |
 
 Notes:
 
@@ -53,7 +58,7 @@ Notes:
   unpacked size with Docker. A range when nodes differ; unknown if no node pulled it.
 - A workload without pod says **no pod running** (scaled to zero, CronJob between two runs).
 - Published digests need `images.fetchTagDigests` (on by default).
-- The **release date** of the latest tag is when it was pushed on Docker Hub (its web API, outside the
+- The **release date** of the latest tag (and, in the detail panel, of the current tag) is when it was pushed on Docker Hub (its web API, outside the
   pull rate limit), else when the image was built: the `org.opencontainers.image.created` annotation,
   or the `created` date of its config (linux/amd64). Images built reproducibly carry a fixed date
   (1970, 1980) and show none. Each date is read once per version; turn it off with

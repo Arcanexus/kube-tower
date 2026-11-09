@@ -16,7 +16,7 @@
   // Screenshot tour
   var captions = {
     "images": "Every image with its current and latest version and its vulnerabilities, one search for names, tags and CVE IDs.",
-    "image-detail": "Image details: digests, size, registry links, the tree of where the image runs and its CVE list.",
+    "image-detail": "Image details: rescans at hand, the version change and the CVEs by severity at a glance, then where the image runs, its versions and digests and its CVE list, each section foldable.",
     "charts": "Helm charts deployed by ArgoCD, with the tree of their subcharts and the latest version of each.",
     "security": "Trivy Operator reports of every cluster: misconfigurations, exposed secrets, RBAC, infrastructure and compliance.",
     "clusters-page": "Every cluster at a glance: its nodes by Kubernetes version, the vulnerabilities of what they run, and one card per node.",

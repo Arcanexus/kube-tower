@@ -89,15 +89,16 @@ async def test_image_release_dates(caplog):
     reports = [_img("library/nginx", "1.25.3"), _img("library/nginx", "1.26.0"), _img("library/redis", "7.0.0")]
     await ImageChecker(oci, ImagesSettings()).check_all(reports)
     assert [r.latest_released for r in reports] == [datetime(2026, 10, 12, tzinfo=UTC)] * 2 + [None]
-    assert oci.created == 2  # 1.26.0 asked once
+    assert [r.current_released for r in reports] == [datetime(2026, 10, 12, tzinfo=UTC)] * 2 + [None]
+    assert oci.created == 3  # 1.25.3, and 1.26.0 asked once for both reports
     assert "no release date for image docker.io library/redis 7.0.0" in caplog.text
     # kept for the next scans, not the failures
     again = [_img("library/nginx", "1.25.3"), _img("library/redis", "7.0.0")]
     await ImageChecker(oci, ImagesSettings()).check_all(again)
-    assert again[0].latest_released and oci.created == 3
+    assert again[0].latest_released and again[0].current_released and oci.created == 4
     disabled = _img("library/nginx", "1.25.3")
     await ImageChecker(oci, ImagesSettings(fetch_release_dates=False)).check(disabled)
-    assert disabled.latest_released is None
+    assert disabled.latest_released is None and disabled.current_released is None
 
 
 def _chart_archive(chart: dict) -> bytes:
