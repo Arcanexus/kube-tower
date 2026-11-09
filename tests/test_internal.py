@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import threading
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -443,8 +444,12 @@ async def test_ui_process_actions(monkeypatch, fakes, bus):  # noqa: F811 - fixt
         assert await remote.clear_trivy_cache() == 0
         assert (await remote.refresh_trivy_status()).message == "trivy binary 'trivy' not found"
         assert "binary 'trivy' is not found" in await remote.update_trivy_db() and await remote.test_connectivity() is None
+        # the scan waits at its start, so that it is still running when the page reads the state
+        started, discover = threading.Event(), scanner.registry.discover
+        monkeypatch.setattr(scanner.registry, "discover", lambda: started.wait(5) and discover())
         assert await remote.trigger() is True
         assert remote.checking_versions  # the page shows the scan at once: no second click on "Scan now"
+        started.set()
         await scanner._task
         # gone from the controller meanwhile
         gone = ChartReport("b", "app", "argocd", "gone", "https://charts.example.com", "1.0.0", "helm")
