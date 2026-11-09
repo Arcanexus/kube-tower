@@ -20,12 +20,14 @@ Bump `targetRevision` to the new chart version in the Application and sync.
 
 Read the [changelog](../CHANGELOG.md) for every change. What needs a step of yours:
 
-### 1.3.0: Flux, Helm releases and deprecated APIs
+### 1.3.0: krr, Flux, Helm releases and deprecated APIs
 
 - On remote clusters, apply [`deploy/remote-cluster-rbac.yaml`](../deploy/remote-cluster-rbac.yaml)
-  again: it adds the Flux HelmReleases and their sources, and `get` on the `/metrics` URL of the API
+  again: it adds the Flux HelmReleases and their sources, the read rules of [krr](resources.md)
+  (ReplicaSets, Jobs, HPAs, Services proxy to reach Prometheus), and `get` on the `/metrics` URL of the API
   server (the [deprecated APIs](ui-clusters.md#deprecated-apis)). Without them the scan reports a
   permission error for these parts and carries on. The chart updates the ClusterRole of the local cluster.
+- krr (`krr.enabled`) and the charts installed with the helm command (`helm.releases`) are off by default.
 
 ### 1.2.0: Clusters page and custom roles
 

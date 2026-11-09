@@ -115,7 +115,8 @@ site/                  product website (plain HTML, CSS and JS), published on Gi
 | --- | --- | --- |
 | `tests.yml` | push on `main`, pull requests | ruff, pytest with coverage (summary + HTML artifact), helm lint/template; commits the coverage badge data (`.github/badges/coverage.json`) to `main` when it changes |
 | `docker-publish.yml` | push on `main`, tags, pull requests | runs the tests, builds the multi-arch image, pushes it to ghcr.io except for pull requests |
-| `helm-publish.yml` | tags | packages the chart with the tag version and pushes it to `oci://ghcr.io/arcanexus/charts` |
+| `helm-publish.yml` | tags | checks the tag against the versions of the repository, packages the chart with the tag version and pushes it to `oci://ghcr.io/arcanexus/charts` |
+| `release.yml` | tags | checks the tag, creates the GitHub Release (pre-release for `-rc.N`) with the notes of the CHANGELOG (`.github/scripts/release.py`) |
 | `pages.yml` | push on `main` changing `site/`, `docs/images/` or the icons | publishes the product website on GitHub Pages: https://arcanexus.github.io/kube-tower/ |
 | `wiki.yml` | push on `main` that changes `docs/` | publishes `docs/` to the [wiki](https://github.com/Arcanexus/kube-tower/wiki) |
 
@@ -175,11 +176,28 @@ GitHub Pages must be enabled once with **Settings › Pages › Source: GitHub A
 
 ## Releasing
 
-1. Merge the changes into `main`.
-2. Push a semver tag: `git tag v0.2.0 && git push origin v0.2.0`.
-3. CI publishes `ghcr.io/arcanexus/kube-tower:0.2.0` (and `0.2`, `0`) and the chart `0.2.0`
-   whose `appVersion` points to that image. The version shown by the UI comes from the tag
-   (build argument `VERSION`, `dev` when run from the sources).
+The version being prepared is written in `pyproject.toml` and in `charts/kube-tower/Chart.yaml`
+(`version` and `appVersion`), and the CHANGELOG lists its changes under `## [Unreleased]`. A test checks
+that the three versions are the same.
+
+1. In the first pull request of a new version, set it in `pyproject.toml` and `Chart.yaml`.
+2. Merge the changes into `main`, then push release candidates: `git tag v1.3.0-rc.1 && git push origin v1.3.0-rc.1`.
+3. For the final version, rename `## [Unreleased]` to `## [1.3.0] - <date>` in a pull request (and start a
+   new empty `## [Unreleased]`), merge it, then push `v1.3.0`.
+
+For each tag, CI publishes the image `ghcr.io/arcanexus/kube-tower:1.3.0` (and `1.3`, `1` for a final
+version), the chart `1.3.0` whose `appVersion` points to that image, and the GitHub Release of the tag:
+marked pre-release for `-rc.N`, with the CHANGELOG section of the version (`[Unreleased]` for a release
+candidate before the rename) and the image and chart to install. A release created by hand before the
+workflow runs is left as it is. The workflows fail when the tag does not match the versions of
+`pyproject.toml` and `Chart.yaml`, or when a final tag has no CHANGELOG section; to check a tag before
+pushing it:
+
+```sh
+python .github/scripts/release.py v1.3.0-rc.1
+```
+
+The version shown by the UI comes from the tag (build argument `VERSION`, `dev` when run from the sources).
 
 ## Conventions
 

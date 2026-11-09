@@ -33,8 +33,14 @@ All notable changes to this project are documented here. The format follows
   `/metrics` URL to its ClusterRole (and `deploy/remote-cluster-rbac.yaml` for remote clusters);
   `kubernetesVersions.deprecatedApis: false` turns it off. Metric `kube_tower_deprecated_api_requested`.
 
+- **Release workflow** (`release.yml`): each `v*.*.*` tag gets its GitHub Release, marked pre-release
+  for `-rc.N`, with the notes of its CHANGELOG section and the image and chart to install. The tag must
+  match the versions of `pyproject.toml` and `Chart.yaml`, else the release and the chart publication
+  fail (see [releasing](docs/development.md#releasing)).
+
 ### Changed
 
+- `pyproject.toml` and `Chart.yaml` carry the real version (1.3.0) instead of `0.1.0`.
 - Detail panels: the **rescan buttons** sit at the top, next to the full screen and close buttons.
 - Image details reorganised: two cards at the top (the version change, with the release date of the
   current tag next to the latest one's, and the vulnerability counts as severity tiles),
