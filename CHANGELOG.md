@@ -65,6 +65,12 @@ All notable changes to this project are documented here. The format follows
   Valkey keeps nothing on disk (`--save ""`, no AOF): the new pod starts empty and the pods publish
   their state again, as after any restart.
 
+### Fixed
+
+- krr reached the local cluster (`in-cluster`) and the clusters read from a kubeconfig without a token:
+  the kubernetes client 37 keeps it under another key. The API server answered 401, so krr found no
+  Prometheus.
+
 ## [1.2.0] - 2026-11-06
 
 ### Added

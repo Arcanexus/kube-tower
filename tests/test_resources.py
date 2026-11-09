@@ -120,6 +120,23 @@ def test_kubeconfig_refreshes_the_token_first():
     assert yaml.safe_load(kubeconfig_of(cluster))["users"][0]["user"] == {"token": "new"}
 
 
+def test_kubeconfig_of_the_in_cluster_configuration(tmp_path, monkeypatch):
+    """load_incluster_config keeps the token under BearerToken: the kubeconfig of krr must carry it (401 else)."""
+    from kubernetes.config.incluster_config import InClusterConfigLoader
+
+    token, ca = tmp_path / "token", tmp_path / "ca.crt"
+    token.write_text("sa-token")
+    ca.write_bytes(b"-----BEGIN CERTIFICATE-----\n")
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.43.0.1")
+    monkeypatch.setenv("KUBERNETES_SERVICE_PORT", "443")
+    cfg = client.Configuration()
+    InClusterConfigLoader(token_filename=str(token), cert_filename=str(ca)).load_and_set(cfg)
+    cluster = Cluster("in-cluster", cfg.host, "in-cluster", client.ApiClient(cfg))
+    data = yaml.safe_load(kubeconfig_of(cluster))
+    assert data["users"][0]["user"] == {"token": "sa-token"}
+    assert data["clusters"][0]["cluster"]["server"] == "https://10.43.0.1:443"
+
+
 def test_krr_args(tmp_path, monkeypatch):
     monkeypatch.setenv("PROM_AUTH", "Bearer secret")
     header = tmp_path / "header"

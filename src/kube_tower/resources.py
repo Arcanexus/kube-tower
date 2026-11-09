@@ -61,10 +61,12 @@ def _read(path: str) -> bytes:
 
 
 def _authorization(cfg: Configuration) -> str:
-    """The Authorization header of a Kubernetes client, its token refreshed first (exec plugins, in-cluster)."""
-    if cfg.refresh_api_key_hook is not None:
-        cfg.refresh_api_key_hook(cfg)
-    return cfg.get_api_key_with_prefix("authorization") or ""
+    """The Authorization header of a Kubernetes client, its token refreshed first (exec plugins, in-cluster).
+
+    The kubernetes loaders (in-cluster, kubeconfig) keep the token under BearerToken, the clients made from an
+    ArgoCD secret under authorization; get_api_key_with_prefix runs the refresh hook.
+    """
+    return cfg.get_api_key_with_prefix("BearerToken", alias="authorization") or ""
 
 
 def kubeconfig_of(cluster: Cluster) -> str:
