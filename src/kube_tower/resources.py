@@ -61,10 +61,12 @@ def _read(path: str) -> bytes:
 
 
 def _authorization(cfg: Configuration) -> str:
-    """The Authorization header of a Kubernetes client, its token refreshed first (exec plugins, in-cluster)."""
-    if cfg.refresh_api_key_hook is not None:
-        cfg.refresh_api_key_hook(cfg)
-    return cfg.get_api_key_with_prefix("authorization") or ""
+    """The Authorization header of a Kubernetes client, its token refreshed first (exec plugins, in-cluster).
+
+    The kubernetes loaders (in-cluster, kubeconfig) keep the token under BearerToken, the clients made from an
+    ArgoCD secret under authorization; get_api_key_with_prefix runs the refresh hook.
+    """
+    return cfg.get_api_key_with_prefix("BearerToken", alias="authorization") or ""
 
 
 def kubeconfig_of(cluster: Cluster) -> str:
@@ -77,6 +79,8 @@ def kubeconfig_of(cluster: Cluster) -> str:
         entry["certificate-authority-data"] = base64.b64encode(_read(cfg.ssl_ca_cert)).decode()
     if getattr(cfg, "tls_server_name", None):
         entry["tls-server-name"] = cfg.tls_server_name
+    if cfg.proxy and not getattr(cfg, "_proxy_from_env", False):  # HTTPS_PROXY of the pod: krr has its own environment
+        entry["proxy-url"] = cfg.proxy
     user: dict[str, Any] = {}
     if cfg.cert_file and cfg.key_file:
         user["client-certificate-data"] = base64.b64encode(_read(cfg.cert_file)).decode()

@@ -19,7 +19,7 @@ import yaml
 from kubernetes import client
 
 from kube_tower import resources
-from kube_tower.clusters import Cluster, api_client_from_argocd_config
+from kube_tower.clusters import Cluster, api_client_from_argocd_config, api_client_from_kubeconfig
 from kube_tower.config import PrometheusSettings, ResourcesSettings, Settings
 from kube_tower.models import ClusterStatus, Fit, ResourceRecommendation, ResourceScan, ResourceValue, Snapshot
 from kube_tower.resources import KrrError, error_message, krr_args, kubeconfig_of, parse_result, recommend
@@ -118,6 +118,108 @@ def test_kubeconfig_refreshes_the_token_first():
     cfg.refresh_api_key_hook = lambda c: c.api_key.update(authorization="new")
     cluster = Cluster("in-cluster", cfg.host, "in-cluster", client.ApiClient(cfg))
     assert yaml.safe_load(kubeconfig_of(cluster))["users"][0]["user"] == {"token": "new"}
+
+
+CA, CERT, KEY = (base64.b64encode(f"-----BEGIN {k}-----\n".encode()).decode() for k in ("CA", "CERT", "KEY"))
+
+
+def _kubeconfig(cluster: dict, user: dict) -> str:
+    return yaml.safe_dump(
+        {
+            "apiVersion": "v1",
+            "kind": "Config",
+            "clusters": [{"name": "c", "cluster": {"server": "https://remote:6443", **cluster}}],
+            "users": [{"name": "u", "user": user}],
+            "contexts": [{"name": "x", "context": {"cluster": "c", "user": "u"}}],
+            "current-context": "x",
+        }
+    )
+
+
+def _exec_plugin(tmp_path) -> dict:
+    script = tmp_path / "plugin.py"
+    credential = {"apiVersion": "client.authentication.k8s.io/v1", "kind": "ExecCredential", "status": {"token": "exec-tok"}}
+    script.write_text(f"print({json.dumps(json.dumps(credential))})")
+    return {"exec": {"apiVersion": "client.authentication.k8s.io/v1", "command": sys.executable, "args": [str(script)]}}
+
+
+def _in_cluster(tmp_path, monkeypatch) -> client.ApiClient:
+    from kubernetes.config.incluster_config import InClusterConfigLoader
+
+    (tmp_path / "token").write_text("sa-token")
+    (tmp_path / "ca.crt").write_bytes(base64.b64decode(CA))
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.43.0.1")
+    monkeypatch.setenv("KUBERNETES_SERVICE_PORT", "443")
+    cfg = client.Configuration()
+    InClusterConfigLoader(token_filename=str(tmp_path / "token"), cert_filename=str(tmp_path / "ca.crt")).load_and_set(cfg)
+    return client.ApiClient(cfg)
+
+
+CONNECTIONS = {
+    "in-cluster": lambda tmp_path, mp: _in_cluster(tmp_path, mp),
+    "argocd bearer token and CA": lambda *_: api_client_from_argocd_config(
+        "https://remote:6443", {"bearerToken": "tok", "tlsClientConfig": {"caData": CA, "serverName": "api"}}
+    ),
+    "argocd basic auth, insecure": lambda *_: api_client_from_argocd_config(
+        "https://remote:6443", {"username": "u", "password": "p:w", "tlsClientConfig": {"insecure": True}}
+    ),
+    "argocd client certificate": lambda *_: api_client_from_argocd_config(
+        "https://remote:6443", {"tlsClientConfig": {"caData": CA, "certData": CERT, "keyData": KEY}}
+    ),
+    "kubeconfig token, proxy": lambda *_: api_client_from_kubeconfig(
+        _kubeconfig({"certificate-authority-data": CA, "proxy-url": "http://proxy:3128"}, {"token": "tok"})
+    )[0],
+    "kubeconfig basic auth": lambda *_: api_client_from_kubeconfig(
+        _kubeconfig({"insecure-skip-tls-verify": True}, {"username": "u", "password": "p"})
+    )[0],
+    "kubeconfig client certificate": lambda *_: api_client_from_kubeconfig(
+        _kubeconfig(
+            {"certificate-authority-data": CA, "tls-server-name": "api"},
+            {"client-certificate-data": CERT, "client-key-data": KEY},
+        )
+    )[0],
+    "kubeconfig exec plugin": lambda tmp_path, _: api_client_from_kubeconfig(
+        _kubeconfig({"certificate-authority-data": CA}, _exec_plugin(tmp_path)), [sys.executable]
+    )[0],
+}
+
+
+def _connection(cfg: client.Configuration) -> dict:
+    """What a client sends to the API server: address, TLS, proxy and credentials."""
+    scheme, _, credentials = ((cfg.auth_settings().get("BearerToken") or {}).get("value") or "").partition(" ")
+
+    def content(path):
+        return Path(path).read_bytes() if path else None
+
+    return {
+        "host": cfg.host,
+        "verify_ssl": cfg.verify_ssl,
+        "ca": content(cfg.ssl_ca_cert) if cfg.verify_ssl else None,
+        "cert": content(cfg.cert_file),
+        "key": content(cfg.key_file),
+        "tls_server_name": getattr(cfg, "tls_server_name", None),
+        "proxy": cfg.proxy,
+        "authorization": (scheme.lower(), credentials) if credentials else None,  # bearer or Bearer
+    }
+
+
+@pytest.mark.parametrize("kind", CONNECTIONS)
+def test_krr_reaches_every_kind_of_cluster_as_kube_tower_does(kind, tmp_path, monkeypatch):
+    """The kubeconfig given to krr connects like the client of kube-tower: same server, TLS and credentials."""
+    api = CONNECTIONS[kind](tmp_path, monkeypatch)
+    cluster = Cluster("c", api.configuration.host, kind, api)
+    expected = _connection(api.configuration)
+    assert expected["authorization"] or expected["cert"], "the case has credentials"
+    krr, _ = api_client_from_kubeconfig(kubeconfig_of(cluster))  # how krr loads it (no exec, no file paths)
+    assert _connection(krr.configuration) == expected
+    cluster.close()
+
+
+def test_kubeconfig_leaves_out_the_proxy_of_the_environment(monkeypatch):
+    """HTTPS_PROXY of the kube-tower pod is not written for krr, which has its own environment and NO_PROXY."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://env-proxy:3128")
+    data = yaml.safe_load(kubeconfig_of(_cluster()))
+    assert "proxy-url" not in data["clusters"][0]["cluster"]
 
 
 def test_krr_args(tmp_path, monkeypatch):
