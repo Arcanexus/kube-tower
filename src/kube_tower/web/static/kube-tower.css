@@ -883,3 +883,16 @@ td.cell-name { max-width: 21rem; }
 .resource-tiles .tile > strong small { font-size: 1.1rem; }
 .copy-block { padding: .6rem .75rem; border-radius: var(--kt-radius); background: var(--kt-hover); font-size: .8rem; }
 .copy-block code { background: none; padding: 0; white-space: pre; }
+
+/* Resizable columns (kube-tower.js): a handle on the right edge of each header cell */
+thead th { position: relative; }
+.table-wrap thead th { position: sticky; }
+.col-handle { position: absolute; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 2; touch-action: none; }
+.col-handle::after { content: ""; position: absolute; top: 25%; bottom: 25%; right: 0; width: 1px; background: var(--kt-line); }
+th:hover > .col-handle::after, .col-handle:focus-visible::after { background: var(--kt-muted); }
+.col-handle:focus-visible { outline: 2px solid var(--kt-accent); outline-offset: -2px; }
+thead th:last-child > .col-handle::after { display: none; }
+table.kt-sized { table-layout: fixed; min-width: 0; }
+table.kt-sized th, table.kt-sized td { overflow: hidden; text-overflow: ellipsis; }
+body.kt-col-resizing, body.kt-col-resizing * { cursor: col-resize !important; user-select: none !important; }
+@media (max-width: 768px) { .col-handle { display: none; } }

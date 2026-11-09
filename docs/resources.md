@@ -101,6 +101,12 @@ the same time as the vulnerability scans. A worker builds a kubeconfig of the cl
 and the token or certificate kube-tower uses for it) and sends it, with the krr options, to the krr pod,
 which runs krr against that cluster and answers its JSON result.
 
+When the controller starts from the inventory kept in Valkey (restart, upgrade, krr just enabled), it does
+not wait for the next scan: the reachable clusters without recommendations yet are analysed at once. The krr
+pod logs nothing until it is asked: with no scan running, `listening on :8080` is its only line.
+The Pods tab of the [Administration page](ui-administration.md#pods) shows the krr pod with the other pods of the
+release, and the krr runs in progress, read from its `/healthz`.
+
 The krr pod only accepts the requests of the kube-tower ServiceAccount: it checks the token of the caller
 with a `TokenReview` (its ServiceAccount is bound to `system:auth-delegator`), and a NetworkPolicy lets only
 the kube-tower pods reach it when `networkPolicy.enabled`. The kubeconfigs are written in its `/tmp`
@@ -131,6 +137,7 @@ The last run of each cluster is on top of the Resources page, with its error. Th
 
 | Error | Cause and fix |
 | --- | --- |
+| `Wasn't able to connect to any Prometheus service ... (...): give its url in resources.prometheus` | krr found no Prometheus, or the one it found did not answer: the parentheses say why (`Couldn't connect to Prometheus found under <url> Caused by ...`, or the API refusing the lookup). Give its `url` in `resources.prometheus` |
 | `Prometheus not found`, `No Prometheus URL is specified` then a connection error | krr found no Prometheus in the cluster: give its `url` in `resources.prometheus` |
 | `403 Forbidden` on `services/proxy` | kube-tower may not reach Prometheus through the API server: apply the RBAC again, or give the `url` |
 | *not enough data* on every container | less than 3 hours of history, or the cAdvisor metrics are missing |

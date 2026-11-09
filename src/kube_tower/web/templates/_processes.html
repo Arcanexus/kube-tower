@@ -1,13 +1,14 @@
 {% from "_macros.html" import icon %}
 {# State of the roles and of the processes (pods), read again every 5 seconds. #}
-{% set role_icons = {"ui": "monitor", "controller": "network", "worker": "cpu", "trivy": "shield"} %}
+{% set role_icons = {"ui": "monitor", "controller": "network", "worker": "cpu", "trivy": "shield", "krr": "cpu", "valkey": "database", "dex": "key", "trivy-server": "shield"} %}
+{% set role_icons_kt = ["ui", "controller", "worker", "trivy"] %}
 {% set states = {"active": ("ok", "Active controller: holds the Lease, runs the scans"), "standby": ("standby", "Standby controller: takes over if the active one stops"), "ok": ("ok", "Reported in the last 30 seconds"), "lost": ("error", "No report for more than 30 seconds: stopped, restarting, or cannot reach the controller")} %}
 <article id="processes" hx-get="administration/processes?polling=1" hx-trigger="every 5s [document.visibilityState=='visible']" hx-swap="outerHTML">
   <header>{{ icon("server") }}Roles and pods</header>
   <div class="role-tiles">
     {% for r in roles_status %}
     <div class="role-tile role-{{ r.level }}" title="{{ r.role }}: {{ r.summary }}">
-      <span class="role-icon">{{ icon(role_icons[r.role]) }}</span>
+      <span class="role-icon">{{ icon(role_icons.get(r.role, "box")) }}</span>
       <span><strong>{{ r.role }}</strong><small>{{ r.summary }}</small></span>
       <span class="dot dot-{{ 'ok' if r.level == 'ok' else 'warn' if r.level == 'warn' else 'error' }}" role="img" aria-label="{{ r.level }}"></span>
     </div>
@@ -17,16 +18,19 @@
   <table class="striped compact processes">
     <thead><tr><th>Pod</th><th>Roles</th><th>State</th><th>Task</th><th class="hide-sm">Version</th><th class="hide-sm">Started</th><th class="hide-sm">Last report</th></tr></thead>
     <tbody>
-      {% for p in processes %}
+      {% for p in pods | default(processes) %}
       {% set dot, why = states.get(p.state, ("warn", p.state)) %}
+      {% set chart_pod = p.roles | length == 1 and p.roles[0] not in role_icons_kt %}
+      {% if chart_pod %}{% set dot = "ok" if p.state == "ok" else "error" %}{% set why = "Pod of the chart, from the Kubernetes API: " ~ ("ready" if p.state == "ok" else p.state) %}{% endif %}
+      {% if p.roles == ["krr"] and p.state == "lost" %}{% set dot, why = "error", "krr pod of the chart: does not answer its health check (" ~ p.task ~ ")" %}{% endif %}
       <tr class="process-{{ p.state }}">
         <td><code>{{ p.name }}</code></td>
-        <td>{% for role in p.roles %}<span class="role-chip">{{ icon(role_icons[role]) }}{{ role }}</span>{% endfor %}</td>
-        <td><span class="process-state" title="{{ why }}"><span class="dot dot-{{ dot }}"></span>{{ p.state }}</span></td>
+        <td>{% for role in p.roles %}<span class="role-chip">{{ icon(role_icons.get(role, "box")) }}{{ role }}</span>{% endfor %}</td>
+        <td><span class="process-state" title="{{ why }}"><span class="dot dot-{{ dot }}"></span>{{ p.state }}</span>{% if restarts and restarts.get(p.name) %} <small class="muted-text" title="Restarts of its containers">{{ restarts[p.name] }} restart{{ "s" if restarts[p.name] > 1 }}</small>{% endif %}</td>
         <td>{% if p.task %}<small class="process-task"><span aria-busy="true">{{ p.task }}</span>{% if p.task_since %} <time datetime="{{ p.task_since.isoformat() }}" class="ago muted-text">{{ p.task_since.strftime("%H:%M:%S") }}</time>{% endif %}</small>{% else %}<small class="muted-text">—</small>{% endif %}</td>
         <td class="hide-sm"><small>{{ p.version }}</small></td>
         <td class="hide-sm">{% if p.started_at %}<small><time datetime="{{ p.started_at.isoformat() }}" class="ago">{{ p.started_at.strftime("%Y-%m-%d %H:%M UTC") }}</time></small>{% endif %}</td>
-        <td class="hide-sm">{% if loop.first %}<small class="muted-text">now</small>{% elif p.seen_at %}<small><time datetime="{{ p.seen_at.isoformat() }}" class="ago">{{ p.seen_at.strftime("%H:%M:%S") }}</time></small>{% endif %}</td>
+        <td class="hide-sm">{% if loop.first or (chart_pod and p.state != "lost") %}<small class="muted-text">now</small>{% elif p.seen_at %}<small><time datetime="{{ p.seen_at.isoformat() }}" class="ago">{{ p.seen_at.strftime("%H:%M:%S") }}</time></small>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.gzip import GZipMiddleware
 
 from kube_tower import __version__
+from kube_tower.chartpods import chart_pods
 from kube_tower.clusterview import cluster_view, cluster_views, running_images
 from kube_tower.config import DEFAULT_CONFIG_PATH, ROLES, Settings
 from kube_tower.models import (
@@ -34,7 +35,8 @@ from kube_tower.models import (
     Status,
     Usage,
 )
-from kube_tower.processes import roles_status
+from kube_tower.processes import ProcessInfo, RoleStatus, roles_status
+from kube_tower.resources import krr_process
 from kube_tower.scanner import chart_key, image_key
 from kube_tower.versions import versioning
 from kube_tower.web.login import can, can_act, current_permissions, current_user, snapshot_of, visible_checks
@@ -69,6 +71,38 @@ class CachedStaticFiles(StaticFiles):
 
 
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+async def _processes_context(backend, settings: Settings) -> dict:
+    """The kube-tower processes and the state of their roles, then the other pods of the Helm release (Valkey,
+    Dex, Trivy server, krr), read from the Kubernetes API: they do not report themselves."""
+    processes = backend.processes()
+    statuses = roles_status(processes)
+    pods, restarts = list(processes), {}
+    krr = await krr_process(settings.resources)
+    release = await chart_pods()
+    if release is not None:
+        known = {p.name for p in processes}
+        restarts = {p.name: p.restarts for p in release if p.restarts}
+        others = [p for p in release if p.name not in known]
+        for p in others:
+            task = krr.task if krr and p.component == "krr" and krr.alive else ""
+            pods.append(ProcessInfo(p.name, [p.component], p.state, p.version, p.started_at, task=task))
+        for component in dict.fromkeys(p.component for p in others):
+            group = [p for p in others if p.component == component]
+            ready = sum(p.ready for p in group)
+            parts = [f"{ready} pod{'s' if ready != 1 else ''}" if ready else "no pod ready"]
+            if len(group) > ready:
+                parts.append(f"{len(group) - ready} not ready")
+            if component == "krr" and krr and krr.task:
+                parts.append(krr.task)
+            level = "error" if not ready else "warn" if len(group) > ready else "ok"
+            statuses.append(RoleStatus(component, level, ", ".join(parts), len(group)))
+    elif krr:  # pods not listed (outside a cluster, no permission): the krr pod from its health check
+        pods.append(krr)
+        summary = "1 pod" + (f", {krr.task}" if krr.task else "") if krr.alive else "unreachable"
+        statuses.append(RoleStatus("krr", "ok" if krr.alive else "error", summary, 1))
+    return {"processes": processes, "pods": pods, "restarts": restarts, "roles_status": statuses}
 
 
 def _camel(data):
@@ -974,8 +1008,7 @@ def mount(app: FastAPI) -> None:
             _, running = global_filters(request)
             context = {"summaries": {c.name: c for c in summarize(snapshot_of(request), running=running).clusters}}
         elif tab == "pods":
-            processes = backend.processes()
-            context = {"processes": processes, "roles_status": roles_status(processes)}
+            context = await _processes_context(backend, settings)
         elif tab == "settings":
             # Settings only hold references to secrets (paths, env var names), never their values.
             credentials, auth = backend.registry_credentials(settings)
@@ -993,10 +1026,8 @@ def mount(app: FastAPI) -> None:
 
     @app.get("/administration/processes", response_class=HTMLResponse, include_in_schema=False)
     async def administration_processes(request: Request):
-        processes = request.app.state.backend.processes()
-        return templates.TemplateResponse(
-            request, "_processes.html", {"processes": processes, "roles_status": roles_status(processes)}
-        )
+        context = await _processes_context(request.app.state.backend, request.app.state.settings)
+        return templates.TemplateResponse(request, "_processes.html", context)
 
     @app.get("/maintenance", include_in_schema=False)
     async def maintenance():

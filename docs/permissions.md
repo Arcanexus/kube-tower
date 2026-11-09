@@ -6,7 +6,8 @@ that widen them.
 
 ## On the cluster kube-tower runs in
 
-On the cluster it runs in, kube-tower gets a ClusterRole with `get`/`list` on pods, nodes,
+On the cluster it runs in, kube-tower gets a ClusterRole with `get`/`list` on pods (also read for the
+[Pods tab](ui-administration.md#pods): the pods of its own release), nodes,
 deployments, statefulsets, daemonsets, cronjobs, `applications.argoproj.io`, the Flux
 `helmreleases` and their `helmrepositories`, `gitrepositories` and `ocirepositories`, and
 the Trivy Operator reports (`vulnerabilityreports`, `configauditreports`, `exposedsecretreports`,

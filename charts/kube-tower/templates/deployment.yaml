@@ -102,6 +102,9 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # The pods of the release (Valkey, Dex, Trivy server, krr) on the Pods tab of the Administration page
+            - name: KUBE_TOWER_RELEASE
+              value: {{ $.Release.Name | quote }}
             {{- if and $distributed $controller }}
             - name: POD_NAME
               valueFrom:

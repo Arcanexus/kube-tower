@@ -25,12 +25,14 @@ import shutil
 import tempfile
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 import yaml
 
 from kube_tower.config import PrometheusSettings, ResourcesSettings
 from kube_tower.models import Fit, ResourceRecommendation, ResourceScan, ResourceValue
+from kube_tower.processes import ProcessInfo
 
 if TYPE_CHECKING:
     from kubernetes.client import Configuration
@@ -42,6 +44,7 @@ log = logging.getLogger(__name__)
 SA_TOKEN = "/var/run/secrets/kubernetes.io/serviceaccount/token"  # sent to the krr server, which checks it
 MESSAGE_LIMIT = 500
 _LOG_LINE = re.compile(r"^(?:\[[\d:]+\]\s*)?(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+(.*?)(?:\s+[\w.]+\.py:\d+)?$")
+NO_PROMETHEUS = "Wasn't able to connect to any Prometheus"
 _EXCEPTION = re.compile(r"^[A-Za-z_][\w.]*(Error|Exception|Exceeded|Timeout)\w*: \S")
 
 
@@ -136,10 +139,25 @@ def krr_args(settings: ResourcesSettings, cluster: str) -> list[str]:
 def error_message(stderr: str) -> str:
     """Why krr failed: its last error log line, with the exception that ended it (as krr-server.py does)."""
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    logged = [(i, m[2]) for i, line in enumerate(lines) if (m := _LOG_LINE.match(line)) and m[1] in ("ERROR", "CRITICAL")]
-    start, message = logged[-1] if logged else (0, "")
-    exceptions = [line for line in lines[start:] if _EXCEPTION.match(line)]
-    message = ": ".join(filter(None, [message, exceptions[-1] if exceptions else ""])) or (lines[-1] if lines else "krr failed")
+    parsed = [(i, m[1], m[2]) for i, line in enumerate(lines) if (m := _LOG_LINE.match(line))]
+    logged = [(i, text) for i, level, text in parsed if level in ("ERROR", "CRITICAL")]
+    # Prometheus not found: krr logs it, then fails on it (AttributeError ... get_cluster_summary); say why
+    missing = next((text for _, text in logged if text.startswith(NO_PROMETHEUS)), None)
+    if missing is not None:
+        # What failed while looking for it: the API refused (WARNING), or the Prometheus found did not answer (INFO)
+        starts = [i for i, _, _ in parsed] + [len(lines)]
+        tried = [
+            " ".join([text, *lines[i + 1 : starts[n + 1]]]).rstrip(")")  # with its "Caused by" line
+            for n, (i, level, text) in enumerate(parsed)
+            if (level == "WARNING" and text.startswith("Unable to automatically discover"))
+            or (level == "INFO" and text.startswith("Prometheus not found:"))
+        ]
+        message = f"{missing}{f' ({tried[-1]})' if tried else ''}: give its url in resources.prometheus"
+    else:
+        start, message = logged[-1] if logged else (0, "")
+        exceptions = [line for line in lines[start:] if _EXCEPTION.match(line)]
+        message = ": ".join(filter(None, [message, exceptions[-1] if exceptions else ""]))
+        message = message or (lines[-1] if lines else "krr failed")
     return message if len(message) <= MESSAGE_LIMIT else message[: MESSAGE_LIMIT - 1] + "…"
 
 
@@ -210,6 +228,37 @@ async def run_remote(settings: ResourcesSettings, kubeconfig: str, args: list[st
         message = data.get("error") if isinstance(data, dict) else None
         raise KrrError(f"krr server answered {response.status_code}: {message or response.text[:200] or response.reason_phrase}")
     return data["result"]
+
+
+async def krr_process(settings: ResourcesSettings) -> ProcessInfo | None:
+    """The krr pod of the chart (resources.serverUrl) as a row of the Administration page: it is not a kube-tower
+    process and does not report itself, so its /healthz is read. None without a krr pod."""
+    if not settings.enabled or not settings.server_url:
+        return None
+    now = datetime.now(UTC)
+    url = settings.server_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=3) as http:
+            response = await http.get(f"{url}/healthz", headers={"User-Agent": "kube-tower"})
+        response.raise_for_status()
+        data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+    except (httpx.HTTPError, ValueError) as exc:
+        log.debug("krr pod %s unreachable: %s", url, exc)
+        return ProcessInfo(urlparse(url).hostname or url, ["krr"], "lost", task=f"unreachable: {exc.__class__.__name__}")
+    try:
+        started = datetime.fromisoformat(str(data.get("started_at")).replace("Z", "+00:00"))
+    except ValueError:
+        started = None
+    running, slots = data.get("running") or 0, data.get("concurrency") or 0
+    return ProcessInfo(
+        data.get("pod") or urlparse(url).hostname or url,
+        ["krr"],
+        "ok",
+        version=str(data.get("version") or ""),
+        started_at=started,
+        seen_at=now,
+        task=f"{running}/{slots} krr run(s)" if running else "",
+    )
 
 
 # What krr answered

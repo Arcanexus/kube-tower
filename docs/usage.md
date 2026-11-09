@@ -41,6 +41,10 @@ The Images and Helm charts pages are lists that work the same way:
   to show everything.
 - **Search** box: words of the name, all or part.
 - **Sort**: click a column header, again to reverse. Status columns put what needs attention first.
+- **Column widths**: drag the right edge of a column header to resize the column, in every list and table
+  (detail panels and Administration included); the list scrolls sideways when wider than the page. The widths
+  are kept in this browser for each table; double-click the edge to get the automatic widths back. Not on
+  phones, where the lists are stacked.
 - **Scroll**: only the list scrolls, the headers stay. Rows load 30 at a time as you scroll.
 - **URL**: the search, chips and sort are kept in the URL, so a filtered view can be bookmarked or
   shared.
@@ -88,7 +92,8 @@ tab bar at the bottom, and each line of a list is shown as a block.
 
 ## Keyboard and links
 
-- Tab then Enter or Space sorts a column; the first Tab offers *Skip to content*.
+- Tab then Enter or Space sorts a column; on the edge of a header, the left and right arrows resize it
+  (Shift for bigger steps). The first Tab offers *Skip to content*.
 - The ⓘ icon after a page subtitle explains the page.
 - Moving between pages does not reload them: the back button works as usual.
 - The former pages still answer: `synthesis` opens the Overview, `vulnerabilities` the Images page,
