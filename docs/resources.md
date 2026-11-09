@@ -104,8 +104,8 @@ which runs krr against that cluster and answers its JSON result.
 When the controller starts from the inventory kept in Valkey (restart, upgrade, krr just enabled), it does
 not wait for the next scan: the reachable clusters without recommendations yet are analysed at once. The krr
 pod logs nothing until it is asked: with no scan running, `listening on :8080` is its only line.
-The Pods tab of the [Administration page](ui-administration.md#pods) shows the krr pod, its version and the
-krr runs in progress, read from its `/healthz`.
+The Pods tab of the [Administration page](ui-administration.md#pods) shows the krr pod with the other pods of the
+release, and the krr runs in progress, read from its `/healthz`.
 
 The krr pod only accepts the requests of the kube-tower ServiceAccount: it checks the token of the caller
 with a `TokenReview` (its ServiceAccount is bound to `system:auth-delegator`), and a NetworkPolicy lets only

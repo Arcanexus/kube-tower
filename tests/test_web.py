@@ -1265,7 +1265,7 @@ def test_web_layer_only_talks_to_the_backend():
     assert client.get("/administration").status_code == 200
 
 
-def test_roles_and_pods_on_the_administration_page():
+def test_roles_and_pods_on_the_administration_page(monkeypatch):
     from kube_tower.processes import ProcessInfo, roles_status
 
     client, _ = _client()
@@ -1301,6 +1301,36 @@ def test_roles_and_pods_on_the_administration_page():
         fragment = " ".join(client.get("/administration?tab=pods").text.split())
         assert "<strong>krr</strong><small>unreachable</small>" in fragment and "unreachable: ConnectError" in fragment
     resources.enabled = False
+
+    # every pod of the Helm release, from the Kubernetes API: Valkey, Dex, krr (with its runs)...
+    from kube_tower.chartpods import ChartPod
+
+    release = [
+        ChartPod("kube-tower-worker-1", "worker", True, "ok", 2),
+        ChartPod("kube-tower-dex-5d", "dex", True, "ok", 0, "v2.46.1"),
+        ChartPod("kube-tower-krr-7b", "krr", True, "ok", 0, "v1.31.3"),
+        ChartPod("kube-tower-valkey-0", "valkey", False, "crashloopbackoff", 5, "9.1.3"),
+    ]
+
+    async def pods():
+        return release
+
+    monkeypatch.setattr("kube_tower.web.ui.chart_pods", pods)
+    resources.enabled = True
+    with respx.mock:
+        respx.get("http://kube-tower-krr:8080/healthz").respond(json={"pod": "kube-tower-krr-7b", "running": 1, "concurrency": 2})
+        fragment = " ".join(client.get("/administration/processes").text.split())
+    resources.enabled = False
+    assert "<code>kube-tower-dex-5d</code>" in fragment and "<small>v2.46.1</small>" in fragment
+    assert fragment.count("<code>kube-tower-worker-1</code>") == 1  # a kube-tower pod: its own report
+    assert "2 restarts" in fragment and "5 restarts" in fragment
+    assert "<strong>dex</strong><small>1 pod</small>" in fragment
+    assert "<strong>krr</strong><small>1 pod, 1/2 krr run(s)</small>" in fragment
+    assert (
+        'class="role-tile role-error"' in fragment
+        and "<strong>valkey</strong><small>no pod ready, 1 not ready</small>" in fragment
+    )
+    assert "crashloopbackoff" in fragment and "1/2 krr run(s)" in fragment
 
     now = datetime.now(UTC)
     statuses = roles_status(

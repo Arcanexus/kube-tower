@@ -27,9 +27,7 @@ All notable changes to this project are documented here. The format follows
   Services proxy to reach Prometheus) and a NetworkPolicy for the krr pod. A controller that starts from
   the inventory kept in Valkey (krr just enabled, restart) analyses at once the clusters without
   recommendations yet, instead of waiting for the next scan. When krr finds no Prometheus, the Resources page says
-  why (the address it tried and the error) instead of krr's `AttributeError ... get_cluster_summary`. The
-  Pods tab of the Administration page shows the krr pod (its version, start and runs in progress) from its
-  health check.
+  why (the address it tried and the error) instead of krr's `AttributeError ... get_cluster_summary`.
 
 - **Deprecated APIs** on the Clusters page (see [Clusters page](docs/ui-clusters.md#deprecated-apis)):
   the API versions clients still request that a coming Kubernetes release removes, read from the
@@ -42,6 +40,12 @@ All notable changes to this project are documented here. The format follows
   for `-rc.N`, with the notes of its CHANGELOG section and the image and chart to install. The tag must
   match the versions of `pyproject.toml` and `Chart.yaml`, else the release and the chart publication
   fail (see [releasing](docs/development.md#releasing)).
+
+- **Every pod of the release on the Pods tab** of the Administration page: Valkey, Dex, the Trivy server and
+  krr do not report themselves like the kube-tower pods, so they are read from the Kubernetes API (pods
+  labelled with the release in its namespace, `KUBE_TOWER_RELEASE` set by the chart; kube-tower could already
+  list the pods). One tile per component, their state (ready, or `pending`, `crashloopbackoff`...), image tag,
+  start and restarts; the krr runs in progress from its health check.
 
 ### Changed
 
