@@ -97,9 +97,20 @@ the output file, the other options are given as they are with `args`.
 
 At each full scan, once the versions are checked, the controller asks krr for the recommendations of
 every reachable cluster whose last ones are older than `interval` (or failed), two clusters at a time, at
-the same time as the vulnerability scans. A worker builds a kubeconfig of the cluster (its address, CA,
-and the token or certificate kube-tower uses for it) and sends it, with the krr options, to the krr pod,
-which runs krr against that cluster and answers its JSON result.
+the same time as the vulnerability scans. A worker builds a kubeconfig of the cluster and sends it, with the krr options, to the krr pod,
+which runs krr against that cluster and answers its JSON result. The kubeconfig connects the way kube-tower
+does: its address, CA, TLS server name, `proxy-url`, and its token, user and password, or client
+certificate. This holds for every kind of [cluster](clusters.md):
+
+| Cluster | What krr gets |
+| --- | --- |
+| `in-cluster` | the token of the kube-tower ServiceAccount, read again before each run, and the CA of the pod |
+| ArgoCD layout (`server` and `config`) | the `bearerToken`, or the `username` and `password`, or the client certificate, and `tlsClientConfig` |
+| `kubeconfig` key with a token, a user and password, or a certificate | the same data |
+| `kubeconfig` key with an exec plugin (EKS, GKE, AKS...) | the token or certificate the plugin gives kube-tower before the run: krr runs no plugin |
+
+A proxy set by the environment of the kube-tower pods (`HTTPS_PROXY`) is not written: the krr pod has its own
+environment.
 
 When the controller starts from the inventory kept in Valkey (restart, upgrade, krr just enabled), it does
 not wait for the next scan: the reachable clusters without recommendations yet are analysed at once. The krr
@@ -143,6 +154,7 @@ The last run of each cluster is on top of the Resources page, with its error. Th
 | *not enough data* on every container | less than 3 hours of history, or the cAdvisor metrics are missing |
 | `NoPrometheusPods` warning | the kube-state-metrics metrics are missing: krr cannot link the pods to their workload |
 | `krr server ... unreachable` | the krr pod did not answer for about 3 minutes (kube-tower tries again while it starts): check `kubectl get pods -l app.kubernetes.io/name=<release>-krr` and the NetworkPolicy |
+| `Unable to automatically discover a Prometheus in the cluster ((401) Reason: Unauthorized ...` | the API server refused the credentials of the kubeconfig. The 1.3.0 release candidates sent no token for `in-cluster` and the clusters read from a kubeconfig: upgrade. Otherwise check that the cluster is reachable from the Clusters page |
 | `krr server answered 401` / `403` | the token of kube-tower was refused: the krr pod only accepts the ServiceAccount of the release |
 | `krr not found` | `resources.enabled` without the krr pod: set `krr.enabled` in the chart |
 

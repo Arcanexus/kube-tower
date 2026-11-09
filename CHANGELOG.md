@@ -69,7 +69,8 @@ All notable changes to this project are documented here. The format follows
 
 - krr reached the local cluster (`in-cluster`) and the clusters read from a kubeconfig without a token:
   the kubernetes client 37 keeps it under another key. The API server answered 401, so krr found no
-  Prometheus.
+  Prometheus. The kubeconfig given to krr now also carries the `proxy-url` of a cluster, and a test checks
+  that it connects like kube-tower for every kind of cluster (see [how it runs](docs/resources.md#how-it-runs)).
 
 ## [1.2.0] - 2026-11-06
 
