@@ -174,6 +174,23 @@ def test_error_message_of_krr():
     assert _server().error_message((DATA / "krr-stderr.txt").read_text()) == message
 
 
+def test_error_message_when_krr_finds_no_prometheus():
+    """krr logs that it found no Prometheus, then fails on it with an AttributeError: the message says why."""
+    stderr = (DATA / "krr-stderr-no-prometheus.txt").read_text()
+    message = error_message(stderr)
+    assert message == (
+        "Wasn't able to connect to any Prometheus service in in-cluster cluster (Prometheus not found: Couldn't "
+        "connect to Prometheus found under https://10.43.0.1:443/api/v1/namespaces/monitoring/services/prometheus:9090"
+        "/proxy Caused by HTTPError: 503 Server Error: Service Unavailable): give its url in resources.prometheus"
+    )
+    assert _server().error_message(stderr) == message
+    # without the lines of the discovery
+    stderr = "\n".join(line for line in stderr.splitlines() if "WARNING" not in line and "not found:" not in line)
+    assert error_message(stderr) == (
+        "Wasn't able to connect to any Prometheus service in in-cluster cluster: give its url in resources.prometheus"
+    )
+
+
 FAKE_KRR = """#!{python}
 import json, sys
 args = sys.argv[1:]
@@ -469,7 +486,9 @@ def test_server_runs_krr(krr_server):
     assert _post(f"{url}/run", b"[1]")[0] == 400
     assert _post(f"{url}/other", {})[0] == 404
     with urllib.request.urlopen(f"{url}/healthz", timeout=5) as response:
-        assert response.read() == b"ok"
+        health = json.loads(response.read())
+    assert health["status"] == "ok" and health["running"] == 0 and health["concurrency"] >= 1
+    assert health["started_at"].endswith("Z")
     with pytest.raises(urllib.error.HTTPError):
         urllib.request.urlopen(f"{url}/nothing", timeout=5)
 
@@ -527,3 +546,32 @@ async def test_controller_asks_krr_at_start_for_the_clusters_of_a_stored_snapsho
     with pytest.raises(RuntimeError, match="stop"):
         await scanner.run_forever()
     assert asked == []
+
+
+@respx.mock
+async def test_krr_process_from_the_health_of_the_krr_pod():
+    from kube_tower.resources import krr_process
+
+    settings = ResourcesSettings(enabled=True, server_url="http://kube-tower-krr:8080/")
+    route = respx.get("http://kube-tower-krr:8080/healthz")
+    route.respond(
+        json={
+            "status": "ok",
+            "pod": "kube-tower-krr-6d9f",
+            "version": "v1.31.3",
+            "started_at": "2026-11-09T10:12:00Z",
+            "running": 1,
+            "concurrency": 2,
+        }
+    )
+    p = await krr_process(settings)
+    assert (p.name, p.roles, p.state, p.version, p.task) == ("kube-tower-krr-6d9f", ["krr"], "ok", "v1.31.3", "1/2 krr run(s)")
+    assert p.started_at == datetime(2026, 11, 9, 10, 12, tzinfo=UTC) and p.seen_at is not None
+    route.respond(text="ok")  # a krr pod of 1.3.0-rc.1 answers only "ok"
+    p = await krr_process(settings)
+    assert (p.name, p.state, p.task, p.started_at) == ("kube-tower-krr", "ok", "", None)
+    route.side_effect = httpx.ConnectError("refused")
+    p = await krr_process(settings)
+    assert (p.name, p.state, p.task) == ("kube-tower-krr", "lost", "unreachable: ConnectError")
+    assert await krr_process(ResourcesSettings(enabled=True)) is None  # krr command, no pod
+    assert await krr_process(ResourcesSettings(server_url="http://kube-tower-krr:8080")) is None  # off

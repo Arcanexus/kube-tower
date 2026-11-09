@@ -65,6 +65,9 @@ FORBIDDEN = re.compile(
 MESSAGE_LIMIT = 500
 
 _slots = threading.BoundedSemaphore(CONCURRENCY)
+_running = 0  # krr runs in progress, shown by the Administration page of kube-tower (GET /healthz)
+_running_lock = threading.Lock()
+STARTED_AT = time.time()
 _reviewed: dict[str, float] = {}
 _reviewed_lock = threading.Lock()
 
@@ -143,16 +146,32 @@ def command(strategy: str, args: list, kubeconfig: str, output: str) -> list[str
 
 
 LOG_LINE = re.compile(r"^(?:\[[\d:]+\]\s*)?(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+(.*?)(?:\s+[\w.]+\.py:\d+)?$")
+NO_PROMETHEUS = "Wasn't able to connect to any Prometheus"
 EXCEPTION = re.compile(r"^[A-Za-z_][\w.]*(Error|Exception|Exceeded|Timeout)\w*: \S")
 
 
 def error_message(stderr: str) -> str:
     """Why krr failed: its last error log line, with the exception that ended it (the last line of the traceback)."""
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    logged = [(i, m[2]) for i, line in enumerate(lines) if (m := LOG_LINE.match(line)) and m[1] in ("ERROR", "CRITICAL")]
-    start, message = logged[-1] if logged else (0, "")
-    exceptions = [line for line in lines[start:] if EXCEPTION.match(line)]
-    message = ": ".join(filter(None, [message, exceptions[-1] if exceptions else ""])) or (lines[-1] if lines else "krr failed")
+    parsed = [(i, m[1], m[2]) for i, line in enumerate(lines) if (m := LOG_LINE.match(line))]
+    logged = [(i, text) for i, level, text in parsed if level in ("ERROR", "CRITICAL")]
+    # Prometheus not found: krr logs it, then fails on it (AttributeError ... get_cluster_summary); say why
+    missing = next((text for _, text in logged if text.startswith(NO_PROMETHEUS)), None)
+    if missing is not None:
+        # What failed while looking for it: the API refused (WARNING), or the Prometheus found did not answer (INFO)
+        starts = [i for i, _, _ in parsed] + [len(lines)]
+        tried = [
+            " ".join([text, *lines[i + 1 : starts[n + 1]]]).rstrip(")")  # with its "Caused by" line
+            for n, (i, level, text) in enumerate(parsed)
+            if (level == "WARNING" and text.startswith("Unable to automatically discover"))
+            or (level == "INFO" and text.startswith("Prometheus not found:"))
+        ]
+        message = f"{missing}{f' ({tried[-1]})' if tried else ''}: give its url in resources.prometheus"
+    else:
+        start, message = logged[-1] if logged else (0, "")
+        exceptions = [line for line in lines[start:] if EXCEPTION.match(line)]
+        message = ": ".join(filter(None, [message, exceptions[-1] if exceptions else ""]))
+        message = message or (lines[-1] if lines else "krr failed")
     return message if len(message) <= MESSAGE_LIMIT else message[: MESSAGE_LIMIT - 1] + "…"
 
 
@@ -174,12 +193,17 @@ def run(payload: dict) -> dict:
         argv = command(payload.get("strategy", "simple"), payload.get("args") or [], config, output)
         if not _slots.acquire(timeout=timeout):
             raise Refused(503, f"{CONCURRENCY} krr run(s) already in progress, try again later")
+        global _running
+        with _running_lock:
+            _running += 1
         try:
             started = time.monotonic()
             done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=workdir, check=False)
         except subprocess.TimeoutExpired as exc:
             raise Refused(504, f"krr did not finish within {timeout}s") from exc
         finally:
+            with _running_lock:
+                _running -= 1
             _slots.release()
         if done.returncode != 0 or not os.path.exists(output):
             raise Refused(502, error_message(done.stderr))
@@ -190,6 +214,17 @@ def run(payload: dict) -> dict:
         return {"result": result}
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def health() -> dict:
+    return {
+        "status": "ok",
+        "pod": os.environ.get("POD_NAME", ""),
+        "version": os.environ.get("KRR_VERSION", ""),
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(STARTED_AT)),
+        "running": _running,
+        "concurrency": CONCURRENCY,
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -205,7 +240,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server API
         if self.path == "/healthz":
-            self._answer(200, "ok")
+            # No secret here: the probes and the Administration page of kube-tower read it
+            self._answer(200, health())
         else:
             self._answer(404, {"error": "not found"})
 

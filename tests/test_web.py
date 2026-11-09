@@ -4,6 +4,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
+import respx
 from fastapi.testclient import TestClient
 
 from kube_tower import __version__
@@ -1285,6 +1287,20 @@ def test_roles_and_pods_on_the_administration_page():
     assert '<span aria-busy="true">check-images</span>' in fragment and "<small>1.0.0</small>" in fragment
     assert fragment.count("dot dot-standby") == 1
     assert 'class="role-tile role-error"' in fragment and "no pod" in fragment  # no trivy pod
+
+    # the krr pod of the chart, read from its health check
+    resources = client.app.state.settings.resources
+    resources.enabled, resources.server_url = True, "http://kube-tower-krr:8080"
+    with respx.mock:
+        route = respx.get("http://kube-tower-krr:8080/healthz")
+        route.respond(json={"status": "ok", "pod": "kube-tower-krr-1", "version": "v1.31.3", "running": 0, "concurrency": 2})
+        fragment = " ".join(client.get("/administration/processes").text.split())
+        assert "<code>kube-tower-krr-1</code>" in fragment and "<small>v1.31.3</small>" in fragment
+        assert "<strong>krr</strong><small>1 pod</small>" in fragment
+        route.side_effect = httpx.ConnectError("refused")
+        fragment = " ".join(client.get("/administration?tab=pods").text.split())
+        assert "<strong>krr</strong><small>unreachable</small>" in fragment and "unreachable: ConnectError" in fragment
+    resources.enabled = False
 
     now = datetime.now(UTC)
     statuses = roles_status(

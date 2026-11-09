@@ -26,7 +26,10 @@ All notable changes to this project are documented here. The format follows
   `config.resources.interval` (24h). The chart adds the read rules krr needs (ReplicaSets, Jobs, HPAs,
   Services proxy to reach Prometheus) and a NetworkPolicy for the krr pod. A controller that starts from
   the inventory kept in Valkey (krr just enabled, restart) analyses at once the clusters without
-  recommendations yet, instead of waiting for the next scan.
+  recommendations yet, instead of waiting for the next scan. When krr finds no Prometheus, the Resources page says
+  why (the address it tried and the error) instead of krr's `AttributeError ... get_cluster_summary`. The
+  Pods tab of the Administration page shows the krr pod (its version, start and runs in progress) from its
+  health check.
 
 - **Deprecated APIs** on the Clusters page (see [Clusters page](docs/ui-clusters.md#deprecated-apis)):
   the API versions clients still request that a coming Kubernetes release removes, read from the

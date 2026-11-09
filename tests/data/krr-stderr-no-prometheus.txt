@@ -1,0 +1,15 @@
+[10:19:01] INFO     Using clusters: ['in-cluster']                                                  runner.py:432
+           INFO     No Prometheus URL is specified, trying to auto-detect a metrics service          loader.py:59
+           INFO     Trying to connect to Victoria Metrics for in-cluster cluster                    prometheus_metrics_service.py:71
+           INFO     Victoria Metrics not found: Victoria Metrics instance could not be found while scanning in in-cluster cluster.    loader.py:73
+           INFO     Trying to connect to Prometheus for in-cluster cluster                          prometheus_metrics_service.py:71
+           WARNING  Unable to automatically discover a Thanos in the cluster ((403) Reason: Forbidden). Try specifying how to connect to Prometheus via cli options    loader.py:75
+           INFO     Using Prometheus at https://10.43.0.1:443/api/v1/namespaces/monitoring/services/prometheus:9090/proxy for cluster in-cluster    prometheus_metrics_service.py:101
+           INFO     Prometheus not found: Couldn't connect to Prometheus found under https://10.43.0.1:443/api/v1/namespaces/monitoring/services/prometheus:9090/proxy    loader.py:73
+                    Caused by HTTPError: 503 Server Error: Service Unavailable)
+[10:19:05] ERROR    Wasn't able to connect to any Prometheus service in in-cluster cluster           runner.py:70
+                    Try using port-forwarding and/or setting the url manually (using the -p flag.).
+                    For more information, see 'Giving the Explicit Prometheus URL' at https://github.com/robusta-dev/krr?tab=readme-ov-file#usage
+           ERROR    An unexpected error occurred                                                    runner.py:503
+                    Traceback (most recent call last):
+                    AttributeError: 'NoneType' object has no attribute 'get_cluster_summary'

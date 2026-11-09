@@ -76,6 +76,12 @@ spec:
               value: {{ .Values.krr.concurrency | quote }}
             - name: KRR_ALLOWED_USERS
               value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace (include "kube-tower.serviceAccountName" .) | quote }}
+            - name: KRR_VERSION
+              value: {{ .Values.krr.image.tag | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: HOME
               value: /tmp
             - name: PYTHONDONTWRITEBYTECODE

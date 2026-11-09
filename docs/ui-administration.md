@@ -32,11 +32,14 @@ the list of that cluster. See [clusters](clusters.md). Their nodes are on the [C
 
 ![Pods](images/pods.png)
 
-- One tile per role (**ui**, **controller**, **worker**, **trivy**): green when its pods run, orange when
+- One tile per role (**ui**, **controller**, **worker**, **trivy**, and **krr** when enabled): green when its pods run, orange when
   some are lost, red when none runs it.
 - Then every pod: roles, state (**active** / **standby** controller, **ok**, **lost** after 30 s without
   report), current task, version, start time, last report. Refreshed every 5 seconds.
 - In single mode, the only line is the one pod. See [scaling](scaling.md).
+- With [krr](resources.md) (`krr.enabled`), a **krr** tile and a line for the krr pod of the chart. It is not
+  a kube-tower process: its health check is read every 5 seconds, with its krr version, start time and the
+  krr runs in progress; red **unreachable** when it does not answer.
 
 ## Credentials and settings
 
