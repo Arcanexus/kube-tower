@@ -814,7 +814,7 @@ def mount(app: FastAPI) -> None:
         snapshot = snapshot_of(request)
         statuses = [c for c in snapshot.clusters if not cluster or c.name == cluster]
         warn_days = request.app.state.settings.kubernetes_versions.warn_days
-        views = cluster_views(statuses, snapshot.nodes, snapshot.images, snapshot.platform, warn_days)
+        views = cluster_views(statuses, snapshot.nodes, snapshot.images, snapshot.platform, warn_days, snapshot.deprecated_apis)
         return render(
             request,
             "clusters",

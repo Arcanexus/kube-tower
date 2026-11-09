@@ -152,6 +152,7 @@ async def test_queue_runner(monkeypatch, caplog, bus):
             "operator_reports": True,
             "security": True,
             "image_name": None,
+            "deprecated_apis": True,
         }
         await runner.check_tasks()
         assert ("pod-dead", "collect") in seen

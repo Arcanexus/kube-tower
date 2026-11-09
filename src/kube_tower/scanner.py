@@ -342,6 +342,7 @@ class Scanner:
             snap.security += result.security
             snap.compliance += result.compliance
             snap.nodes += result.nodes
+            snap.deprecated_apis += result.deprecated_apis
             for found in result.operator_reports:
                 operator_reports.setdefault(found.image, []).append(found.report)
             for host, pair in result.pull_secrets.items():
@@ -612,7 +613,10 @@ class Scanner:
         if not self.settings.images.enabled or not self._clusters:
             return []
         clusters = sorted(self._clusters)
-        tasks = (CollectTask(c, charts=False, operator_reports=False, security=False, image_name=name) for c in clusters)
+        tasks = (
+            CollectTask(c, charts=False, operator_reports=False, security=False, image_name=name, deprecated_apis=False)
+            for c in clusters
+        )
         results = await asyncio.gather(*(self.runner.run(t) for t in tasks), return_exceptions=True)
         collected: list[list[ImageReport]] = []
         for cluster, result in zip(clusters, results, strict=True):
@@ -646,7 +650,7 @@ class Scanner:
         todo = reports
         if settings.trivy_operator:
             clusters = sorted({c for r in reports for c in r.clusters} & set(self._clusters))
-            tasks = (CollectTask(c, images=False, charts=False, security=False) for c in clusters)
+            tasks = (CollectTask(c, images=False, charts=False, security=False, deprecated_apis=False) for c in clusters)
             results = await asyncio.gather(*(self.runner.run(t) for t in tasks), return_exceptions=True)
             found: dict[str, list[VulnerabilityReport]] = {}
             for cluster, result in zip(clusters, results, strict=True):

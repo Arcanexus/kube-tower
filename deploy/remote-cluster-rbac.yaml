@@ -47,6 +47,9 @@ rules:
   - apiGroups: ["source.toolkit.fluxcd.io"]
     resources: ["helmrepositories", "gitrepositories", "ocirepositories"]
     verbs: ["get", "list"]
+  # Deprecated APIs still requested (kubernetesVersions.deprecatedApis): the metrics of the API server
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
   # Trivy Operator reports, when it is installed (vulnerabilities of the images, and the Security page)
   - apiGroups: ["aquasecurity.github.io"]
     resources:

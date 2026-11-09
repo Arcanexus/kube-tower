@@ -22,6 +22,7 @@ import httpx
 
 from kube_tower.checkers import ChartChecker, ImageChecker
 from kube_tower.clusters import Cluster
+from kube_tower.collectors.deprecated import collect_deprecated_apis
 from kube_tower.collectors.helm import collect_charts
 from kube_tower.collectors.images import ImageInventory
 from kube_tower.collectors.nodes import collect_nodes
@@ -210,6 +211,9 @@ class Worker:
                     found.reports = [r for r in found.reports if r.kind != SecurityKind.EXPOSED_SECRET]
                 result.security, result.compliance, result.trivy_operator = found.reports, found.compliance, found.installed
                 result.errors += found.errors
+            if settings.kubernetes_versions.deprecated_apis and task.deprecated_apis:
+                result.deprecated_apis, api_errors = collect_deprecated_apis(cluster)
+                result.errors += api_errors
             result.images = [r for r in inventory.reports.values() if task.image_name in (None, r.image.name)]
             result.pull_secrets = inventory.pull_secrets
             return result

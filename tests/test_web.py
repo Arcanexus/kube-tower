@@ -14,6 +14,7 @@ from kube_tower.models import (
     ChartDependency,
     ChartReport,
     ClusterStatus,
+    DeprecatedApi,
     ImageRef,
     ImageReport,
     NodeInfo,
@@ -1195,7 +1196,18 @@ def test_clusters_page():
     metrics = client.get("/metrics").text
     assert 'kube_tower_kubernetes_end_of_life_days{cluster="c1",cycle="1.30",version="v1.30.0"}' in metrics
     assert 'kube_tower_platform_vulnerabilities{component="kubernetes",severity="high",version="1.30.0"} 1.0' in metrics
-    scanner.snapshot.nodes, scanner.snapshot.platform = scanner.snapshot.nodes[:2], []
+    scanner.snapshot.deprecated_apis = [
+        DeprecatedApi("c1", "flowcontrol.apiserver.k8s.io", "v1beta3", "flowschemas", "", "1.32"),
+        DeprecatedApi("c1", "", "v1", "componentstatuses"),
+    ]
+    page = " ".join(client.get("/clusters").text.split())
+    assert "flowcontrol.apiserver.k8s.io/v1beta3 flowschemas, removed in Kubernetes 1.32 (a later release)" in page
+    assert "v1 componentstatuses (no removal planned)" in page
+    assert (
+        'kube_tower_deprecated_api_requested{cluster="c1",group="flowcontrol.apiserver.k8s.io",removed_release="1.32",'
+        'resource="flowschemas",subresource="",version="v1beta3"} 1.0'
+    ) in client.get("/metrics").text
+    scanner.snapshot.nodes, scanner.snapshot.platform, scanner.snapshot.deprecated_apis = scanner.snapshot.nodes[:2], [], []
     page = " ".join(client.get("/clusters").text.split())
     assert "healthy" in page and "to check</summary>" not in page
 

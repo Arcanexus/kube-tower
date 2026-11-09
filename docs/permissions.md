@@ -11,7 +11,9 @@ deployments, statefulsets, daemonsets, cronjobs, `applications.argoproj.io`, the
 `helmreleases` and their `helmrepositories`, `gitrepositories` and `ocirepositories`, and
 the Trivy Operator reports (`vulnerabilityreports`, `configauditreports`, `exposedsecretreports`,
 `rbacassessmentreports`, `infraassessmentreports`, their cluster-scoped variants and
-`clustercompliancereports`, all `aquasecurity.github.io`), plus `get` on the cluster Secrets
+`clustercompliancereports`, all `aquasecurity.github.io`), `get` on the `/metrics` URL of the API
+server (the deprecated APIs still requested, see [Clusters page](ui-clusters.md#deprecated-apis)),
+plus `get` on the cluster Secrets
 of its namespace named in `clusters[]` and `config.clusters.secretNames`, and on nothing else.
 Install it in a namespace of its own.
 
@@ -24,7 +26,8 @@ With `krr.enabled`, the ClusterRole also reads what krr needs, see
 
 [`deploy/remote-cluster-rbac.yaml`](../deploy/remote-cluster-rbac.yaml) creates the `kube-tower-reader`
 ServiceAccount, its token Secret and a ClusterRole with the same read-only rules (pods, nodes,
-workloads, ArgoCD Applications, Flux HelmReleases, Trivy Operator reports). See [clusters](clusters.md) for the cluster
+workloads, ArgoCD Applications, Flux HelmReleases, Trivy Operator reports, the `/metrics` URL of the
+API server). See [clusters](clusters.md) for the cluster
 Secret built from its token. With an exec plugin (EKS, GKE, AKS), the cloud identity must be bound to
 the same ClusterRole, see [managed clusters](clusters.md#managed-clusters-eks-gke-aks-exec-plugins).
 

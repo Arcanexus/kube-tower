@@ -11,6 +11,12 @@ def no_security_reports(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_deprecated_apis(monkeypatch):
+    """The fake clusters of the tests have no API server metrics (test_deprecated_apis.py reads them)."""
+    monkeypatch.setattr(worker, "collect_deprecated_apis", lambda cluster: ([], []))
+
+
+@pytest.fixture(autouse=True)
 def no_platform_lookup(monkeypatch):
     """No call to endoflife.date or OSV from the tests (test_lifecycle.py tests the lookup itself)."""
     from kube_tower import scanner

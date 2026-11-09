@@ -46,4 +46,5 @@ def scope_snapshot(snapshot: Snapshot, patterns: tuple[str, ...] | None) -> Snap
         nodes=[n for n in snapshot.nodes if visible(n.cluster)],
         resources=[r for r in snapshot.resources if visible(r.cluster)],
         resource_scans=[s for s in snapshot.resource_scans if visible(s.cluster)],
+        deprecated_apis=[a for a in snapshot.deprecated_apis if visible(a.cluster)],
     )

@@ -23,9 +23,10 @@ Under them:
 
 - **Things to check** (open, errors first): a Kubernetes release at or near its end of life, kubelets behind or newer
   than the API server, nodes not ready, cordoned or under pressure, kubelet versions mixed across the
-  nodes, a newer patch of the release.
-- **Notes** (folded): a newer patch of the release, and the OS images, container runtimes and kernels
-  that are not the same on every node.
+  nodes, a newer patch of the release, [deprecated APIs](#deprecated-apis) still requested that a
+  coming release removes.
+- **Notes** (folded): a newer patch of the release, deprecated APIs still requested with no removal
+  planned, and the OS images, container runtimes and kernels that are not the same on every node.
 
 ## One card per node
 
@@ -67,11 +68,33 @@ What turns a node or a cluster orange or red:
 | warning | The nodes of the cluster run different kubelet versions (often an upgrade left half done) |
 | error | The release cycle of the API server (or of a kubelet) is past its end of life: no more security fixes |
 | warning | It reaches its end of life within `kubernetesVersions.warnDays` days (90) |
+| error | A deprecated API still requested is removed by the next minor release: the upgrade breaks its clients |
+| warning | A deprecated API still requested is removed by a later release |
+| info | A deprecated API still requested has no removal planned |
 | info | The nodes run different OS images, container runtimes or kernels |
 | info | A newer patch of the release of the API server is out |
 
 Distribution suffixes are ignored to compare versions: `v1.30.4-eks-a737599`, `v1.31.2+k3s1`,
 `v1.29.8-gke.1211000`.
+
+## Deprecated APIs
+
+Before an upgrade, the API versions that the next release no longer serves must be gone from every
+manifest, chart and controller. The API server knows who still asks for them: its metric
+`apiserver_requested_deprecated_apis` lists each deprecated API requested since it started, with the
+release that removes it. kube-tower reads it at each scan (`get` on the `/metrics` URL of the API server)
+and lists each API in the findings of the cluster:
+
+> Deprecated API still requested: flowcontrol.apiserver.k8s.io/v1beta3 flowschemas, removed in Kubernetes
+> 1.32 (the next upgrade)
+
+The metric does not say which client made the request: look for it in the audit log of the API server,
+or with `kubectl get --raw /metrics | grep apiserver_requested_deprecated_apis` after a restart. The list
+starts again empty when the API server restarts, and on a managed cluster with several API servers each
+keeps its own: a client that stopped asking may still show until then. `kubernetesVersions.deprecatedApis:
+false` turns it off; without the permission, the scan reports the error and carries on.
+
+![Deprecated APIs in the findings of a cluster](images/clusters-deprecated-apis.png)
 
 ## Detail panel
 
@@ -87,7 +110,9 @@ their status and CVEs; click one for its own details.
 ## Where the data comes from
 
 kube-tower reads the nodes (`list nodes`, already needed for the images they cache) at each scan, even
-with `images.enabled: false`. Nothing else is asked from the clusters: no new permission. The CPU and
+with `images.enabled: false`, and the metrics of the API server for the [deprecated APIs](#deprecated-apis)
+(`get` on the `/metrics` non-resource URL, in the ClusterRole of the chart and in
+`deploy/remote-cluster-rbac.yaml`). The CPU and
 memory block comes from the krr runs of the [Resources](resources.md) feature.
 
 The end of life of each Kubernetes release comes from [endoflife.date](https://endoflife.date/kubernetes),
@@ -99,4 +124,4 @@ false`, or point `endOfLifeUrl` and `osvUrl` to mirrors (see [configuration](con
 then shows *not looked up*, and the scan carries on.
 
 The same data is exported as metrics: `kube_tower_nodes`, `kube_tower_kubernetes_end_of_life_days`,
-`kube_tower_platform_vulnerabilities` (see [metrics](metrics.md)).
+`kube_tower_platform_vulnerabilities`, `kube_tower_deprecated_api_requested` (see [metrics](metrics.md)).
