@@ -733,6 +733,10 @@ def test_rescan_buttons_and_polling():
     assert "Check version" in redis and "Scan vulnerabilities" not in redis
     chart = client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
     assert 'hx-post="api/rescan/chart?cluster=c1&amp;namespace=argocd&amp;app=redis&amp;chart=redis"' in chart
+    # the rescan sits in the header, next to the full screen and close buttons; the subcharts come first
+    head = chart[chart.index('<div class="drawer-buttons">') : chart.index("drawer-full-toggle")]
+    assert "api/rescan/chart?" in head and "Check again" not in chart
+    assert chart.index("<h4>Subcharts</h4>") < chart.index("<h4>Chart</h4>") < chart.index("<h4>ArgoCD Application</h4>")
     # buttons are disabled while a full scan checks versions, not during its Trivy phase
     scanner.running = scanner.checking_versions = True
     assert "disabled" in client.get("/charts/detail?cluster=c1&namespace=argocd&app=redis&chart=redis").text
@@ -856,6 +860,8 @@ def test_images_search_by_cve():
     assert 'hx-get="images/detail?ref=docker.io/library/nginx%3A1.25&cve=2024-2"' in client.get("/images?q=2024-2").text
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25", "cve": "2024-2"}).text
     assert 'class="cve-match"' in detail and detail.index("CVE-2024-2") < detail.index("CVE-2024-1")
+    # the list of all vulnerabilities, folded by default, opens on a search
+    assert re.search(r'<details class="drawer-section" open>\s*<summary><h4>All vulnerabilities', detail)
     assert "1 matching <code>2024-2</code> (CVE-2024-2)" in detail
 
 
@@ -1063,8 +1069,18 @@ def test_images_show_current_and_latest_with_digests():
     assert '<code class="image-name" title="ghcr.io/org/app"><span class="registry">ghcr.io/</span>org/app</code>' in page
     detail = client.get("/images/detail?ref=docker.io/library/nginx:1.25").text
     assert 'class="drawer-summary"' in detail and detail.index("drawer-summary") < detail.index("<h4>Used by</h4>")
-    order = ["Used by", "Versions", "Vulnerabilities", "Digests", "Check again", "All vulnerabilities"]
-    assert [h.strip() for h in re.findall(r"<h4>([A-Za-z ]+)", detail)] == order
+    # two summary cards, then foldable sections: Used by, Vulnerabilities open; the rest folded
+    assert detail.count('class="detail-card"') == 2
+    sections = re.findall(r'<details class="drawer-section"( open)?>\s*<summary><h4>([A-Za-z ]+)', detail)
+    assert [(name.strip(), bool(opened)) for opened, name in sections] == [
+        ("Used by", True),
+        ("Versions and digests", False),
+        ("Vulnerabilities", True),
+        ("All vulnerabilities", False),
+    ]
+    # the rescans are in the header, next to the full screen and close buttons
+    head = detail[detail.index('<div class="drawer-buttons">') : detail.index("drawer-full-toggle")]
+    assert "api/rescan/image?ref=" in head and "Check again" not in detail
 
 
 def test_image_versions():

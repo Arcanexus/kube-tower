@@ -28,7 +28,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- Image details: the **Used by** section (where the image runs) comes first, before Versions.
+- Detail panels: the **rescan buttons** sit at the top, next to the full screen and close buttons.
+- Image details reorganised: two cards at the top (the version change, and the vulnerability counts),
+  then foldable sections: **Used by** (open), **Versions and digests** (folded), **Vulnerabilities**
+  (open) and **All vulnerabilities** (folded, open after a CVE search).
+- Chart details: the **Subcharts** tree comes first.
 - Chart images updated: Dex `v2.41.1` → `v2.46.1`, Trivy `0.75.0` → `0.76.2`, Valkey `8.1.1` → `9.1.3`.
   Valkey keeps nothing on disk (`--save ""`, no AOF): the new pod starts empty and the pods publish
   their state again, as after any restart.

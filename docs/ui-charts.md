@@ -41,8 +41,9 @@ with the reason (e.g. `bitwarden-sdk-server.enabled is false`):
 
 ## Detail panel
 
-The source, the ArgoCD Application, Flux HelmRelease or Helm release, links to the repository and Artifact Hub
-(for a Helm release, the repository found in `helm.repositories` or on Artifact Hub), and the subchart tree
-with the repository of each subchart.
+The **Check versions** [rescan](usage.md#rescan-one-image-or-chart) button sits at the top, next to the
+full screen and close buttons. Then the subchart tree with the repository of each subchart, the source
+with links to the repository and Artifact Hub (for a Helm release, the repository found in
+`helm.repositories` or on Artifact Hub), and the ArgoCD Application, Flux HelmRelease or Helm release.
 
 ![Chart details](images/chart-detail.png)

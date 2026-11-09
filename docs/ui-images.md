@@ -38,14 +38,17 @@ Also shown:
 
 ![Image details](images/image-detail.png)
 
-| Section | Content |
-| --- | --- |
-| Used by | Tree cluster › namespace › workload › pods, with nodes and containers; the nodes caching the image close each cluster |
-| Versions | Reference, versioning scheme, latest tag, upgrade target, **size**, links to the registry page |
-| Vulnerabilities | Counts by severity and with a fix, source (Trivy Operator or Trivy), scan date, scanned digest, OS |
-| Digests | Digests of the running pods, digest published for the same tag (different: the tag was pushed again), digest of the latest tag |
-| Check again | The [rescan](usage.md#rescan-one-image-or-chart) buttons |
-| All vulnerabilities | Each one with severity, score, package, installed and fixed version, linked to its advisory |
+The [rescan](usage.md#rescan-one-image-or-chart) buttons sit at the top, next to the full screen and
+close buttons. Below, two cards side by side: the **version** (status, current → latest) and the
+**vulnerabilities** (counts by severity, how many have a fix, an end of life OS). Then the sections, each
+folded or unfolded with a click on its title:
+
+| Section | Opened | Content |
+| --- | --- | --- |
+| Used by | yes | Tree cluster › namespace › workload › pods, with nodes and containers; the nodes caching the image close each cluster |
+| Versions and digests | no | Reference, versioning scheme, latest tag, upgrade target, **size**; digests of the running pods, digest published for the same tag (different: the tag was pushed again), digest of the latest tag; links to the registry page |
+| Vulnerabilities | yes | Source (Trivy Operator or Trivy), scan date, scanned digest, OS |
+| All vulnerabilities | no (yes after a CVE search) | Each one with severity, score, package, installed and fixed version, linked to its advisory |
 
 Notes:
 

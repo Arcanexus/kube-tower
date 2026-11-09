@@ -62,7 +62,8 @@ Click a line to open its details on the right:
 ### Rescan one image or chart
 
 No need to wait for the next scan after an upgrade: the detail panels check one item again, in the
-background.
+background. Their buttons sit at the top of the panel, next to the full screen and close buttons
+(hover one for what it checks).
 
 | Panel | Buttons |
 | --- | --- |
