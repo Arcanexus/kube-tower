@@ -40,7 +40,8 @@ Also shown:
 
 The [rescan](usage.md#rescan-one-image-or-chart) buttons sit at the top, next to the full screen and
 close buttons. Below, two cards side by side: the **version** (status, current → latest) and the
-**vulnerabilities** (counts by severity, how many have a fix, an end of life OS). Then the sections, each
+**vulnerabilities** (total, one tile per severity, a bar of how many have a fix, an end of life OS, and
+the source, date and OS of the scan). Then the sections, each
 folded or unfolded with a click on its title:
 
 | Section | Opened | Content |

@@ -45,17 +45,33 @@
     {% endif %}
   </section>
   <section class="detail-card" aria-label="Vulnerabilities">
-    <small class="counters-label">Vulnerabilities</small>
+    <small class="counters-label">Vulnerabilities{% if v and v.vulnerabilities %} <span class="vuln-total">{{ v.vulnerabilities | length }}</span>{% endif %}</small>
     {% if v is none %}
     <p><small>{{ "Not scanned yet (scan in progress)." if scanning else "Not scanned." }}</small></p>
     {% elif v.message %}
     <p><span class="badge badge-error">{{ icon("error") }}scan failed</span> <small>{{ v.message }}</small></p>
     {% else %}
-    <p>{{ severity_counts(v) }}</p>
-    {% if v.vulnerabilities %}<p><small class="muted-text">{{ v.fixable }} / {{ v.vulnerabilities | length }} with a fix</small></p>{% endif %}
+    {% if v.vulnerabilities %}
+    {% set counts = v.counts() %}
+    <div class="vuln-tiles">
+      {% for s in Severity if s != Severity.UNKNOWN or counts[s] %}
+      <span class="vuln-tile vuln-tile-{{ s.value }}{% if not counts[s] %} vuln-tile-zero{% endif %}" title="{{ counts[s] }} {{ s.value }}">
+        <strong>{{ counts[s] }}</strong><small>{{ s.value }}</small></span>
+      {% endfor %}
+    </div>
+    {% set ratio = (v.fixable * 100 / (v.vulnerabilities | length)) | round | int %}
+    <div class="vuln-fix" title="{{ v.fixable }} of {{ v.vulnerabilities | length }} have a fixed version">
+      <span class="vuln-fix-bar" role="img" aria-label="{{ ratio }}% with a fix"><span style="width: {{ ratio }}%"></span></span>
+      <small><strong>{{ v.fixable }}</strong> / {{ v.vulnerabilities | length }} with a fix</small>
+    </div>
+    {% else %}
+    <p><span class="badge badge-up-to-date">{{ icon("ok") }}no known vulnerability</span></p>
+    {% endif %}
     {% if v.os_eosl %}
     <p class="tag-latest">{{ icon("warning") }}The OS of this image ({{ v.os }}) is end of life: it gets no more security fixes. Use a newer base image.</p>
     {% endif %}
+    <p class="vuln-source"><small class="muted-text">{{ "Trivy Operator" if v.source == "trivy-operator" else "Trivy" }}
+      {%- if v.scanned_at %} · {{ v.scanned_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}{% if v.os %} · {{ v.os }}{% endif %}</small></p>
     {% endif %}
   </section>
 </div>

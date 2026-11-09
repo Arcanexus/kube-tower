@@ -700,7 +700,7 @@ def test_vulnerability_detail():
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
     assert 'role="dialog"' in detail and "Trivy Operator report" in detail
     assert '<a href="https://avd/cve-1"' in detail and "zlib overflow" in detail and "no fix" in detail
-    assert "end of life" in detail and "1 / 2 with a fix" in detail and "sha256:run" in detail
+    assert "end of life" in detail and "<strong>1</strong> / 2 with a fix" in detail and "sha256:run" in detail
     assert "registry denied" in client.get("/images/detail", params={"ref": "ghcr.io/org/app:2.0"}).text
     assert "Not scanned." in client.get("/images/detail", params={"ref": "docker.io/library/redis:latest"}).text
     assert client.get("/images/detail", params={"ref": "nope"}).status_code == 404
@@ -1071,6 +1071,7 @@ def test_images_show_current_and_latest_with_digests():
     assert 'class="drawer-summary"' in detail and detail.index("drawer-summary") < detail.index("<h4>Used by</h4>")
     # two summary cards, then foldable sections: Used by, Vulnerabilities open; the rest folded
     assert detail.count('class="detail-card"') == 2
+    assert detail.count('class="vuln-tile vuln-tile-') == 4 and "with a fix" in detail  # unknown only when found
     sections = re.findall(r'<details class="drawer-section"( open)?>\s*<summary><h4>([A-Za-z ]+)', detail)
     assert [(name.strip(), bool(opened)) for opened, name in sections] == [
         ("Used by", True),

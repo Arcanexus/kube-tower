@@ -472,6 +472,23 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--kt-hover);
 .detail-card > * { margin-bottom: .4rem; }
 .detail-card > :last-child { margin-bottom: 0; }
 .detail-card .counters-label { display: block; }
+/* Vulnerabilities card of the image details: one tile per severity, then the share with a fix */
+.vuln-total { margin-left: .3rem; padding: 0 .4rem; border-radius: 1rem; background: var(--kt-line); color: var(--kt-text); }
+.vuln-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr)); gap: .4rem; }
+.vuln-tile { display: flex; flex-direction: column; align-items: center; padding: .35rem .25rem; border-radius: var(--kt-radius); color: #fff; line-height: 1.15; }
+.vuln-tile strong { font-size: 1.25rem; }
+.vuln-tile small { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; opacity: .9; }
+.vuln-tile-critical { background: #b71c1c; }
+.vuln-tile-high { background: #c2410c; }
+.vuln-tile-medium { background: #f9a825; color: #222; }
+.vuln-tile-low { background: #1565c0; }
+.vuln-tile-unknown { background: #757575; }
+.vuln-tile-zero { background: transparent; color: var(--kt-muted); box-shadow: inset 0 0 0 1px var(--kt-line); }
+.vuln-fix { display: flex; align-items: center; gap: .6rem; }
+.vuln-fix-bar { flex: 1; height: .45rem; border-radius: 1rem; background: var(--kt-line); overflow: hidden; }
+.vuln-fix-bar > span { display: block; height: 100%; background: var(--kt-ok); border-radius: 1rem; }
+.vuln-fix small { white-space: nowrap; }
+.vuln-source { margin-top: .2rem; }
 .drawer-panel table th[scope="row"] { width: 35%; color: var(--kt-muted); font-weight: normal; }
 .close-detail { margin: 0; padding: .3rem .5rem; width: auto; }
 .close-detail .icon { margin: 0; }
