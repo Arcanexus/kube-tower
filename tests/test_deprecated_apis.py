@@ -29,8 +29,11 @@ METRICS = "\n".join(
 
 
 class Response:
-    def __init__(self, text, size=50):
+    """The urllib3 response of the REST client of the kubernetes package (not preloaded)."""
+
+    def __init__(self, text, size=50, status=200, reason="OK"):
         self.data, self.size, self.released = text.encode(), size, False
+        self.status, self.reason = status, reason
 
     def stream(self, size):
         for i in range(0, len(self.data), self.size):
@@ -40,14 +43,25 @@ class Response:
         self.released = True
 
 
-def cluster_with(answer):
-    def call_api(path, method, **kwargs):
-        assert path == "/metrics" and method == "GET" and kwargs["_preload_content"] is False
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
+class ApiClient:
+    """The two calls of kubernetes.client.ApiClient that the collector makes."""
 
-    return SimpleNamespace(name="prod", api_client=SimpleNamespace(call_api=call_api))
+    def __init__(self, answer):
+        self.answer = answer
+
+    def param_serialize(self, method, resource_path, header_params=None, auth_settings=None):
+        assert (method, resource_path, auth_settings) == ("GET", "/metrics", ["BearerToken"])
+        return method, "https://k" + resource_path, header_params, None, []
+
+    def call_api(self, method, url, header_params=None, body=None, post_params=None, _request_timeout=None):
+        assert url == "https://k/metrics" and header_params == {"Accept": "text/plain"} and _request_timeout
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return SimpleNamespace(response=self.answer)
+
+
+def cluster_with(answer):
+    return SimpleNamespace(name="prod", api_client=ApiClient(answer))
 
 
 def test_parse_metrics():
@@ -84,10 +98,13 @@ def test_collect_deprecated_apis():
 
 
 def test_collect_deprecated_apis_errors():
-    found, errors = collect_deprecated_apis(cluster_with(client.ApiException(status=403, reason="Forbidden")))
-    assert found == [] and "403 Forbidden" in errors[0] and "nonResourceURLs" in errors[0]
-    _, errors = collect_deprecated_apis(cluster_with(client.ApiException(status=401, reason="Unauthorized")))
+    forbidden = Response("forbidden", status=403, reason="Forbidden")
+    found, errors = collect_deprecated_apis(cluster_with(forbidden))
+    assert found == [] and "403 Forbidden" in errors[0] and "nonResourceURLs" in errors[0] and forbidden.released
+    _, errors = collect_deprecated_apis(cluster_with(Response("", status=401, reason="Unauthorized")))
     assert "renew its cluster secret" in errors[0]
+    _, errors = collect_deprecated_apis(cluster_with(client.ApiException(status=0, reason="no route")))
+    assert "0 no route" in errors[0]
     _, errors = collect_deprecated_apis(cluster_with(urllib3.exceptions.ProtocolError("connection reset")))
     assert "connection reset" in errors[0]
 

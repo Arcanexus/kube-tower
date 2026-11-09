@@ -49,15 +49,14 @@ def _lines(response, chunk_size: int = 64 * 1024):
 
 def collect_deprecated_apis(cluster: Cluster) -> tuple[list[DeprecatedApi], list[str]]:
     try:
-        response = cluster.api_client.call_api(
-            "/metrics",
-            "GET",
-            header_params={"Accept": "text/plain"},
-            auth_settings=["BearerToken"],
-            _preload_content=False,
-            _return_http_data_only=True,
-        )
+        api = cluster.api_client
+        # The REST client of the kubernetes package streams the answer (preload_content=False) and leaves the
+        # status to its caller
+        request = api.param_serialize("GET", "/metrics", header_params={"Accept": "text/plain"}, auth_settings=["BearerToken"])
+        response = api.call_api(*request, _request_timeout=60).response
         try:
+            if response.status >= 400:
+                raise client.ApiException(status=response.status, reason=response.reason)
             samples = parse_metrics(_lines(response))
         finally:
             response.release_conn()
