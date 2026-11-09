@@ -35,6 +35,14 @@
 <p class="tag-latest">{{ icon("warning") }}This image uses <code>latest</code> (or no tag): the running version changes on every pull. Pin a version instead.</p>
 {% endif %}
 
+<h4>Used by</h4>
+{% set tree = usage_tree(r.usages) %}
+{% if tree %}
+<ul class="tree-list" aria-label="Where the image is used">
+  {% for c in tree %}{{ usage_item(c) }}{% endfor %}
+</ul>
+{% else %}<p><small>Not found on the clusters any more.</small></p>{% endif %}
+
 <h4>Versions</h4>
 <table>
   <tr><th scope="row">Reference</th><td>{% call copy(r.image | string) %}<code>{{ r.image }}</code>{% endcall %}</td></tr>
@@ -69,14 +77,6 @@
   {% if v.os %}<tr><th scope="row">OS</th><td>{{ copy(v.os) }}</td></tr>{% endif %}
 </table>
 {% endif %}
-
-<h4>Used by</h4>
-{% set tree = usage_tree(r.usages) %}
-{% if tree %}
-<ul class="tree-list" aria-label="Where the image is used">
-  {% for c in tree %}{{ usage_item(c) }}{% endfor %}
-</ul>
-{% else %}<p><small>Not found on the clusters any more.</small></p>{% endif %}
 
 <h4>Digests</h4>
 {% set published = r.latest_digest if not r.latest_tag else r.tag_digest %}

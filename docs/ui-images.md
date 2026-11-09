@@ -40,9 +40,9 @@ Also shown:
 
 | Section | Content |
 | --- | --- |
+| Used by | Tree cluster › namespace › workload › pods, with nodes and containers; the nodes caching the image close each cluster |
 | Versions | Reference, versioning scheme, latest tag, upgrade target, **size**, links to the registry page |
 | Vulnerabilities | Counts by severity and with a fix, source (Trivy Operator or Trivy), scan date, scanned digest, OS |
-| Used by | Tree cluster › namespace › workload › pods, with nodes and containers; the nodes caching the image close each cluster |
 | Digests | Digests of the running pods, digest published for the same tag (different: the tag was pushed again), digest of the latest tag |
 | Check again | The [rescan](usage.md#rescan-one-image-or-chart) buttons |
 | All vulnerabilities | Each one with severity, score, package, installed and fixed version, linked to its advisory |

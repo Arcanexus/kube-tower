@@ -1062,8 +1062,8 @@ def test_images_show_current_and_latest_with_digests():
     # registry dimmed, full name on hover
     assert '<code class="image-name" title="ghcr.io/org/app"><span class="registry">ghcr.io/</span>org/app</code>' in page
     detail = client.get("/images/detail?ref=docker.io/library/nginx:1.25").text
-    assert 'class="drawer-summary"' in detail and detail.index("drawer-summary") < detail.index("<h4>Versions</h4>")
-    order = ["Versions", "Vulnerabilities", "Used by", "Digests", "Check again", "All vulnerabilities"]
+    assert 'class="drawer-summary"' in detail and detail.index("drawer-summary") < detail.index("<h4>Used by</h4>")
+    order = ["Used by", "Versions", "Vulnerabilities", "Digests", "Check again", "All vulnerabilities"]
     assert [h.strip() for h in re.findall(r"<h4>([A-Za-z ]+)", detail)] == order
 
 
