@@ -350,3 +350,110 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   ktCopy(el);
 });
+
+// Resizable columns: every table with a header gets a handle on the right edge of each header cell. Drag it
+// to resize the column (the table scrolls sideways when wider than its card), double-click it to give the
+// table its automatic widths back; arrow keys resize the focused handle. Widths are kept per page and table in
+// this browser, and come back after the htmx reloads. Not on phones, where lists are stacked.
+const KT_COL_MIN = 48;
+const ktNarrow = window.matchMedia("(max-width: 768px)");
+function ktHeaderCells(table) {
+  const head = table.tHead;
+  return head && head.rows.length ? [...head.rows[head.rows.length - 1].cells] : [];
+}
+function ktColumnsKey(table) {
+  const cells = ktHeaderCells(table);
+  const names = cells.map((c) => c.textContent.trim().replace(/\s+/g, " ")).join("|");
+  return "kt-cols:" + location.pathname.replace(/\/$/, "").split("/").pop() + ":" + (table.id || [...table.classList].filter((c) => c !== "kt-sized").join(" ")) + ":" + names;
+}
+function ktSavedWidths(table) {
+  try { return JSON.parse(localStorage.getItem(ktColumnsKey(table)) || "null"); } catch (_) { return null; }
+}
+function ktSaveWidths(table, widths) {
+  try {
+    if (widths) localStorage.setItem(ktColumnsKey(table), JSON.stringify(widths));
+    else localStorage.removeItem(ktColumnsKey(table));
+  } catch (_) { /* private window: the widths are only lost on reload */ }
+}
+function ktSetWidths(table, widths) {
+  const cells = ktHeaderCells(table);
+  if (!widths || widths.length !== cells.length) {
+    cells.forEach((c) => c.style.removeProperty("width"));
+    table.style.removeProperty("width");
+    table.classList.remove("kt-sized");
+    return;
+  }
+  cells.forEach((c, i) => { c.style.width = widths[i] + "px"; });
+  table.classList.add("kt-sized");  // fixed layout: the widths of the header are the widths of the columns
+  table.style.width = widths.reduce((a, b) => a + b, 0) + "px";
+}
+function ktColumnResize(e, handle, delta) {
+  const th = handle.parentElement, table = th.closest("table");
+  const cells = ktHeaderCells(table), index = cells.indexOf(th);
+  const widths = cells.map((c) => c.getBoundingClientRect().width);  // what is shown now, sized or automatic
+  const apply = (width) => {
+    widths[index] = Math.max(KT_COL_MIN, Math.round(width));
+    ktSetWidths(table, widths);
+  };
+  if (delta !== undefined) { apply(widths[index] + delta); ktSaveWidths(table, widths); return; }
+  e.preventDefault();
+  const startX = e.clientX, start = widths[index];
+  document.body.classList.add("kt-col-resizing");
+  const move = (ev) => apply(start + ev.clientX - startX);
+  const stop = () => {
+    // the click that ends the drag lands on the header (or a row): it must not sort nor open anything
+    const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+    document.addEventListener("click", swallow, { capture: true, once: true });
+    setTimeout(() => document.removeEventListener("click", swallow, { capture: true }), 0);
+    document.body.classList.remove("kt-col-resizing");
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    ktSaveWidths(table, widths);
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
+}
+function ktResizableColumns(root) {
+  if (ktNarrow.matches) return;
+  const tables = root && root.matches && root.matches("table") ? [root] : [...(root || document).querySelectorAll("table")];
+  tables.forEach((table) => {
+    const cells = ktHeaderCells(table);
+    if (cells.length < 2) return;
+    cells.forEach((th) => {
+      if (th.querySelector(":scope > .col-handle")) return;
+      const handle = document.createElement("span");
+      handle.className = "col-handle";
+      handle.tabIndex = 0;
+      handle.setAttribute("role", "separator");
+      handle.setAttribute("aria-orientation", "vertical");
+      handle.setAttribute("aria-label", "Resize the column " + th.textContent.trim());
+      handle.title = "Drag to resize, double-click for the automatic widths";
+      th.appendChild(handle);
+    });
+    ktSetWidths(table, ktSavedWidths(table));
+  });
+}
+document.addEventListener("pointerdown", (e) => {
+  const handle = e.target.closest && e.target.closest(".col-handle");
+  if (handle) { e.stopPropagation(); ktColumnResize(e, handle); }
+}, true);
+// The handle is in the header: its clicks must not sort the column
+document.addEventListener("click", (e) => {
+  if (e.target.closest && e.target.closest(".col-handle")) e.stopPropagation();
+}, true);
+document.addEventListener("dblclick", (e) => {
+  const handle = e.target.closest && e.target.closest(".col-handle");
+  if (!handle) return;
+  const table = handle.closest("table");
+  ktSaveWidths(table, null);
+  ktSetWidths(table, null);
+});
+document.addEventListener("keydown", (e) => {
+  const handle = e.target.closest && e.target.closest(".col-handle");
+  if (!handle || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  ktColumnResize(e, handle, (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 80 : 16));
+}, true);
+document.addEventListener("DOMContentLoaded", () => ktResizableColumns());
+document.addEventListener("htmx:afterSettle", (e) => ktResizableColumns(e.target));

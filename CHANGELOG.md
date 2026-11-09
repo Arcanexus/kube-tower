@@ -47,6 +47,10 @@ All notable changes to this project are documented here. The format follows
   list the pods). One tile per component, their state (ready, or `pending`, `crashloopbackoff`...), image tag,
   start and restarts; the krr runs in progress from its health check.
 
+- **Resizable columns** in every table (lists, detail panels, Administration): drag the right edge of a column
+  header, or use the arrow keys on it; double-click for the automatic widths. The widths are kept in the
+  browser for each table and survive the reloads of the lists.
+
 ### Changed
 
 - `pyproject.toml` and `Chart.yaml` carry the real version (1.3.0) instead of `0.1.0`.
