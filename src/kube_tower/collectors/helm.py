@@ -1,4 +1,4 @@
-"""Inventory of Helm charts deployed by ArgoCD Applications."""
+"""Inventory of Helm charts: deployed by ArgoCD Applications, Flux HelmReleases, or the helm command."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import posixpath
 from kubernetes import client
 
 from kube_tower.clusters import Cluster
+from kube_tower.collectors import flux, releases
 from kube_tower.config import HelmSettings
 from kube_tower.errors import kubernetes_hint
 from kube_tower.helmvalues import application_values
@@ -85,10 +86,17 @@ def charts_from_application(cluster: str, app: dict) -> list[ChartReport]:
     return reports
 
 
-def collect_charts(cluster: Cluster, settings: HelmSettings) -> tuple[list[ChartReport], list[str]]:
+def _error(errors: list[str], cluster: str, what: str, exc: client.ApiException) -> None:
+    message = f"[{cluster}] cannot list {what}: {exc.status} {exc.reason}"
+    if hint := kubernetes_hint(exc.status, what):
+        message += f" - {hint}"
+    errors.append(message)
+    log.warning("%s", message)
+
+
+def _argocd(cluster: Cluster, settings: HelmSettings, errors: list[str]) -> list[ChartReport]:
     api = client.CustomObjectsApi(cluster.api_client)
     apps: list[dict] = []
-    errors: list[str] = []
     try:
         if settings.application_namespaces:
             for ns in settings.application_namespaces:
@@ -97,24 +105,59 @@ def collect_charts(cluster: Cluster, settings: HelmSettings) -> tuple[list[Chart
             apps = api.list_cluster_custom_object(ARGO_GROUP, ARGO_VERSION, ARGO_PLURAL)["items"]
     except client.ApiException as exc:
         if exc.status == 404:
-            log.info("[%s] no ArgoCD Application CRD on this cluster: no Helm chart to read there", cluster.name)
+            log.info("[%s] no ArgoCD Application CRD on this cluster", cluster.name)
         else:
-            message = f"[{cluster.name}] cannot list ArgoCD Applications: {exc.status} {exc.reason}"
-            if hint := kubernetes_hint(exc.status, "ArgoCD Applications"):
-                message += f" - {hint}"
-            errors.append(message)
-            log.warning("%s", message)
-        return [], errors
+            _error(errors, cluster.name, "ArgoCD Applications", exc)
+        return []
     reports = [r for app in apps for r in charts_from_application(cluster.name, app)]
     log.info("[%s] %d ArgoCD Application(s), %d Helm chart(s) found", cluster.name, len(apps), len(reports))
+    return reports
+
+
+def _flux(cluster: Cluster, errors: list[str]) -> tuple[list[ChartReport], set[tuple[str, str]]]:
+    """The charts of the HelmReleases, and the (namespace, name) of the Helm releases they made."""
+    api = client.CustomObjectsApi(cluster.api_client)
+    try:
+        reports, made = flux.collect(cluster.name, api)
+    except flux.NotInstalled:
+        log.debug("[%s] no Flux HelmRelease CRD on this cluster", cluster.name)
+        return [], set()
+    except client.ApiException as exc:
+        _error(errors, cluster.name, "Flux HelmReleases", exc)
+        return [], set()
+    log.info("[%s] %d Flux HelmRelease(s) found", cluster.name, len(reports))
+    return reports, made
+
+
+def _releases(cluster: Cluster, errors: list[str], made_by_flux: set[tuple[str, str]]) -> list[ChartReport]:
+    try:
+        reports = releases.collect(cluster.name, client.CoreV1Api(cluster.api_client))
+    except client.ApiException as exc:
+        _error(errors, cluster.name, "Helm releases (Secrets)", exc)
+        return []
+    reports = [r for r in reports if (r.app_namespace, r.application) not in made_by_flux]
+    log.info("[%s] %d Helm release(s) installed with the helm command", cluster.name, len(reports))
+    return reports
+
+
+def collect_charts(cluster: Cluster, settings: HelmSettings) -> tuple[list[ChartReport], list[str]]:
+    errors: list[str] = []
+    reports = _argocd(cluster, settings, errors)
+    made_by_flux: set[tuple[str, str]] = set()
+    if settings.flux:
+        flux_reports, made_by_flux = _flux(cluster, errors)
+        reports += flux_reports
+    if settings.releases:
+        reports += _releases(cluster, errors, made_by_flux)
     for r in reports:
         log.debug(
-            "[%s] application %s: chart %s %s from %s (%s)",
+            "[%s] %s %s: chart %s %s from %s (%s)",
             cluster.name,
+            r.manager,
             r.application,
             r.chart,
             r.version,
-            r.repository,
+            r.repository or "unknown repository",
             r.source_type,
         )
     return reports, errors

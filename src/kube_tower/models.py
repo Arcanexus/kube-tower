@@ -188,6 +188,9 @@ def _worst(statuses: set[Status]) -> Status:
     return Status.UP_TO_DATE
 
 
+MANAGER_LABELS = {"argocd": "ArgoCD Application", "flux": "Flux HelmRelease", "helm": "Helm release"}
+
+
 @dataclass
 class ChartReport:
     cluster: str
@@ -211,6 +214,13 @@ class ChartReport:
     ignore_missing_value_files: bool = False
     inline_values: dict = field(default_factory=dict)
     latest_released: datetime | None = None  # when the latest version was published
+    # What deploys the chart: argocd (an Application), flux (a HelmRelease) or helm (a release installed
+    # with the helm command). `application` and `app_namespace` are then the HelmRelease or the release.
+    manager: str = "argocd"
+
+    @property
+    def manager_label(self) -> str:
+        return MANAGER_LABELS.get(self.manager, self.manager)
 
     @property
     def key(self) -> tuple[str, str, str, str]:

@@ -69,7 +69,8 @@ An image pinned by digest only (`nginx@sha256:...`) has no tag to compare: it is
 
 ## Helm charts
 
-Charts are read from ArgoCD Applications (single and multi-source) and compared with semver ordering:
+Charts are read from ArgoCD Applications (single and multi-source), Flux HelmReleases and Helm releases
+([chart sources](chart-sources.md)) and compared with semver ordering:
 
 | Source type | Current version | Latest version |
 | --- | --- | --- |

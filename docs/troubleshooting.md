@@ -58,7 +58,9 @@ every request).
 | A chart in `error` with `cannot read the index.yaml of the Helm repository …: HTTP 401` | Private Helm repository | Add credentials for the repository host |
 | A git chart in `error` with `cannot read <path>/Chart.yaml at <ref> in <repo>: HTTP 404` | Private git repository, wrong `path`, or the Application is not a Helm chart | Set `git.existingSecret` with a token; for non GitHub/GitLab hosts add a `git.rawUrlTemplates` entry |
 | `no raw URL template for git host …` | Self-hosted git (Gitea, Bitbucket…) | Add a template, e.g. `gitea.example.com: https://gitea.example.com/{owner}/{repo}/raw/{ref}/{path}` |
-| No Helm charts at all | ArgoCD Applications live in another namespace, or ArgoCD is not installed | Set `config.helm.applicationNamespaces` (`[]` = all namespaces) |
+| No Helm charts at all | ArgoCD Applications live in another namespace, or neither ArgoCD nor Flux is installed | Set `config.helm.applicationNamespaces` (`[]` = all namespaces); for charts installed with the helm command, `config.helm.releases: true` |
+| A Helm release is *unknown*: `repository unknown` | Helm does not record the repository and Artifact Hub has no chart with this name | Add it to `config.helm.repositories`, see [chart sources](chart-sources.md) |
+| A Helm release is checked against the wrong repository | Artifact Hub picked another package with the same name | Add the right one to `config.helm.repositories` |
 
 ## Versions
 

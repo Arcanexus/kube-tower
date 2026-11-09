@@ -6,7 +6,7 @@ How to find your way in kube-tower: what every page has in common. Each page has
 | --- | --- | --- |
 | **Overview** | What to act on first, figures of the whole inventory | [Overview page](ui-overview.md) |
 | **Images** | Every image, its versions and its vulnerabilities | [Images page](ui-images.md) |
-| **Helm charts** | Every chart of the ArgoCD Applications and its subcharts | [Helm charts page](ui-charts.md) |
+| **Helm charts** | Every chart of the ArgoCD Applications, Flux HelmReleases and Helm releases, and its subcharts | [Helm charts page](ui-charts.md) |
 | **Security** | The reports of Trivy Operator | [Security page](ui-security.md) |
 | **Clusters** | The nodes of every cluster and their versions | [Clusters page](ui-clusters.md) |
 | **Resources** | CPU and memory recommendations of krr (when `krr.enabled`) | [Resources page](ui-resources.md) |

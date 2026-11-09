@@ -85,7 +85,7 @@
           <article class="card">
             <svg><use href="icons.svg#i-charts"/></svg>
             <h3>Helm charts and subcharts</h3>
-            <p>Charts deployed by ArgoCD Applications, from Helm repositories, OCI registries or git, with every dependency checked.</p>
+            <p>Charts deployed by ArgoCD, Flux or the helm command, from Helm repositories, OCI registries or git, with every dependency checked.</p>
           </article>
           <article class="card">
             <svg><use href="icons.svg#i-shield"/></svg>
@@ -166,7 +166,7 @@
           <h2>Install once, see every cluster</h2>
           <ol class="steps">
             <li><b>Discover.</b> kube-tower finds its own cluster and every cluster registered with a Secret, ArgoCD-style.</li>
-            <li><b>Collect.</b> With a read-only ServiceAccount, it lists workloads, node images and ArgoCD Applications.</li>
+            <li><b>Collect.</b> With a read-only ServiceAccount, it lists workloads, node images, ArgoCD Applications and Flux HelmReleases.</li>
             <li><b>Check.</b> It asks each registry for its published versions, once per repository, and reads or scans the vulnerabilities.</li>
             <li><b>Show.</b> The result stays in memory and feeds the UI, the JSON API and <code>/metrics</code>, refreshed every 6 hours or on demand.</li>
           </ol>
@@ -188,7 +188,7 @@
             </thead>
             <tbody>
                             <tr><th>Container images</th><td class="me y">Yes</td><td>Docker only</td><td>From git</td><td class="y">Yes</td></tr>
-              <tr><th>Helm charts and subcharts</th><td class="me y">From ArgoCD</td><td class="n">No</td><td>From git</td><td class="n">No</td></tr>
+              <tr><th>Helm charts and subcharts</th><td class="me y">ArgoCD, Flux, helm</td><td class="n">No</td><td>From git</td><td class="n">No</td></tr>
               <tr><th>Vulnerabilities (CVE)</th><td class="me y">Trivy</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>
               <tr><th>Misconfigurations, secrets, compliance</th><td class="me y">Trivy Operator</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>
               <tr><th>CPU and memory recommendations</th><td class="me y">krr</td><td class="n">No</td><td class="n">No</td><td class="n">No</td></tr>

@@ -96,6 +96,18 @@ class HelmSettings:
     check_dependencies: bool = True
     # Read when the latest versions were published (index.yaml, or an OCI annotation), shown next to them.
     fetch_release_dates: bool = True
+    # Flux HelmReleases (helm.toolkit.fluxcd.io), with the URL of their HelmRepository, OCIRepository or
+    # GitRepository. Nothing happens on a cluster without Flux.
+    flux: bool = True
+    # Releases installed with the helm command (`helm install`): their release Secrets (owner=helm) are read,
+    # which needs `list secrets` in every namespace. Off by default for that reason.
+    releases: bool = False
+    # A Helm release does not record the repository of its chart: chart name (or fnmatch pattern) ->
+    # repository, e.g. {"ingress-nginx": "https://kubernetes.github.io/ingress-nginx"}. Looked up first.
+    repositories: dict[str, str] = field(default_factory=dict)
+    # Otherwise, look the chart up on Artifact Hub (the official, then verified publisher, then most starred
+    # package with its name). Empty: no lookup, the repository stays unknown.
+    artifact_hub_url: str = "https://artifacthub.io"
 
 
 @dataclass

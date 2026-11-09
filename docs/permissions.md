@@ -7,7 +7,8 @@ that widen them.
 ## On the cluster kube-tower runs in
 
 On the cluster it runs in, kube-tower gets a ClusterRole with `get`/`list` on pods, nodes,
-deployments, statefulsets, daemonsets, cronjobs, `applications.argoproj.io` and
+deployments, statefulsets, daemonsets, cronjobs, `applications.argoproj.io`, the Flux
+`helmreleases` and their `helmrepositories`, `gitrepositories` and `ocirepositories`, and
 the Trivy Operator reports (`vulnerabilityreports`, `configauditreports`, `exposedsecretreports`,
 `rbacassessmentreports`, `infraassessmentreports`, their cluster-scoped variants and
 `clustercompliancereports`, all `aquasecurity.github.io`), plus `get` on the cluster Secrets
@@ -23,13 +24,13 @@ With `krr.enabled`, the ClusterRole also reads what krr needs, see
 
 [`deploy/remote-cluster-rbac.yaml`](../deploy/remote-cluster-rbac.yaml) creates the `kube-tower-reader`
 ServiceAccount, its token Secret and a ClusterRole with the same read-only rules (pods, nodes,
-workloads, ArgoCD Applications, Trivy Operator reports). See [clusters](clusters.md) for the cluster
+workloads, ArgoCD Applications, Flux HelmReleases, Trivy Operator reports). See [clusters](clusters.md) for the cluster
 Secret built from its token. With an exec plugin (EKS, GKE, AKS), the cloud identity must be bound to
 the same ClusterRole, see [managed clusters](clusters.md#managed-clusters-eks-gke-aks-exec-plugins).
 
 ## Options that widen the permissions
 
-Three options widen them. The first two read **every** Secret of a namespace (Kubernetes RBAC cannot
+Four options widen them. The first two read **every** Secret of a namespace (Kubernetes RBAC cannot
 restrict `list` to a label):
 
 - `config.clusters.listSecrets: true`: `list` on the Secrets of its namespace, to find labelled
@@ -40,6 +41,10 @@ restrict `list` to a label):
   pull secrets of the workloads (see [registries](registries.md#reusing-the-image-pull-secrets)). The
   chart adds it to the ClusterRole; on remote clusters, uncomment the rule of
   `deploy/remote-cluster-rbac.yaml`.
+- `config.helm.releases: true`: `list` on **every Secret of the cluster**, to find the release Secrets of
+  the charts installed with the helm command (see [chart sources](chart-sources.md#releases-installed-with-the-helm-command)).
+  Only their chart name, version, subcharts and the booleans of their values are kept. The chart adds it
+  to the ClusterRole; on remote clusters, uncomment the rule of `deploy/remote-cluster-rbac.yaml`.
 
 ## Login
 

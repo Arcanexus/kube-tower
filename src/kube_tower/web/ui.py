@@ -269,7 +269,7 @@ CHART_COLUMNS = [
     Column(lambda c: natural(c.latest_version or "")),
     Column(lambda c: STATUS_RANK[c.worst_status]),
     Column(lambda c: c.repository),
-    Column(lambda c: natural(c.application)),
+    Column(lambda c: (c.manager_label, natural(c.application))),
 ]
 
 RESOURCE_COLUMNS = [
@@ -691,7 +691,8 @@ def mount(app: FastAPI) -> None:
         matching = [
             c
             for c in snapshot_of(request).charts
-            if _matches(f"{c.application} {c.chart} {c.repository}", q) and (not cluster or c.cluster == cluster)
+            if _matches(f"{c.application} {c.chart} {c.repository} {c.manager_label}", q)
+            and (not cluster or c.cluster == cluster)
         ]
         listing = list_page(
             request, "charts", [c for c in matching if not status or c.worst_status.value == status], CHART_COLUMNS
