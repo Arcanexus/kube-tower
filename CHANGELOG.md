@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-10
+
 ### Added
 
 - **Helm charts outside ArgoCD** (see [chart sources](docs/chart-sources.md)): the charts of **Flux
