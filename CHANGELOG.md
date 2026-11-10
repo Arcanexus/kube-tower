@@ -10,6 +10,9 @@ All notable changes to this project are documented here. The format follows
 
 - Image details: the links to the image and its tags on the registry (Docker Hub, GitHub Packages, Quay...)
   are in the **version** card at the top, instead of the end of the folded *Versions and digests* section.
+- Image details: the **vulnerabilities** card has the layout of the version card: a status (*fix available*
+  or *no fix yet*) under its label, then the severity tiles and the fix bar, and the scan source on its last
+  line, level with the registry links.
 
 ## [1.3.1] - 2026-11-10
 

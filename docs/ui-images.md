@@ -42,8 +42,9 @@ The [rescan](usage.md#rescan-one-image-or-chart) buttons sit at the top, next to
 close buttons. Below, two cards side by side: the **version** (status, current → latest, each with its
 digest and release date, and the links to the page and the tags of the image on its registry: Docker Hub,
 GitHub Packages, Quay, ECR Public Gallery, Microsoft Artifact Registry) and the
-**vulnerabilities** (total, one tile per severity, a bar of how many have a fix, an end of life OS, and
-the source, date and OS of the scan). Then the sections, each
+**vulnerabilities** (total, a *fix available* or *no fix yet* status, one tile per severity, a bar of how many
+have a fix, an end of life OS, and the source, date and OS of the scan). Both cards have the same layout:
+label, status, values, details, and their last line (registry links, scan source) at the bottom. Then the sections, each
 folded or unfolded with a click on its title:
 
 | Section | Opened | Content |
