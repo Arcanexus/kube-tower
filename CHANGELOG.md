@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-10
+
 ### Changed
 
 - Image details: the links to the image and its tags on the registry (Docker Hub, GitHub Packages, Quay...)
