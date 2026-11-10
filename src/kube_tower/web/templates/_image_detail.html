@@ -43,6 +43,7 @@
     {% if r.image.is_latest %}
     <p class="tag-latest">{{ icon("warning") }}This image uses <code>latest</code> (or no tag): the running version changes on every pull. Pin a version instead.</p>
     {% endif %}
+    <div class="detail-card-footer">{{ links(registry_links(r.image)) }}</div>
   </section>
   <section class="detail-card" aria-label="Vulnerabilities">
     <small class="counters-label">Vulnerabilities{% if v and v.vulnerabilities %} <span class="vuln-total">{{ v.vulnerabilities | length }}</span>{% endif %}</small>
@@ -53,6 +54,7 @@
     {% else %}
     {% if v.vulnerabilities %}
     {% set counts = v.counts() %}
+    <p>{% if v.fixable %}<span class="badge badge-outdated">{{ icon("outdated") }}fix available</span>{% else %}<span class="badge badge-unknown">{{ icon("unknown") }}no fix yet</span>{% endif %}</p>
     <div class="vuln-tiles">
       {% for s in Severity if s != Severity.UNKNOWN or counts[s] %}
       <span class="vuln-tile vuln-tile-{{ s.value }}{% if not counts[s] %} vuln-tile-zero{% endif %}" title="{{ counts[s] }} {{ s.value }}">
@@ -70,8 +72,8 @@
     {% if v.os_eosl %}
     <p class="tag-latest">{{ icon("warning") }}The OS of this image ({{ v.os }}) is end of life: it gets no more security fixes. Use a newer base image.</p>
     {% endif %}
-    <p class="vuln-source"><small class="muted-text">{{ "Trivy Operator" if v.source == "trivy-operator" else "Trivy" }}
-      {%- if v.scanned_at %} · {{ v.scanned_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}{% if v.os %} · {{ v.os }}{% endif %}</small></p>
+    <p class="vuln-source detail-card-footer">{{ icon("shield") }}{{ "Trivy Operator" if v.source == "trivy-operator" else "Trivy" }}
+      {%- if v.scanned_at %} · {{ v.scanned_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}{% if v.os %} · {{ v.os }}{% endif %}</p>
     {% endif %}
   </section>
 </div>
@@ -119,7 +121,6 @@
 {% if r.running_digests and published and published not in r.running_digests %}
 <p><small>{{ icon("warning") }}The tag now points to another image than the one running: the tag was pushed again since the pods started.</small></p>
 {% endif %}
-{{ links(registry_links(r.image)) }}
 </details>
 
 <details class="drawer-section" open>

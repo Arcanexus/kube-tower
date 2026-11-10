@@ -468,7 +468,12 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--kt-hover);
 .drawer-section[open] > summary { margin-bottom: .25rem; }
 /* Summary cards at the top of a detail panel, side by side when there is room */
 .detail-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
-.detail-card { padding: .75rem 1rem; border: 1px solid var(--kt-line); border-radius: var(--kt-radius-lg); background: var(--kt-surface); }
+.detail-card { display: flex; flex-direction: column; padding: .75rem 1rem; border: 1px solid var(--kt-line); border-radius: var(--kt-radius-lg); background: var(--kt-surface); }
+/* The last line of each card (registry links, scan source) sits at the bottom: the two cards line up */
+.detail-card-footer { margin-top: auto; padding-top: .4rem; font-size: .875rem; }
+.detail-card-footer:empty { display: none; }
+.detail-card-footer > .links { margin: 0; }
+.vuln-source { display: flex; align-items: center; gap: .35rem; color: var(--kt-muted); }
 .detail-card > * { margin-bottom: .4rem; }
 .detail-card > :last-child { margin-bottom: 0; }
 .detail-card .counters-label { display: block; }
@@ -488,11 +493,11 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--kt-hover);
 .vuln-fix-bar { flex: 1; height: .45rem; border-radius: 1rem; background: var(--kt-line); overflow: hidden; }
 .vuln-fix-bar > span { display: block; height: 100%; background: var(--kt-ok); border-radius: 1rem; }
 .vuln-fix small { white-space: nowrap; }
-.vuln-source { margin-top: .2rem; }
 .drawer-panel table th[scope="row"] { width: 35%; color: var(--kt-muted); font-weight: normal; }
 .close-detail { margin: 0; padding: .3rem .5rem; width: auto; }
 .close-detail .icon { margin: 0; }
 .links { display: flex; flex-wrap: wrap; gap: 1rem; }
+.detail-card .links { gap: .25rem 1rem; }
 .digest { font-size: .8em; }
 .drawer-panel code { overflow-wrap: anywhere; }
 
