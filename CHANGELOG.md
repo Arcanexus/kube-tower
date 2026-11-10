@@ -64,6 +64,11 @@ All notable changes to this project are documented here. The format follows
 - Chart images updated: Dex `v2.41.1` → `v2.46.1`, Trivy `0.75.0` → `0.76.2`, Valkey `8.1.1` → `9.1.3`.
   Valkey keeps nothing on disk (`--save ""`, no AOF): the new pod starts empty and the pods publish
   their state again, as after any restart.
+- Documentation: the Trivy and krr settings of the [configuration](docs/configuration.md#security) are
+  regrouped. A **Security** part has three sections: **Trivy configuration** (embedded standalone, embedded
+  client/server, your own Trivy server, external Trivy Operator only, with the values of each), **Vulnerabilities**
+  (`config.vulnerabilities`) and **Audit** (`config.security`). A **Resources (krr)** part has the two ways krr
+  reaches Prometheus and every key.
 
 ### Fixed
 

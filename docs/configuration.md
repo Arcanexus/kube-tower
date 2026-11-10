@@ -51,9 +51,6 @@ helm:
   releases: false             # releases installed with the helm command (needs list secrets)
   repositories: {}            # chart name or pattern -> repository, for those releases
   artifactHubUrl: https://artifacthub.io   # else looked up there; "" = no lookup
-security:                      # Trivy Operator security reports, see security.md
-  enabled: true
-  exposedSecrets: true         # false: leave the exposed secrets out
 kubernetesVersions:            # end of life and CVEs of the Kubernetes and containerd versions, see ui-clusters.md
   enabled: true
   endOfLifeUrl: https://endoflife.date/api/kubernetes.json   # or a mirror with the same format
@@ -61,7 +58,7 @@ kubernetesVersions:            # end of life and CVEs of the Kubernetes and cont
   warnDays: 90                 # a release that ends within this many days is a warning
   timeout: 20
   deprecatedApis: true         # deprecated APIs still requested (API server /metrics, needs get /metrics)
-resources:                     # CPU and memory recommendations of krr, see resources.md
+resources:                     # CPU and memory recommendations of krr, see "Resources (krr)" below
   enabled: false               # the chart sets it with krr.enabled
   serverUrl: ""                # the krr pod of the chart (set by the chart)
   strategy: simple
@@ -69,7 +66,8 @@ resources:                     # CPU and memory recommendations of krr, see reso
   interval: 24h
   timeout: 15m
   prometheus: []               # per cluster: url, clusterLabel, authHeaderEnv...
-vulnerabilities:               # see "Vulnerabilities (Trivy)" below
+# Security: Trivy and Trivy Operator, see "Security" below
+vulnerabilities:               # CVEs of the images
   enabled: true
   trivyOperator: true          # read Trivy Operator VulnerabilityReports
   trivy:
@@ -84,6 +82,9 @@ vulnerabilities:               # see "Vulnerabilities (Trivy)" below
     javaDb: false
     extraArgs: []
   ignore: []
+security:                      # audit: the other Trivy Operator reports (Security page)
+  enabled: true
+  exposedSecrets: true         # false: leave the exposed secrets out
 registries:
   dockerConfigPath: /etc/kube-tower/dockerconfig/config.json
   credentials:                 # per registry, override the docker config.json
@@ -151,34 +152,178 @@ Environment overrides: `KUBE_TOWER_LOG_LEVEL`, `KUBE_TOWER_REFRESH_INTERVAL`, `K
 | `images`, `helm` | [statuses and versions](statuses.md), [Images page](ui-images.md), [Helm charts page](ui-charts.md), [where charts are found](chart-sources.md) |
 | `registries` | [registries](registries.md) |
 | `git` | [Helm charts read from git](ui-charts.md), [troubleshooting](troubleshooting.md#helm-charts) |
-| `vulnerabilities` | [vulnerabilities](vulnerabilities.md), and the table below |
-| `security` | [security](security.md) |
-| `resources` | [resources (krr)](resources.md#settings) |
+| `vulnerabilities`, `security` | [Security](#security) below: [Trivy configuration](#trivy-configuration), [vulnerabilities](#vulnerabilities), [audit](#audit) |
+| `resources` | [Resources (krr)](#resources-krr) below |
 | `auth` | [authentication](authentication.md) |
 | `roles`, `internal`, `redis` | [scaling](scaling.md) |
 | `logs` | [Logs tab](ui-administration.md#logs) |
 
-## Vulnerabilities (Trivy)
+## Security
 
-kube-tower reads the reports of [Trivy Operator](https://aquasecurity.github.io/trivy-operator/)
-when it runs in a cluster, and scans the other images with the [Trivy](https://trivy.dev) CLI. See
-[vulnerabilities](vulnerabilities.md) for how it works and examples.
+Trivy feeds two parts of kube-tower:
+
+- **Vulnerabilities**: the CVEs of every image, on the [Images](ui-images.md) page and in the image details.
+  They come from the reports of Trivy Operator when it runs in a cluster, else from the Trivy CLI run by
+  kube-tower.
+- **Audit**: the other reports of Trivy Operator (misconfigurations, exposed secrets, RBAC, infrastructure,
+  compliance), on the [Security](ui-security.md) page. Only Trivy Operator writes them: kube-tower never runs
+  these checks.
+
+| You want | Trivy in kube-tower | Trivy Operator in the clusters |
+| --- | --- | --- |
+| The CVEs of every image, nothing else to install | yes (default) | no |
+| The CVEs and the audit | yes, for the images the operator has not scanned | yes |
+| The CVEs and the audit, no Trivy in kube-tower | no | yes |
+| Nothing | `config.vulnerabilities.enabled: false` and `config.security.enabled: false` | |
+
+### Trivy configuration
+
+Choose one mode. The values below are those of the Helm chart; `config.*` goes in `config.yaml`
+without the chart.
+
+| Mode | What runs | Values |
+| --- | --- | --- |
+| **Embedded, standalone** (default) | The kube-tower pod runs the Trivy CLI and downloads the vulnerability database (~1.6 GB) into an `emptyDir` | nothing |
+| **Embedded, client/server** | The chart adds a Trivy server pod that holds the database and the layers already analysed; kube-tower scans in client mode | `trivy.server.enabled: true` |
+| **Your own Trivy server** | kube-tower scans in client mode against a server you already run | `config.vulnerabilities.trivy.serverUrl: http://trivy.trivy-system:4954` |
+| **External Trivy Operator only** | No Trivy in kube-tower: only the operator's reports are read (images only cached on nodes are not scanned) | `trivy.enabled: false` and `config.vulnerabilities.trivy.enabled: false` |
+
+Trivy Operator needs no setting in every mode: kube-tower reads its reports wherever it is installed, and
+the embedded Trivy only scans the images without a report.
+
+**Embedded, standalone** suits a few dozen images. Size the pod if needed:
+
+```yaml
+trivy:
+  cacheSizeLimit: 3Gi            # emptyDir of the database
+resources:
+  limits:
+    memory: 1536Mi               # raise it, or lower config.vulnerabilities.trivy.concurrency, if OOMKilled
+```
+
+**Embedded, client/server** is better beyond that: the server keeps the analysis of each layer (base
+layers shared by many images are pulled once) and downloads the database once. The chart sets
+`config.vulnerabilities.trivy.serverUrl` itself.
+
+```yaml
+trivy:
+  server:
+    enabled: true
+    resources:
+      limits:
+        memory: 1Gi
+```
+
+**External Trivy Operator only**:
+
+```yaml
+trivy:
+  enabled: false                 # no init container copying the Trivy CLI
+config:
+  vulnerabilities:
+    trivy:
+      enabled: false             # do not look for the Trivy CLI
+```
+
+The settings of the Trivy CLI and server (`config.vulnerabilities.trivy`):
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `vulnerabilities.enabled` | `true` | Collect vulnerabilities at all. `false`: no vulnerability is collected, and the chart does not add the Trivy init container |
-| `vulnerabilities.trivyOperator` | `true` | Read Trivy Operator `VulnerabilityReports` (nothing happens when the CRD does not exist). `false`: always scan with the Trivy CLI |
-| `vulnerabilities.ignore` | `[]` | fnmatch patterns on `registry/repository` or `registry/repository:tag` of images never scanned by the Trivy CLI, e.g. `registry.k8s.io/pause*` |
-| `vulnerabilities.trivy.enabled` | `true` | Scan the images without an operator report with the Trivy CLI. `false`: only operator reports are shown |
-| `vulnerabilities.trivy.binary` | `trivy` | Path of the Trivy CLI. The Helm chart sets it to the binary copied by its init container (`/opt/trivy/bin/trivy`) |
-| `vulnerabilities.trivy.serverUrl` | `""` | Trivy server URL (client/server mode), e.g. `http://kube-tower-trivy:4954`. Empty: standalone mode. The chart sets it when `trivy.server.enabled` is `true`; set it yourself to use a Trivy server you already run |
-| `vulnerabilities.trivy.cacheDir` | `/tmp/trivy` | Where the vulnerability database is downloaded in standalone mode (~1.6 GB, ~3.1 GB with the Java DB). An `emptyDir` with the chart (`trivy.cacheSizeLimit`) |
-| `vulnerabilities.trivy.timeout` | `10m` | Maximum duration of the scan of one image |
-| `vulnerabilities.trivy.concurrency` | `2` | Images scanned at the same time. More is faster but needs more memory and bandwidth |
-| `vulnerabilities.trivy.rescanInterval` | `24h` | Results are kept in memory and an image is scanned again after this delay. Failed scans are retried at the next scan |
-| `vulnerabilities.trivy.ignoreUnfixed` | `false` | Only report the vulnerabilities that have a fixed version |
-| `vulnerabilities.trivy.javaDb` | `false` | Download the Java DB (~1.5 GB) and scan Java archives (`.jar`, `.war`, `.ear`, `.par`). When `false`, they are skipped |
-| `vulnerabilities.trivy.extraArgs` | `[]` | Extra `trivy image` arguments, e.g. `["--db-repository", "registry.example.com/aquasec/trivy-db"]` for a mirror of the database |
+| `enabled` | `true` | Scan the images without a Trivy Operator report. `false`: external Trivy Operator only |
+| `serverUrl` | `""` | Trivy server URL (client/server mode). Empty: standalone. Set by the chart with `trivy.server.enabled` |
+| `binary` | `trivy` | Path of the Trivy CLI. The chart sets it to the binary its init container copies (`/opt/trivy/bin/trivy`) |
+| `cacheDir` | `/tmp/trivy` | Where the database is downloaded in standalone mode: an `emptyDir` with the chart (`trivy.cacheSizeLimit`) |
+| `timeout` | `10m` | Maximum duration of the scan of one image |
+| `concurrency` | `2` | Images scanned at the same time. More is faster but needs more memory and bandwidth |
+| `extraArgs` | `[]` | Extra `trivy image` arguments, e.g. `["--db-repository", "registry.example.com/aquasec/trivy-db"]` for a mirror of the database |
+
+And in the values of the chart: `trivy.enabled` (init container copying the CLI), `trivy.image`
+(`ghcr.io/aquasecurity/trivy:0.76.2`), `trivy.cacheSizeLimit`, and `trivy.server.*` (see
+[chart values](chart-values.md)). How the modes compare, arm/v7 nodes and the database mirrors:
+[vulnerabilities](vulnerabilities.md#trivy-setups).
+
+### Vulnerabilities
+
+What is collected and shown on the Images page (`config.vulnerabilities`):
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `enabled` | `true` | Collect vulnerabilities at all. `false`: none is collected, and the chart does not add the Trivy init container |
+| `trivyOperator` | `true` | Read the Trivy Operator `VulnerabilityReports` (nothing happens without the CRD). `false`: always scan with the Trivy CLI |
+| `ignore` | `[]` | fnmatch patterns on `registry/repository` or `registry/repository:tag` of images never scanned, e.g. `registry.k8s.io/pause*` |
+| `trivy.ignoreUnfixed` | `false` | Only report the vulnerabilities that have a fixed version |
+| `trivy.rescanInterval` | `24h` | An image is scanned again after this delay (results are kept meanwhile). Failed scans are retried at the next scan |
+| `trivy.javaDb` | `false` | Download the Java DB (~1.5 GB) and scan Java archives (`.jar`, `.war`, `.ear`, `.par`); skipped otherwise |
+
+```yaml
+# Only report what can be fixed, scan once a week, skip some images
+vulnerabilities:
+  ignore:
+    - registry.k8s.io/pause*
+  trivy:
+    ignoreUnfixed: true
+    rescanInterval: 7d
+```
+
+See [vulnerabilities](vulnerabilities.md) for how the two sources are merged, the CVE search and the metrics.
+
+### Audit
+
+The Trivy Operator reports of the Security page (`config.security`). They need Trivy Operator in the
+cluster: clusters without it are skipped.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `enabled` | `true` | Read the config audit, exposed secret, RBAC, infrastructure and compliance reports |
+| `exposedSecrets` | `true` | Show the lines where Trivy found a secret (masked by Trivy). `false`: leave the exposed secrets out |
+
+kube-tower needs `get` and `list` on the report CRDs: the chart's ClusterRole has them, apply
+[`deploy/remote-cluster-rbac.yaml`](../deploy/remote-cluster-rbac.yaml) on remote clusters. See
+[security](security.md) for the report types.
+
+## Resources (krr)
+
+The CPU and memory recommendations of the [Resources](ui-resources.md) page. They need Prometheus and
+the chart's krr pod:
+
+```yaml
+krr:
+  enabled: true                  # the krr pod; sets config.resources.enabled and serverUrl
+```
+
+Choose how krr reaches Prometheus, per cluster:
+
+| Mode | When | Setting |
+| --- | --- | --- |
+| **Found in the cluster** (default) | Prometheus runs in the cluster with its usual labels (kube-prometheus-stack, Prometheus Operator, VictoriaMetrics...) | nothing: krr finds it and reaches it through the API server (`services/proxy`) |
+| **Given URL** | Discovery fails, Prometheus is outside the cluster, or one Prometheus (Thanos, Mimir) serves several clusters | an entry in `config.resources.prometheus` |
+
+```yaml
+config:
+  resources:
+    prometheus:
+      - clusters: [in-cluster]       # names or patterns; the first matching entry wins
+        url: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+      - clusters: ["prod-*"]         # one Thanos for several clusters
+        url: https://thanos.example.com
+        clusterLabel: cluster        # the label telling the clusters apart (value: the cluster name)
+        authHeaderEnv: PROMETHEUS_AUTH   # "Bearer <token>", put on the pods with extraEnv
+```
+
+`config.resources`:
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `strategy` | `simple` | `simple` (no CPU limit) or `simple_limit` (a CPU limit too) |
+| `namespaces` | `[]` | Namespaces to analyse; empty: all |
+| `interval` | `24h` | The recommendations of a cluster are reused this long before krr runs again |
+| `timeout` | `15m` | Per cluster |
+| `args` | `[]` | Other krr options, e.g. `["--history_duration", "168"]` |
+| `prometheus[]` | `[]` | `clusters`, `url`, `clusterLabel`, `clusterValue`, `authHeaderEnv` or `authHeaderFile`, `headers` |
+| `enabled`, `serverUrl` | set by the chart | On with `krr.enabled`, and the address of its krr pod |
+
+The krr pod itself is set with `krr.*` in the values (image, resources, concurrency, NetworkPolicy ports):
+see [chart values](chart-values.md). How krr runs and its errors: [resources](resources.md).
 
 ## Secrets
 

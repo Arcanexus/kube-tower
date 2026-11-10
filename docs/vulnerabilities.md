@@ -53,6 +53,8 @@ are listed first and highlighted.
 
 ## Trivy setups
 
+The modes and their values are summed up in [Trivy configuration](configuration.md#trivy-configuration).
+
 | Mode | When | Database |
 | --- | --- | --- |
 | **Standalone** (default) | `trivy.server.enabled: false` | Downloaded by kube-tower at each scan into an `emptyDir` (~1.6 GB, 3 GiB limit by default) |
@@ -135,7 +137,7 @@ Trivy.
 ## Settings
 
 The settings are in `config.vulnerabilities`, every key is listed in
-[configuration](configuration.md#vulnerabilities-trivy). The Trivy CLI uses the [registry credentials](registries.md) of kube-tower to pull the
+[configuration](configuration.md#security) (Trivy modes, vulnerabilities, audit). The Trivy CLI uses the [registry credentials](registries.md) of kube-tower to pull the
 layers of private images. In standalone mode, the pod must reach the database registries
 (`mirror.gcr.io` and `ghcr.io`, or the mirror given in `extraArgs`); in client/server mode, only the
 Trivy server needs them.

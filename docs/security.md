@@ -22,6 +22,8 @@ the list of resources with failed checks, and the detail of each check.
 
 ## Settings
 
+Every key is in [configuration](configuration.md#audit).
+
 ```yaml
 security:
   # Read the Trivy Operator security reports (Security page)
