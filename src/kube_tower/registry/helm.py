@@ -51,6 +51,17 @@ def split_oci_url(url: str, version: str) -> tuple[str, str, str]:
     return registry, f"{path.rpartition('/')[0]}/{name}".lstrip("/"), tag or version
 
 
+def oci_tag(version: str) -> str:
+    """The OCI tag of a chart version: a tag cannot hold "+", so `helm push` stores
+    1.2.3+1 (SemVer build metadata) as 1.2.3_1."""
+    return version.replace("+", "_")
+
+
+def version_from_oci_tag(tag: str) -> str:
+    """The chart version of an OCI tag, as Helm and ArgoCD read it (1.2.3_1 -> 1.2.3+1)."""
+    return tag.replace("_", "+")
+
+
 @dataclass
 class ChartFiles:
     """What kube-tower reads in a chart: its Chart.yaml, its default values and the value files asked for."""
@@ -211,7 +222,7 @@ class HelmClient:
     async def list_versions(self, repository: str, chart: str) -> list[str]:
         if is_oci(repository):
             registry, path = split_oci(repository, chart)
-            return await self.oci.list_tags(registry, path)
+            return [version_from_oci_tag(t) for t in await self.oci.list_tags(registry, path)]
         entries = (await self._index(repository)).get("entries", {}).get(chart)
         if entries is None:
             raise RegistryError(f"chart {chart} is not published in the Helm repository {repository}: check the chart name")
@@ -222,7 +233,7 @@ class HelmClient:
         `org.opencontainers.image.created` annotation (set by `helm push` since Helm 3.15) in an OCI one."""
         if is_oci(repository):
             registry, path = split_oci(repository, chart)
-            return await self.oci.get_created(registry, path, version)
+            return await self.oci.get_created(registry, path, oci_tag(version))
         entries = (await self._index(repository)).get("entries", {}).get(chart) or []
         return parse_created(next((e.get("created") for e in entries if e.get("version") == version), None))
 
@@ -255,7 +266,7 @@ class HelmClient:
         return resp.content
 
     async def _oci_chart_archive(self, registry: str, path: str, version: str) -> bytes:
-        manifest = await self.oci.get_manifest(registry, path, version, HELM_MANIFEST_ACCEPT)
+        manifest = await self.oci.get_manifest(registry, path, oci_tag(version), HELM_MANIFEST_ACCEPT)
         layer = next((layer for layer in manifest.get("layers", []) if layer.get("mediaType") == HELM_CHART_LAYER), None)
         if layer is None:
             raise RegistryError(f"{registry}/{path}:{version} is an OCI artifact but not a Helm chart")
