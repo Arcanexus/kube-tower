@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Image details: the links to the image and its tags on the registry (Docker Hub, GitHub Packages, Quay...)
+  are in the **version** card at the top, instead of the end of the folded *Versions and digests* section.
+
 ## [1.3.1] - 2026-11-10
 
 ### Fixed

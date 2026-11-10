@@ -493,6 +493,7 @@ tr.clickable:hover > td, tbody.clickable:hover td { background: var(--kt-hover);
 .close-detail { margin: 0; padding: .3rem .5rem; width: auto; }
 .close-detail .icon { margin: 0; }
 .links { display: flex; flex-wrap: wrap; gap: 1rem; }
+.detail-card .links { gap: .25rem 1rem; font-size: .875rem; }
 .digest { font-size: .8em; }
 .drawer-panel code { overflow-wrap: anywhere; }
 

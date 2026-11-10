@@ -446,6 +446,9 @@ def test_image_detail():
     outside = js[js.index("A click beside the open panel") :]
     assert "e.stopPropagation();\n  ktCloseDetail();\n}, true);" in outside
     assert "https://hub.docker.com/_/redis/tags" in detail
+    # The registry links sit in the version card at the top, not in the folded sections
+    version_card = detail[detail.index('aria-label="Version"') : detail.index('aria-label="Vulnerabilities"')]
+    assert "https://hub.docker.com/_/redis/tags" in version_card and 'class="links"' in version_card
     assert "sha256:new" in detail and "Pin a version" in detail and "Versioning" not in detail
     detail = client.get("/images/detail", params={"ref": "docker.io/library/nginx:1.25"}).text
     assert "docker.io/library/nginx:1.27" in detail and "web-7d9f-abcde" in detail
