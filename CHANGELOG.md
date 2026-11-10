@@ -6,11 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-10
+
 ### Fixed
 
 - **OCI chart versions with build metadata** (`3.0.1+1`): `helm push` stores them under the tag `3.0.1_1`
   (a tag cannot hold `+`). kube-tower asked the registry for `3.0.1+1` and reported "404 Not Found"; it now
   reads `3.0.1_1` and lists the versions with their `+`, as Helm and ArgoCD do.
+- The image of a tag is published only when the tag matches the versions of `pyproject.toml` and `Chart.yaml`,
+  as the chart and the GitHub Release already were.
 
 ## [1.3.0] - 2026-11-10
 

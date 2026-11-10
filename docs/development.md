@@ -184,12 +184,14 @@ that the three versions are the same.
 2. Merge the changes into `main`, then push release candidates: `git tag v1.3.0-rc.1 && git push origin v1.3.0-rc.1`.
 3. For the final version, rename `## [Unreleased]` to `## [1.3.0] - <date>` in a pull request (and start a
    new empty `## [Unreleased]`), merge it, then push `v1.3.0`.
+4. For a patch (`v1.3.1`), one pull request sets `1.3.1` in `pyproject.toml` and `Chart.yaml` and renames
+   `## [Unreleased]` to `## [1.3.1] - <date>`; merge it, then push the tag.
 
 For each tag, CI publishes the image `ghcr.io/arcanexus/kube-tower:1.3.0` (and `1.3`, `1` for a final
 version), the chart `1.3.0` whose `appVersion` points to that image, and the GitHub Release of the tag:
 marked pre-release for `-rc.N`, with the CHANGELOG section of the version (`[Unreleased]` for a release
 candidate before the rename) and the image and chart to install. A release created by hand before the
-workflow runs is left as it is. The workflows fail when the tag does not match the versions of
+workflow runs is left as it is. The workflows (image, chart and release) fail before publishing anything when the tag does not match the versions of
 `pyproject.toml` and `Chart.yaml`, or when a final tag has no CHANGELOG section; to check a tag before
 pushing it:
 
