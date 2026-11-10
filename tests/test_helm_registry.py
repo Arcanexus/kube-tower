@@ -119,6 +119,27 @@ async def test_oci_chart():
 
 
 @respx.mock
+async def test_oci_chart_with_build_metadata():
+    """helm push stores 3.0.1+1 as the OCI tag 3.0.1_1; ArgoCD's targetRevision keeps the "+"."""
+    respx.get("https://ghcr.io/v2/org/charts/app/tags/list?n=1000").respond(200, json={"tags": ["3.0.1", "3.0.1_1"]})
+    respx.get("https://ghcr.io/v2/org/charts/app/manifests/3.0.1_1").respond(
+        200,
+        json={
+            "annotations": {"org.opencontainers.image.created": "2026-11-10T00:00:00Z"},
+            "layers": [{"mediaType": HELM_CHART_LAYER, "digest": "sha256:abc"}],
+        },
+    )
+    respx.get("https://ghcr.io/v2/org/charts/app/blobs/sha256:abc").respond(
+        200, content=_archive({"name": "app", "version": "3.0.1+1"})
+    )
+    async with httpx.AsyncClient() as http:
+        helm = HelmClient(http, OCIClient(http), GitSettings())
+        assert await helm.list_versions("oci://ghcr.io/org/charts", "app") == ["3.0.1", "3.0.1+1"]
+        assert (await helm.chart_metadata("ghcr.io/org/charts", "app", "3.0.1+1"))["version"] == "3.0.1+1"
+        assert await helm.release_date("ghcr.io/org/charts", "app", "3.0.1+1") is not None
+
+
+@respx.mock
 async def test_http_repository_index_pointing_to_oci_charts():
     """Bitnami's index.yaml lists the recent versions with oci:// URLs: they are read from the registry."""
     index = {
