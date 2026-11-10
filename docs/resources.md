@@ -66,6 +66,8 @@ extraEnv:
 
 ## Settings
 
+The modes and every key are summed up in [configuration](configuration.md#resources-krr).
+
 ```yaml
 resources:
   enabled: false        # the chart sets it when krr.enabled

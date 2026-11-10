@@ -57,8 +57,8 @@ The full list with comments is the chart's
 | `trivy.server.cacheSizeLimit` | `3Gi` | `emptyDir` holding the database of the Trivy server |
 | `trivy.server.resources` | 100m CPU / 256Mi requests, 1Gi memory limit | Trivy server resources |
 | `trivy.server.nodeSelector` / `.tolerations` / `.affinity` | | Trivy server scheduling |
-| `config.vulnerabilities.*` | see [configuration](configuration.md#vulnerabilities-trivy) | Trivy Operator reports, scan settings, ignored images |
-| `config.security.*` | `enabled: true`, `exposedSecrets: true` | Trivy Operator security reports of the [Security](security.md) page |
+| `config.vulnerabilities.*` | see [configuration](configuration.md#vulnerabilities) | Trivy Operator reports, scan settings, ignored images; the Trivy modes are in [Trivy configuration](configuration.md#trivy-configuration) |
+| `config.security.*` | `enabled: true`, `exposedSecrets: true` | Trivy Operator security reports of the [Security](security.md) page, see [audit](configuration.md#audit) |
 | `krr.enabled` | `false` | A [krr](resources.md) Deployment and Service for the CPU and memory recommendations of the Resources page; turns `config.resources.enabled` on and sets `config.resources.serverUrl` |
 | `krr.image` | `robustadev/krr:v1.31.3` | Official krr image (amd64, arm64) |
 | `krr.port` / `.concurrency` | `8080` / `2` | Port of the krr Service; clusters analysed at the same time |
@@ -66,7 +66,7 @@ The full list with comments is the chart's
 | `krr.extraEnv` | `[]` | e.g. `CERTIFICATE` (base64 PEM) to trust the private CA of a Prometheus |
 | `krr.networkPolicy.egressPorts` | `9090/TCP` | Ports of Prometheus reached directly, besides `networkPolicy.egress.ports` |
 | `krr.nodeSelector` / `.tolerations` / `.affinity` | | krr pod scheduling |
-| `config.resources.*` | see [resources](resources.md#settings) | krr strategy and options, namespaces, interval, Prometheus per cluster |
+| `config.resources.*` | see [configuration](configuration.md#resources-krr) | krr strategy and options, namespaces, interval, Prometheus per cluster |
 | `startupProbe` / `livenessProbe` / `readinessProbe` | 5 min to start, then every 20s / 10s | Probes on `/healthz` (the chart sets `httpGet`); `null` disables one |
 | `resources` | 50m CPU / 256Mi requests, 1536Mi memory limit | kube-tower pod resources (Trivy scans in standalone mode need the memory) |
 | `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, `podLabels`, `imagePullSecrets` | | Usual pod settings |
