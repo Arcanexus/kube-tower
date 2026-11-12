@@ -7,10 +7,10 @@
   <header>{{ icon("server") }}Roles and pods</header>
   <div class="role-tiles">
     {% for r in roles_status %}
-    <div class="role-tile role-{{ r.level }}" title="{{ r.role }}: {{ r.summary }}">
+    <div class="role-tile role-{{ r.level }}" title="{{ r.role }}: {{ r.text }}">
       <span class="role-icon">{{ icon(role_icons.get(r.role, "box")) }}</span>
-      <span><strong>{{ r.role }}</strong><small>{{ r.summary }}</small></span>
-      <span class="dot dot-{{ 'ok' if r.level == 'ok' else 'warn' if r.level == 'warn' else 'error' }}" role="img" aria-label="{{ r.level }}"></span>
+      <span><strong>{{ r.role }}</strong><small>{{ r.summary }}{% if r.lost %}, <span class="role-lost">{{ r.lost }}</span>{% endif %}</small></span>
+      <span class="dot dot-{{ 'ok' if r.level == 'ok' else 'error' }}" role="img" aria-label="{{ r.level }}"></span>
     </div>
     {% endfor %}
   </div>
@@ -26,7 +26,7 @@
       <tr class="process-{{ p.state }}">
         <td><code>{{ p.name }}</code></td>
         <td>{% for role in p.roles %}<span class="role-chip">{{ icon(role_icons.get(role, "box")) }}{{ role }}</span>{% endfor %}</td>
-        <td><span class="process-state" title="{{ why }}"><span class="dot dot-{{ dot }}"></span>{{ p.state }}</span>{% if restarts and restarts.get(p.name) %} <small class="muted-text" title="Restarts of its containers">{{ restarts[p.name] }} restart{{ "s" if restarts[p.name] > 1 }}</small>{% endif %}</td>
+        <td><span class="process-state" title="{{ why }}"><span class="dot dot-{{ dot }}"></span>{{ p.state }}</span>{% if p.state == "lost" and p.purge_in %} <small class="muted-text purge-in" title="A lost pod is removed from this list 15 minutes after its last report">purged in {{ "< 1 min" if p.purge_in < 60 else (p.purge_in // 60) ~ " min" }}</small>{% endif %}{% if restarts and restarts.get(p.name) %} <small class="muted-text" title="Restarts of its containers">{{ restarts[p.name] }} restart{{ "s" if restarts[p.name] > 1 }}</small>{% endif %}</td>
         <td>{% if p.task %}<small class="process-task"><span aria-busy="true">{{ p.task }}</span>{% if p.task_since %} <time datetime="{{ p.task_since.isoformat() }}" class="ago muted-text">{{ p.task_since.strftime("%H:%M:%S") }}</time>{% endif %}</small>{% else %}<small class="muted-text">—</small>{% endif %}</td>
         <td class="hide-sm"><small>{{ p.version }}</small></td>
         <td class="hide-sm">{% if p.started_at %}<small><time datetime="{{ p.started_at.isoformat() }}" class="ago">{{ p.started_at.strftime("%Y-%m-%d %H:%M UTC") }}</time></small>{% endif %}</td>

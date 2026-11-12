@@ -41,6 +41,7 @@ class ProcessInfo:
     seen_at: datetime | None = None
     task: str = ""  # kind of the task it runs
     task_since: datetime | None = None
+    purge_in: int = 0  # seconds before a lost process is forgotten (purged from the list)
 
     @property
     def alive(self) -> bool:
@@ -92,7 +93,8 @@ class Processes:
             if process.name == self.name:
                 continue
             if process.seen_at and now - process.seen_at > timedelta(seconds=LOST):
-                process = replace(process, state="lost")
+                purge_in = FORGET - (now - process.seen_at).total_seconds()
+                process = replace(process, state="lost", purge_in=max(0, int(purge_in)))
             others.append(process)
         return [me, *others]
 
@@ -102,9 +104,14 @@ class RoleStatus:
     """How a role runs, over the processes: one tile of the Administration page."""
 
     role: str
-    level: str  # ok, warn (some processes lost), error (no process alive runs it)
-    summary: str
+    level: str  # ok (enough processes alive for the role to work), error (not enough: none, or no active controller)
+    summary: str  # how it runs, e.g. "2 pods" or "active, 1 standby"
     pods: int
+    lost: str = ""  # the processes that do not answer, shown apart (orange), e.g. "1 lost"
+
+    @property
+    def text(self) -> str:
+        return ", ".join(part for part in (self.summary, self.lost) if part)
 
 
 def roles_status(processes: list[ProcessInfo]) -> list[RoleStatus]:
@@ -123,7 +130,6 @@ def roles_status(processes: list[ProcessInfo]) -> list[RoleStatus]:
         else:
             parts = [f"{len(alive)} pod{'s' if len(alive) != 1 else ''}" if alive else "no pod"]
             healthy = bool(alive)
-        if lost:
-            parts.append(f"{lost} lost")
-        statuses.append(RoleStatus(role, "error" if not healthy else "warn" if lost else "ok", ", ".join(parts), len(pods)))
+        lost_text = f"{lost} lost" if lost else ""
+        statuses.append(RoleStatus(role, "ok" if healthy else "error", ", ".join(parts), len(pods), lost_text))
     return statuses
