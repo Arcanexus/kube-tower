@@ -41,6 +41,7 @@ class ProcessInfo:
     seen_at: datetime | None = None
     task: str = ""  # kind of the task it runs
     task_since: datetime | None = None
+    purge_in: int = 0  # seconds before a lost process is forgotten (purged from the list)
 
     @property
     def alive(self) -> bool:
@@ -92,7 +93,8 @@ class Processes:
             if process.name == self.name:
                 continue
             if process.seen_at and now - process.seen_at > timedelta(seconds=LOST):
-                process = replace(process, state="lost")
+                purge_in = FORGET - (now - process.seen_at).total_seconds()
+                process = replace(process, state="lost", purge_in=max(0, int(purge_in)))
             others.append(process)
         return [me, *others]
 

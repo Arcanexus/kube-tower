@@ -38,7 +38,8 @@ the list of that cluster. See [clusters](clusters.md). Their nodes are on the [C
   are forgotten 15 minutes after their last report. A pod stopped cleanly (rollout, scale down) is removed
   at once.
 - Then every pod: roles, state (**active** / **standby** controller, **ok**, **lost** after 30 s without
-  report), current task, version, start time, last report. Refreshed every 5 seconds.
+  report, with the time left before it is purged from the list, e.g. *purged in 11 min*), current task,
+  version, start time, last report. Refreshed every 5 seconds.
 - In single mode, the only kube-tower line is the one pod. See [scaling](scaling.md).
 - The other pods of the Helm release, which do not report themselves, are read from the Kubernetes API
   (those labelled `app.kubernetes.io/instance=<release>` in its namespace): **valkey**, **dex**, the Trivy

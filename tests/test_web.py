@@ -1356,8 +1356,12 @@ def test_roles_and_pods_on_the_administration_page(monkeypatch):
 
     # a lost pod: the tile stays green, only the number of lost pods is orange
     registry.seen("kube-tower-ui-2", ["ui"])
-    registry.others["kube-tower-ui-2"].seen_at = now - timedelta(minutes=2)
+    registry.others["kube-tower-ui-2"].seen_at = now - timedelta(minutes=2, seconds=30)
     fragment = " ".join(client.get("/administration/processes").text.split())
+    # with the time left before it is forgotten (15 min after its last report)
+    assert '>lost</span> <small class="muted-text purge-in"' in fragment and "purged in 12 min</small>" in fragment
+    registry.others["kube-tower-ui-2"].seen_at = now - timedelta(minutes=14, seconds=30)
+    assert "purged in &lt; 1 min</small>" in client.get("/administration/processes").text
     assert '<strong>ui</strong><small>1 pod, <span class="role-lost">1 lost</span></small>' in fragment
     assert 'class="role-tile role-warn"' not in fragment and "dot dot-warn" not in fragment.split("<table")[0]
 
