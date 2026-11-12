@@ -92,12 +92,10 @@ async def _processes_context(backend, settings: Settings) -> dict:
             group = [p for p in others if p.component == component]
             ready = sum(p.ready for p in group)
             parts = [f"{ready} pod{'s' if ready != 1 else ''}" if ready else "no pod ready"]
-            if len(group) > ready:
-                parts.append(f"{len(group) - ready} not ready")
             if component == "krr" and krr and krr.task:
                 parts.append(krr.task)
-            level = "error" if not ready else "warn" if len(group) > ready else "ok"
-            statuses.append(RoleStatus(component, level, ", ".join(parts), len(group)))
+            not_ready = f"{len(group) - ready} not ready" if len(group) > ready else ""
+            statuses.append(RoleStatus(component, "ok" if ready else "error", ", ".join(parts), len(group), not_ready))
     elif krr:  # pods not listed (outside a cluster, no permission): the krr pod from its health check
         pods.append(krr)
         summary = "1 pod" + (f", {krr.task}" if krr.task else "") if krr.alive else "unreachable"

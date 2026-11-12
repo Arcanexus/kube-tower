@@ -32,8 +32,11 @@ the list of that cluster. See [clusters](clusters.md). Their nodes are on the [C
 
 ![Pods](images/pods.png)
 
-- One tile per role (**ui**, **controller**, **worker**, **trivy**): green when its pods run, orange when
-  some are lost, red when none runs it.
+- One tile per role (**ui**, **controller**, **worker**, **trivy**): green while enough pods run the role
+  (an active controller, at least one pod for the other roles), red when none alive runs it. Lost pods do
+  not change the color of the tile: their number is shown in orange (e.g. *1 pod, **1 lost***), until they
+  are forgotten 15 minutes after their last report. A pod stopped cleanly (rollout, scale down) is removed
+  at once.
 - Then every pod: roles, state (**active** / **standby** controller, **ok**, **lost** after 30 s without
   report), current task, version, start time, last report. Refreshed every 5 seconds.
 - In single mode, the only kube-tower line is the one pod. See [scaling](scaling.md).

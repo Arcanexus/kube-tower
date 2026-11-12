@@ -25,7 +25,7 @@
     <table class="compact">
       <tbody>
         <tr><th scope="row">Mode</th><td>{% if settings.distributed %}Distributed: {{ processes | length | plural("pod") }} sharing Valkey{% else %}One pod running every role{% endif %}</td></tr>
-        <tr><th scope="row">Roles</th><td>{% for r in roles_status %}{{ r.role }} <small class="muted-text">({{ r.summary }})</small>{{ ", " if not loop.last }}{% endfor %}
+        <tr><th scope="row">Roles</th><td>{% for r in roles_status %}{{ r.role }} <small class="muted-text">({{ r.text }})</small>{{ ", " if not loop.last }}{% endfor %}
           <a href="administration?tab=pods"><small>pods</small></a></td></tr>
         {% if started_at %}<tr><th scope="row">Running since</th><td><time datetime="{{ started_at.isoformat() }}" class="ago">{{ started_at.strftime("%Y-%m-%d %H:%M UTC") }}</time>
           <small class="muted-text">({{ started_at.strftime("%Y-%m-%d %H:%M UTC") }})</small></td></tr>{% endif %}

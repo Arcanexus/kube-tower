@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Administration, **Pods** tab: a role tile is green while enough pods run the role (an active controller,
+  at least one pod for the other roles), even when some pods are lost; only the number of lost (or not
+  ready) pods is shown in orange. The tile turns red when no pod alive runs the role.
+
 ## [1.3.2] - 2026-11-10
 
 ### Changed

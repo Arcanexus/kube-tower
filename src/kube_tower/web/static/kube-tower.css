@@ -680,7 +680,7 @@ td.cell-name { max-width: 21rem; }
 /* Administration: roles and pods */
 .role-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
 .role-tile { display: flex; align-items: center; gap: .75rem; padding: .6rem .8rem; border: 1px solid var(--kt-line); border-left: 4px solid #2e7d32; border-radius: var(--kt-radius); }
-.role-tile.role-warn { border-left-color: #ef6c00; }
+.role-tile .role-lost { color: var(--kt-warn); font-weight: 600; }
 .role-tile.role-error { border-left-color: #c62828; }
 .role-tile > span:nth-child(2) { flex: 1; display: flex; flex-direction: column; line-height: 1.3; }
 .role-tile small { color: var(--kt-muted); }

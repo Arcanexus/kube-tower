@@ -7,10 +7,10 @@
   <header>{{ icon("server") }}Roles and pods</header>
   <div class="role-tiles">
     {% for r in roles_status %}
-    <div class="role-tile role-{{ r.level }}" title="{{ r.role }}: {{ r.summary }}">
+    <div class="role-tile role-{{ r.level }}" title="{{ r.role }}: {{ r.text }}">
       <span class="role-icon">{{ icon(role_icons.get(r.role, "box")) }}</span>
-      <span><strong>{{ r.role }}</strong><small>{{ r.summary }}</small></span>
-      <span class="dot dot-{{ 'ok' if r.level == 'ok' else 'warn' if r.level == 'warn' else 'error' }}" role="img" aria-label="{{ r.level }}"></span>
+      <span><strong>{{ r.role }}</strong><small>{{ r.summary }}{% if r.lost %}, <span class="role-lost">{{ r.lost }}</span>{% endif %}</small></span>
+      <span class="dot dot-{{ 'ok' if r.level == 'ok' else 'error' }}" role="img" aria-label="{{ r.level }}"></span>
     </div>
     {% endfor %}
   </div>

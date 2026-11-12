@@ -1,7 +1,7 @@
 import dataclasses
 import re
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -1331,7 +1331,7 @@ def test_roles_and_pods_on_the_administration_page(monkeypatch):
     assert "<strong>krr</strong><small>1 pod, 1/2 krr run(s)</small>" in fragment
     assert (
         'class="role-tile role-error"' in fragment
-        and "<strong>valkey</strong><small>no pod ready, 1 not ready</small>" in fragment
+        and '<strong>valkey</strong><small>no pod ready, <span class="role-lost">1 not ready</span></small>' in fragment
     )
     assert "crashloopbackoff" in fragment and "1/2 krr run(s)" in fragment
 
@@ -1345,12 +1345,21 @@ def test_roles_and_pods_on_the_administration_page(monkeypatch):
             ProcessInfo("w0", ["worker", "trivy"]),
         ]
     )
-    assert [(s.role, s.level, s.summary) for s in statuses] == [
-        ("ui", "warn", "1 pod, 1 lost"),
-        ("controller", "error", "no active controller, 1 standby, 1 lost"),
-        ("worker", "ok", "1 pod"),
-        ("trivy", "ok", "1 pod"),
+    # green while enough pods run the role, the lost ones apart (orange), red when none runs it
+    assert [(s.role, s.level, s.summary, s.lost, s.text) for s in statuses] == [
+        ("ui", "ok", "1 pod", "1 lost", "1 pod, 1 lost"),
+        ("controller", "error", "no active controller, 1 standby", "1 lost", "no active controller, 1 standby, 1 lost"),
+        ("worker", "ok", "1 pod", "", "1 pod"),
+        ("trivy", "ok", "1 pod", "", "1 pod"),
     ]
+    assert roles_status([ProcessInfo("u1", ["ui"], "lost")])[0].level == "error"  # no ui pod alive
+
+    # a lost pod: the tile stays green, only the number of lost pods is orange
+    registry.seen("kube-tower-ui-2", ["ui"])
+    registry.others["kube-tower-ui-2"].seen_at = now - timedelta(minutes=2)
+    fragment = " ".join(client.get("/administration/processes").text.split())
+    assert '<strong>ui</strong><small>1 pod, <span class="role-lost">1 lost</span></small>' in fragment
+    assert 'class="role-tile role-warn"' not in fragment and "dot dot-warn" not in fragment.split("<table")[0]
 
 
 def test_logs_of_every_pod_filtered_by_role():
