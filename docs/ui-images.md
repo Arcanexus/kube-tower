@@ -15,8 +15,8 @@ checks in error, then the most vulnerable.
 | --- | --- |
 | Image | Normalized name (`nginx` becomes `docker.io/library/nginx`), with an icon: green ▶ a pod runs it, grey ⏸ none does |
 | Current | Tag used by the workloads, with the start of its digest and its [release date](#release-dates-and-their-age) |
-| Minor / patch | Latest release of the same major version: highest tag of the same shape, [versioning scheme](statuses.md#versioning-schemes) and major number (`15.4` → `15.10`), with its digest (orange when it differs) and its release date. The current tag when there is no newer one. For versions without major number (calendar, date, build number, `redis:7`), the highest of all |
-| Major | When a newer major version exists: the latest release of the newest major version, with its latest patch (`15.4` → `17.6`, not `16.0` or `17.0`), with its digest and release date; `—` when there is none |
+| Latest minor/patch | Latest release of the same major version: highest tag of the same shape, [versioning scheme](statuses.md#versioning-schemes) and major number (`15.4` → `15.10`), with its digest (orange when it differs) and its release date. The current tag when there is no newer one. For versions without major number (calendar, date, build number, `redis:7`), the highest of all |
+| Latest major | When a newer major version exists: the latest release of the newest major version, with its latest patch (`15.4` → `17.6`, not `16.0` or `17.0`), with its digest and release date; `—` when there is none |
 | Update | `major`, `minor`, `patch`, `newer` or `new digest`, else the [status](statuses.md) |
 | Vulnerabilities | Count by severity (C, H, M, L), `pending` while scanning, `scan failed` (reason on hover) or `not scanned` (see [troubleshooting](troubleshooting.md#vulnerabilities)) |
 | Used by | Number of workloads (or `cached on nodes`) and their clusters |
@@ -33,8 +33,8 @@ Each version shows its release date, colored by its age:
 | red | over 2 years | very old | probably no longer maintained |
 
 So you see at a glance whether the version you run is recent enough, and whether its major version (the
-*Minor / patch* column) or the image itself (the *Major* column) is still maintained: a red *Minor / patch*
-next to a green *Major* means the major version you run gets no more fixes. Hover a date for its exact time
+*Latest minor/patch* column) or the image itself (the *Latest major* column) is still maintained: a red *Latest minor/patch*
+next to a green *Latest major* means the major version you run gets no more fixes. Hover a date for its exact time
 and age. Change the ages with `images.releaseAgeDays` (default `[180, 365, 730]`, see
 [configuration](configuration.md)).
 

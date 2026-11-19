@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, chip, counters, icon, image_name, list_shown, load_more, more_hint, page_title, severity_counts, sort_th, update_badge, version_cells %}
 {% block layout %}list-page{% endblock %}
-{% block heading %}{{ page_title("images", "Images", "Versions and vulnerabilities of the container images.", "Images of the workloads and images cached on nodes. The icon tells whether a pod runs the image. Below each version, the start of its digest (a different digest is highlighted) and its release date, colored by its age: green under " ~ release_age_days[0] ~ " days, yellow under " ~ release_age_days[1] ~ ", orange under " ~ release_age_days[2] ~ ", red beyond (an old latest release may mean an unmaintained image). Minor / patch: the latest release of the same major version; Major: the latest patch of the newest major version, when there is one. Vulnerabilities come from the Trivy Operator reports, else from kube-tower's Trivy scans. Click an image for its details.") }}{% endblock %}
+{% block heading %}{{ page_title("images", "Images", "Versions and vulnerabilities of the container images.", "Images of the workloads and images cached on nodes. The icon tells whether a pod runs the image. Below each version, the start of its digest (a different digest is highlighted) and its release date, colored by its age: green under " ~ release_age_days[0] ~ " days, yellow under " ~ release_age_days[1] ~ ", orange under " ~ release_age_days[2] ~ ", red beyond (an old latest release may mean an unmaintained image). Latest minor/patch: the latest release of the same major version; Latest major: the latest patch of the newest major version, when there is one. Vulnerabilities come from the Trivy Operator reports, else from kube-tower's Trivy scans. Click an image for its details.") }}{% endblock %}
 {% block content %}
 <form class="filters filters-search" hx-get="images" hx-target="#results" hx-push-url="true"
       hx-trigger="input changed delay:300ms from:input[name=q], change">
@@ -38,7 +38,7 @@
   {% if scanning and not snapshot.vulnerabilities_finished_at %}· {{ icon("clock") }}vulnerability scan in progress{% endif %}</small></p>
 <div class="overflow-auto table-wrap">
 <table class="striped stack-sm images-table">
-  <thead><tr>{{ sort_th(listing, 0, "Image") }}{{ sort_th(listing, 1, "Current") }}{{ sort_th(listing, 2, "Minor / patch") }}{{ sort_th(listing, 3, "Major") }}{{ sort_th(listing, 4, "Update") }}{{ sort_th(listing, 5, "Vulnerabilities", True) }}{{ sort_th(listing, 6, "Used by", True, "hide-sm") }}</tr></thead>
+  <thead><tr>{{ sort_th(listing, 0, "Image") }}{{ sort_th(listing, 1, "Current") }}{{ sort_th(listing, 2, "Latest minor/patch") }}{{ sort_th(listing, 3, "Latest major") }}{{ sort_th(listing, 4, "Update") }}{{ sort_th(listing, 5, "Vulnerabilities", True) }}{{ sort_th(listing, 6, "Used by", True, "hide-sm") }}</tr></thead>
   <tbody>{{ self.rows() }}</tbody>
 </table>
 {{ more_hint(listing) }}

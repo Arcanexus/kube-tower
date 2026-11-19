@@ -65,8 +65,8 @@
 {% set current, latest = image_versions(r) %}
 {% set minor, major = image_updates(r) %}
 <td data-sort="{{ current[0] }}"><small class="show-sm version-label">current</small>{{ version_cell(current[0], current[1], released_at=r.current_released if current[0] == r.image.tag else None, aged=True) }}</td>
-<td data-sort="{{ minor[0] }}">{% if minor[0] or minor[1] %}<small class="show-sm version-label">minor / patch</small>{{ version_cell(minor[0], minor[1], current[1], warn=False, released_at=minor[2], aged=True) }}{% else %}<small class="muted-text" title="The registry could not tell (see the status)">unknown</small>{% endif %}</td>
-<td data-sort="{{ major[0] }}"{% if not major[0] %} class="hide-sm"{% endif %}>{% if major[0] %}<small class="show-sm version-label">major</small>{{ version_cell(major[0], major[1], current[1], warn=False, released_at=major[2], aged=True) }}{% else %}<small class="muted-text" title="No newer major version">—</small>{% endif %}</td>
+<td data-sort="{{ minor[0] }}">{% if minor[0] or minor[1] %}<small class="show-sm version-label">latest minor/patch</small>{{ version_cell(minor[0], minor[1], current[1], warn=False, released_at=minor[2], aged=True) }}{% else %}<small class="muted-text" title="The registry could not tell (see the status)">unknown</small>{% endif %}</td>
+<td data-sort="{{ major[0] }}"{% if not major[0] %} class="hide-sm"{% endif %}>{% if major[0] %}<small class="show-sm version-label">latest major</small>{{ version_cell(major[0], major[1], current[1], warn=False, released_at=major[2], aged=True) }}{% else %}<small class="muted-text" title="No newer major version">—</small>{% endif %}</td>
 {%- endmacro %}
 
 {% macro chip(name, value, active, count, label, title) -%}

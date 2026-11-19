@@ -517,7 +517,7 @@ def test_latest_minor_and_major_columns():
     # A minor update only: in the minor / patch column, none in the major one
     assert image_updates(nginx) == (("1.27", "", None), ("", "", None))
     page = client.get("/images?running=0").text
-    assert ">Minor / patch</th>" in page and ">Major</th>" in page and 'title="No newer major version">—' in page
+    assert ">Latest minor/patch</th>" in page and ">Latest major</th>" in page and 'title="No newer major version">—' in page
     # A major update too, with the dates of the three versions
     today = datetime.now(UTC)
     nginx.latest_tag, nginx.minor_tag, nginx.latest_digest = "2.0", "1.27", "sha256:major"
@@ -530,17 +530,17 @@ def test_latest_minor_and_major_columns():
     for level in ("stale", "aging", "recent"):
         assert f'<small class="released age-{level}"' in page
     assert "very old: check that it is still maintained" in page
-    assert '<small class="show-sm version-label">major</small>' in page
+    assert '<small class="show-sm version-label">latest major</small>' in page
     detail = client.get("/images/detail", params={"ref": str(nginx.image)}).text
-    assert "Latest major</th><td>" in detail and "Upgrade to (minor / patch)" in detail and "Upgrade to (major)" in detail
-    assert 'class="version-label">major</small>' in detail
+    assert "Latest major</th><td>" in detail and "Upgrade to (minor/patch)" in detail and "Upgrade to (major)" in detail
+    assert 'class="version-label">latest major</small>' in detail
     # Already on the latest minor: the current tag stays in the minor / patch column
     nginx.minor_tag, nginx.tag_digest = "1.25", "sha256:cur"
     assert image_updates(nginx)[0] == ("1.25", "sha256:cur", nginx.current_released)
     nginx.minor_tag = None  # report of an older kube-tower process
     assert image_updates(nginx)[0][0] == "1.25"
     detail = client.get("/images/detail", params={"ref": str(nginx.image)}).text
-    assert "Upgrade to (minor / patch)" not in detail
+    assert "Upgrade to (minor/patch)" not in detail
     # Sorted on the major column
     assert client.get("/images?running=0&sort=3").status_code == 200
 
