@@ -768,14 +768,23 @@ def _apply_image(report: ImageReport, fresh: ImageReport) -> None:
 
 def _fresh_chart(report: ChartReport) -> ChartReport:
     return dataclasses.replace(
-        report, status=Status.UNKNOWN, latest_version=None, latest_released=None, message=None, dependencies=[]
+        report,
+        status=Status.UNKNOWN,
+        latest_version=None,
+        latest_released=None,
+        current_released=None,
+        minor_version=None,
+        minor_released=None,
+        message=None,
+        dependencies=[],
     )
 
 
 def _apply_chart(report: ChartReport, fresh: ChartReport) -> None:
     # `chart` is kept: it identifies the chart in the UI.
     report.version, report.status, report.latest_version = fresh.version, fresh.status, fresh.latest_version
-    report.latest_released = fresh.latest_released
+    report.latest_released, report.current_released = fresh.latest_released, fresh.current_released
+    report.minor_version, report.minor_released = fresh.minor_version, fresh.minor_released
     report.message, report.dependencies = fresh.message, fresh.dependencies
 
 

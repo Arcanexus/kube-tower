@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, chip, counters, icon, image_name, list_shown, load_more, more_hint, page_title, severity_counts, sort_th, update_badge, version_cells %}
+{% from "_macros.html" import available_chips, badge, chip, counters, icon, image_name, list_shown, load_more, more_hint, page_title, severity_counts, sort_th, update_badge, version_cells %}
 {% block layout %}list-page{% endblock %}
 {% block heading %}{{ page_title("images", "Images", "Versions and vulnerabilities of the container images.", "Images of the workloads and images cached on nodes. The icon tells whether a pod runs the image. Below each version, the start of its digest (a different digest is highlighted) and its release date, colored by its age: green under " ~ release_age_days[0] ~ " days, yellow under " ~ release_age_days[1] ~ ", orange under " ~ release_age_days[2] ~ ", red beyond (an old latest release may mean an unmaintained image). Latest minor/patch: the latest release of the same major version; Latest major: the latest patch of the newest major version, when there is one. Vulnerabilities come from the Trivy Operator reports, else from kube-tower's Trivy scans. Click an image for its details.") }}{% endblock %}
 {% block content %}
@@ -9,7 +9,7 @@
          title="Words of the image reference, and vulnerability IDs (CVE, GHSA…), all or part, separated by spaces or commas">
   {# Set by the chips above the results (ktToggleFilter) #}
   <input type="hidden" name="status" value="{{ status }}"><input type="hidden" name="severity" value="{{ severity }}">
-  <input type="hidden" name="fixable" value="{{ '1' if fixable }}">
+  <input type="hidden" name="fixable" value="{{ '1' if fixable }}"><input type="hidden" name="available" value="{{ update_available }}">
   <input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">
   {% if chips %}
   <div class="filter-chips">
@@ -26,6 +26,7 @@
 {% for w in warnings if w.startswith("Trivy") %}<p class="notice notice-warn">{{ icon("warning") }}{{ w }} <a href="administration?tab=scans#trivy">Administration</a></p>{% endfor %}
 <div class="chip-rows">
   {{ counters(matching, "status", status, "Version") }}
+  {{ available_chips(available_counts, update_available) }}
   <div class="counters">
     <small class="counters-label">CVE</small>
     {% for s in Severity if s.value in ("critical", "high") %}

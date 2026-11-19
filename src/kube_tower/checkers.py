@@ -14,7 +14,7 @@ from kube_tower.helmvalues import merge, not_deployed, parse_values, subchart_va
 from kube_tower.models import ChartDependency, ChartReport, ImageReport, Status
 from kube_tower.registry.helm import ChartFiles, HelmClient, normalize_dependency_repository
 from kube_tower.registry.oci import OCIClient
-from kube_tower.versions import is_newer, latest_matching, latest_same_major, latest_semver, parse
+from kube_tower.versions import is_newer, latest_matching, latest_same_major, latest_semver, latest_semver_same_major, parse
 
 log = logging.getLogger(__name__)
 
@@ -275,8 +275,17 @@ class ChartChecker:
             return None
         return merge(values, report.inline_values)
 
-    async def _latest(self, repository: str, chart: str) -> str | None:
-        return latest_semver(await self._versions(repository, chart), self.settings.include_prerelease)
+    async def _latest(self, repository: str, chart: str, current: str = "") -> tuple[str | None, str | None]:
+        """(latest version, latest version of the same major version as `current`) of a chart."""
+        versions = await self._versions(repository, chart)
+        latest = latest_semver(versions, self.settings.include_prerelease)
+        return latest, latest_semver_same_major(current, versions, self.settings.include_prerelease) or latest
+
+    async def _dates(self, repository: str, chart: str, versions: tuple[str | None, ...]) -> list[datetime | None]:
+        """When each version was published, one lookup per distinct version (often the same)."""
+        unique = list(dict.fromkeys(v for v in versions if v))
+        dates = dict(zip(unique, await asyncio.gather(*(self._released(repository, chart, v) for v in unique)), strict=True))
+        return [dates.get(v) if v else None for v in versions]
 
     async def _released(self, repository: str, chart: str, version: str | None) -> datetime | None:
         """Best effort: when `version` of the chart was published."""
@@ -295,8 +304,10 @@ class ChartChecker:
             log.debug("subchart %s %s: %s (%s)", dep.name, dep.version, dep.message, dep.repository)
             return
         try:
-            dep.latest_version = await self._latest(repository, dep.name)
-            dep.latest_released = await self._released(repository, dep.name, dep.latest_version)
+            dep.latest_version, dep.minor_version = await self._latest(repository, dep.name, dep.version)
+            dep.latest_released, dep.minor_released = await self._dates(
+                repository, dep.name, (dep.latest_version, dep.minor_version)
+            )
             if parse(dep.version) is None:
                 # Version constraint such as "~1.2" or "1.x": just display the latest one.
                 dep.status, dep.message = Status.UNKNOWN, "version is a constraint"
@@ -389,8 +400,11 @@ class ChartChecker:
                 # Charts deployed from git follow the git revision: only subcharts can be outdated.
                 report.status, report.message = Status.UP_TO_DATE, f"deployed from git ({report.git_ref})"
             else:
-                report.latest_version = await self._latest(report.repository, report.chart)
-                report.latest_released = await self._released(report.repository, report.chart, report.latest_version)
+                report.latest_version, report.minor_version = await self._latest(report.repository, report.chart, report.version)
+                current = report.version if parse(report.version) is not None else None
+                report.latest_released, report.minor_released, report.current_released = await self._dates(
+                    report.repository, report.chart, (report.latest_version, report.minor_version, current)
+                )
                 if parse(report.version) is None:
                     what = "targetRevision" if report.manager == "argocd" else "version"
                     report.status, report.message = Status.UNKNOWN, f"{what} '{report.version}' is not a fixed version"

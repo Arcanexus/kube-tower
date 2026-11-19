@@ -216,6 +216,10 @@ async def test_chart_checker():
     ]
     assert app.latest_released.isoformat() == "2026-10-12T00:00:00+00:00"
     assert app.dependencies[0].latest_released.isoformat().startswith("2026-10-12")
+    # The latest of the same major version, and when the deployed version was published
+    assert (app.minor_version, app.dependencies[0].minor_version) == ("1.1.0", "18.0.0")
+    assert app.current_released == app.minor_released == app.latest_released
+    assert app2.current_released is None  # a constraint is no version
     assert app2.status == Status.UNKNOWN
     assert (mon.status, mon.version, mon.chart) == (Status.UP_TO_DATE, "0.3.0", "monitoring")
     assert mon.dependencies[0].status == Status.UNKNOWN

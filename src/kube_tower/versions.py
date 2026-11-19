@@ -140,6 +140,17 @@ def latest_semver(candidates: list[str], include_prerelease: bool = False) -> st
     return best.raw if best else None
 
 
+def latest_semver_same_major(current: str, candidates: list[str], include_prerelease: bool = False) -> str | None:
+    """The highest semver-like candidate of the same major version as `current`, ignoring shape (the latest
+    minor or patch release of a Helm chart). For a version that cannot be parsed, the same as latest_semver.
+    """
+    cur = parse(current)
+    if cur is None:
+        return latest_semver(candidates, include_prerelease)
+    same = [t for t in candidates if (v := parse(t)) is not None and v.numbers[:1] == cur.numbers[:1]]
+    return latest_semver(same, include_prerelease)
+
+
 def is_newer(candidate: str | None, current: str) -> bool:
     if candidate is None:
         return False

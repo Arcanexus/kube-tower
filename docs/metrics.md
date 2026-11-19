@@ -53,6 +53,25 @@ Every metric is a gauge rebuilt from the last scan, except `kube_tower_scans_tot
 - Images only found on nodes (`node.status.images`, i.e. pulled but not necessarily running) appear
   in `kube_tower_image_nodes` only, as a node count per cluster rather than one series per node.
 
+### Minor / patch and major updates, release ages
+
+The *Latest minor/patch* and *Latest major* columns of the [Images](ui-images.md) and
+[Helm charts](ui-charts.md) pages, and the age of each release.
+
+| Metric | Labels | Value |
+| --- | --- | --- |
+| `kube_tower_image_update_available` | `image`, `tag`, `update` (`minor`, `major`), `version` | 1 if a newer release is published in the same major version (`minor`: a minor or patch release, or a newer calendar or build version) or a newer major version (`major`), else 0; `version` is the latest of each |
+| `kube_tower_image_release_age_days` | `image`, `tag`, `release` (`current`, `latest_minor`, `latest_major`), `version` | days since the release of the current tag, of the latest minor or patch release and of the latest major release (when newer) |
+| `kube_tower_chart_update_available` | `cluster`, `application`, `chart`, `version_current`, `update` (`minor`, `major`), `version` | the same for the charts (not their subcharts) |
+| `kube_tower_chart_release_age_days` | `cluster`, `application`, `chart`, `release`, `version` | the same for the charts |
+
+- Both `update` series exist for every image and chart (value 0 and empty `version` when there is no
+  such update), so an image behind in its major version with a newer major version has both at 1.
+- A tag pushed again (new digest) is neither: see `kube_tower_image_outdated{update="digest"}`.
+- The age series exist only when the registry or the repository gives the release date
+  (`images.fetchReleaseDates`, `helm.fetchReleaseDates`). On its latest minor release, the `latest_minor`
+  series is the current version.
+
 ### Helm charts
 
 | Metric | Labels | Value |
@@ -127,7 +146,7 @@ sum by (cluster) (kube_tower_resources_current{resource="cpu", type="request"}
 ### Cardinality
 
 The number of series grows with the number of distinct images and charts, not with the number of
-pods or nodes: roughly one series per image, one per (workload, container), one per
+pods or nodes: roughly one series per image (five more for its updates and release ages), one per (workload, container), one per
 (cluster, image) found on nodes, one per chart and subchart, one per (node group, kubelet version), and with krr up to eight per container
 analysed. A few thousand series for a few hundred
 workloads is typical. To drop a metric you do not need, use `serviceMonitor.metricRelabelings`:
@@ -161,6 +180,21 @@ kube_tower_image_workload_info
 count by (cluster, namespace) (
   kube_tower_image_workload_info and on (image, tag) kube_tower_image_outdated == 1
 )
+
+# Safe updates: images with a newer minor or patch release of their major version
+kube_tower_image_update_available{update="minor"} == 1
+
+# Images whose newest release is over 2 years old (probably no longer maintained)
+min by (image, tag) (kube_tower_image_release_age_days{release=~"latest_.*"}) > 730
+
+# Running versions older than a year, per cluster
+count by (cluster) (
+  group by (cluster, image, tag) (kube_tower_image_workload_info)
+  and on (image, tag) kube_tower_image_release_age_days{release="current"} > 365
+)
+
+# Helm charts with a newer major version
+kube_tower_chart_update_available{update="major"} == 1
 
 # Outdated Helm charts per cluster, outdated subcharts
 count by (cluster) (kube_tower_chart_outdated == 1)
@@ -230,16 +264,31 @@ The dashboard is [`charts/kube-tower/dashboards/kube-tower.json`](../charts/kube
 
 ![kube-tower Grafana dashboard](images/grafana.png)
 
+It uses every metric above. The **graphs come first**, by subject; every **table** is in a folded
+row at the bottom (*Tables · ...*): open the one you need, the page stays short.
 
-- **Overview**: outdated images, major image updates, outdated charts, unreachable clusters, age of the
-  last scan, scan errors; images and charts by status, image updates by type, outdated images per cluster.
-- **Container images**: outdated images (current, latest, update type) and the workloads running them.
-- **Helm charts**: every chart (ArgoCD, Flux, helm) with its status, and the outdated subcharts.
-- **Vulnerabilities**: images with critical and high vulnerabilities, fixable critical/high vulnerabilities,
-  end of life OS images, failed vulnerability scans, age of the last vulnerability scan; vulnerabilities by
-  severity and over time, the most vulnerable images and the workloads running an image with critical
-  vulnerabilities (see [Vulnerabilities](vulnerabilities.md)).
-- **Clusters and scans**: registered clusters, outdated items over time, scan duration.
+- **Overview**: outdated images, images with a minor/patch and with a major update, outdated charts,
+  charts with a major update, images with critical CVEs, unreachable clusters, age of the last scan.
+- **Versions: images and Helm charts**: images and charts by status, image updates by type, outdated
+  images per cluster; updates available (minor/patch or major) for images and charts; release age of the
+  running image versions, of the newest image releases and of the deployed chart versions (green under 6
+  months, yellow under a year, orange under 2 years, red beyond); outdated items and minor/patch or major
+  updates over time.
+- **Vulnerabilities**: images with high vulnerabilities, fixable critical/high vulnerabilities, end of
+  life OS images, failed vulnerability scans, age of the last vulnerability scan, CVEs of the Kubernetes
+  and containerd versions; vulnerabilities by severity and over time (see [Vulnerabilities](vulnerabilities.md)).
+- **Security and compliance** (Trivy Operator): critical and high findings, resources with findings and
+  checked, compliance controls passed; findings by severity, by type, the most exposed namespaces,
+  compliance by framework (see [Security](security.md)).
+- **Clusters and scans**: scan errors, the first Kubernetes end of life, nodes not ready, deprecated APIs
+  to migrate, scan in progress, kube-tower version; end of life per cluster, nodes by kubelet version,
+  deprecated APIs by removal, scans per hour, scan duration.
+- **CPU and memory (krr)**: containers by fit, CPU and memory requested and recommended per cluster.
+- **Tables** (folded): outdated images, minor/patch and major updates and release age of the images, the
+  workloads running an outdated image; Helm charts, their updates and release ages, outdated subcharts;
+  most vulnerable images and the workloads running an image with critical vulnerabilities; security
+  findings by namespace and failed compliance controls; clusters, node groups, deprecated APIs requested,
+  images present on nodes; CPU and memory requests of each container, current and recommended.
 
 ### With the Grafana sidecar (kube-prometheus-stack)
 

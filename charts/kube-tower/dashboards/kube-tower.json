@@ -25,6 +25,12 @@
     },
     {
       "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    },
+    {
+      "type": "panel",
       "id": "piechart",
       "name": "Pie chart",
       "version": ""
@@ -51,7 +57,7 @@
   "id": null,
   "title": "kube-tower",
   "uid": "kube-tower",
-  "description": "Outdated container images and Helm charts across Kubernetes clusters (kube-tower exporter)",
+  "description": "Versions, release ages, vulnerabilities and security of container images and Helm charts across Kubernetes clusters (kube-tower exporter)",
   "tags": [
     "kube-tower",
     "kubernetes",
@@ -61,7 +67,7 @@
   "editable": true,
   "graphTooltip": 1,
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5m",
   "time": {
     "from": "now-7d",
@@ -152,7 +158,7 @@
     {
       "type": "row",
       "title": "Overview",
-      "id": 1,
+      "id": 140,
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -173,7 +179,7 @@
       "description": "Distinct images (registry/repository:tag) with a newer version, in the selected clusters",
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
         "x": 0,
         "y": 1
       },
@@ -228,7 +234,71 @@
     },
     {
       "type": "stat",
-      "title": "Major image updates",
+      "title": "Image minor/patch",
+      "id": 100,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "A newer minor or patch release of their major version: the safe update",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_image_update_available{update=\"minor\"} == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 3,
+        "y": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Image major",
       "id": 3,
       "datasource": {
         "type": "prometheus",
@@ -237,8 +307,8 @@
       "description": "",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 3,
+        "x": 6,
         "y": 1
       },
       "targets": [
@@ -292,7 +362,7 @@
     },
     {
       "type": "stat",
-      "title": "Outdated Helm charts",
+      "title": "Outdated charts",
       "id": 4,
       "datasource": {
         "type": "prometheus",
@@ -301,8 +371,8 @@
       "description": "ArgoCD Applications whose chart or one of its subcharts has a newer version",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 3,
+        "x": 9,
         "y": 1
       },
       "targets": [
@@ -356,7 +426,135 @@
     },
     {
       "type": "stat",
-      "title": "Unreachable clusters",
+      "title": "Chart major",
+      "id": 101,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_update_available{cluster=~\"$cluster\", update=\"major\"} == 1) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 12,
+        "y": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Critical CVEs",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Distinct images with at least one critical vulnerability, in the selected clusters",
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 15,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_image_vulnerabilities{severity=\"critical\"} > 0 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Unreachable",
       "id": 5,
       "datasource": {
         "type": "prometheus",
@@ -365,8 +563,8 @@
       "description": "",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
+        "w": 3,
+        "x": 18,
         "y": 1
       },
       "targets": [
@@ -429,8 +627,8 @@
       "description": "Time since the end of the last scan",
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
+        "w": 3,
+        "x": 21,
         "y": 1
       },
       "targets": [
@@ -488,68 +686,17 @@
       }
     },
     {
-      "type": "stat",
-      "title": "Scan errors",
-      "id": 7,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Non fatal collection errors of the last scan (e.g. a resource kube-tower is not allowed to list): see the Status page",
+      "type": "row",
+      "title": "Versions: images and Helm charts",
+      "id": 141,
+      "collapsed": false,
       "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 1
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
       },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "max(kube_tower_last_scan_errors)",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "value",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "0",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
+      "panels": []
     },
     {
       "type": "piechart",
@@ -563,7 +710,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 5
+        "y": 6
       },
       "targets": [
         {
@@ -680,7 +827,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 5
+        "y": 6
       },
       "targets": [
         {
@@ -812,7 +959,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 5
+        "y": 6
       },
       "targets": [
         {
@@ -929,7 +1076,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 5
+        "y": 6
       },
       "targets": [
         {
@@ -974,33 +1121,14 @@
       }
     },
     {
-      "type": "row",
-      "title": "Container images",
-      "id": 12,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 13
-      },
-      "panels": []
-    },
-    {
-      "type": "table",
-      "title": "Outdated images",
-      "id": 13,
+      "type": "bargauge",
+      "title": "Updates available: minor/patch or major",
+      "id": 102,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "One line per image: an image used in several clusters is listed once",
-      "gridPos": {
-        "h": 12,
-        "w": 24,
-        "x": 0,
-        "y": 14
-      },
+      "description": "An image or a chart can have both: behind in its own major version, and a newer major version published",
       "targets": [
         {
           "refId": "A",
@@ -1008,732 +1136,784 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "kube_tower_image_outdated == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})",
+          "expr": "count(kube_tower_image_update_available{update=\"minor\"} == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) or vector(0)",
           "instant": true,
           "range": false,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value": true,
-              "__name__": true,
-              "job": true,
-              "instance": true,
-              "namespace_1": true,
-              "pod": true,
-              "service": true,
-              "endpoint": true,
-              "container_1": true
-            },
-            "indexByName": {
-              "image": 0,
-              "tag": 1,
-              "latest": 2,
-              "update": 3
-            },
-            "renameByName": {}
-          }
+          "legendFormat": "images · minor/patch"
         },
         {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "image",
-                "tag",
-                "latest",
-                "update"
-              ]
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        },
-        "sortBy": [
-          {
-            "displayName": "image",
-            "desc": false
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "update"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "major": {
-                        "text": "major",
-                        "color": "red",
-                        "index": 0
-                      },
-                      "minor": {
-                        "text": "minor",
-                        "color": "orange",
-                        "index": 1
-                      },
-                      "patch": {
-                        "text": "patch",
-                        "color": "yellow",
-                        "index": 2
-                      },
-                      "newer": {
-                        "text": "newer",
-                        "color": "purple",
-                        "index": 3
-                      },
-                      "digest": {
-                        "text": "digest",
-                        "color": "blue",
-                        "index": 4
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "type": "table",
-      "title": "Workloads running an outdated image",
-      "id": 14,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 26
-      },
-      "targets": [
-        {
-          "refId": "A",
+          "refId": "B",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "kube_tower_image_workload_info{cluster=~\"$cluster\", namespace=~\"$namespace\"} * on (image, tag) group_left (latest, update) (kube_tower_image_outdated == 1)",
+          "expr": "count(kube_tower_image_update_available{update=\"major\"} == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) or vector(0)",
           "instant": true,
           "range": false,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value": true,
-              "__name__": true,
-              "job": true,
-              "instance": true,
-              "namespace_1": true,
-              "pod": true,
-              "service": true,
-              "endpoint": true,
-              "container_1": true
-            },
-            "indexByName": {
-              "cluster": 0,
-              "namespace": 1,
-              "kind": 2,
-              "workload": 3,
-              "container": 4,
-              "image": 5,
-              "tag": 6,
-              "latest": 7,
-              "update": 8
-            },
-            "renameByName": {}
-          }
+          "legendFormat": "images · major"
         },
         {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "cluster",
-                "namespace",
-                "kind",
-                "workload",
-                "container",
-                "image",
-                "tag",
-                "latest",
-                "update"
-              ]
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        },
-        "sortBy": [
-          {
-            "displayName": "namespace",
-            "desc": false
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "update"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "major": {
-                        "text": "major",
-                        "color": "red",
-                        "index": 0
-                      },
-                      "minor": {
-                        "text": "minor",
-                        "color": "orange",
-                        "index": 1
-                      },
-                      "patch": {
-                        "text": "patch",
-                        "color": "yellow",
-                        "index": 2
-                      },
-                      "newer": {
-                        "text": "newer",
-                        "color": "purple",
-                        "index": 3
-                      },
-                      "digest": {
-                        "text": "digest",
-                        "color": "blue",
-                        "index": 4
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "type": "row",
-      "title": "Helm charts",
-      "id": 15,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 36
-      },
-      "panels": []
-    },
-    {
-      "type": "table",
-      "title": "Helm charts (ArgoCD Applications)",
-      "id": 16,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "status is the worst status of the chart and its subcharts",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 37
-      },
-      "targets": [
-        {
-          "refId": "A",
+          "refId": "C",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "kube_tower_chart_outdated{cluster=~\"$cluster\"}",
+          "expr": "count(kube_tower_chart_update_available{cluster=~\"$cluster\", update=\"minor\"} == 1) or vector(0)",
           "instant": true,
           "range": false,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value": true,
-              "__name__": true,
-              "job": true,
-              "instance": true,
-              "namespace_1": true,
-              "pod": true,
-              "service": true,
-              "endpoint": true,
-              "container_1": true
-            },
-            "indexByName": {
-              "cluster": 0,
-              "application": 1,
-              "destination_namespace": 2,
-              "chart": 3,
-              "source": 4,
-              "version": 5,
-              "latest": 6,
-              "update": 7,
-              "status": 8
-            },
-            "renameByName": {
-              "destination_namespace": "namespace"
-            }
-          }
+          "legendFormat": "charts · minor/patch"
         },
         {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "cluster",
-                "application",
-                "destination_namespace",
-                "chart",
-                "source",
-                "version",
-                "latest",
-                "update",
-                "status"
-              ]
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        },
-        "sortBy": [
-          {
-            "displayName": "status",
-            "desc": true
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "status"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "up-to-date": {
-                        "text": "up-to-date",
-                        "color": "green",
-                        "index": 0
-                      },
-                      "outdated": {
-                        "text": "outdated",
-                        "color": "orange",
-                        "index": 1
-                      },
-                      "unknown": {
-                        "text": "unknown",
-                        "color": "text",
-                        "index": 2
-                      },
-                      "error": {
-                        "text": "error",
-                        "color": "red",
-                        "index": 3
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "update"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "major": {
-                        "text": "major",
-                        "color": "red",
-                        "index": 0
-                      },
-                      "minor": {
-                        "text": "minor",
-                        "color": "orange",
-                        "index": 1
-                      },
-                      "patch": {
-                        "text": "patch",
-                        "color": "yellow",
-                        "index": 2
-                      },
-                      "newer": {
-                        "text": "newer",
-                        "color": "purple",
-                        "index": 3
-                      },
-                      "digest": {
-                        "text": "digest",
-                        "color": "blue",
-                        "index": 4
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "type": "table",
-      "title": "Outdated subcharts",
-      "id": 17,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "",
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 47
-      },
-      "targets": [
-        {
-          "refId": "A",
+          "refId": "D",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "kube_tower_chart_dependency_outdated{cluster=~\"$cluster\"} == 1",
+          "expr": "count(kube_tower_chart_update_available{cluster=~\"$cluster\", update=\"major\"} == 1) or vector(0)",
           "instant": true,
           "range": false,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value": true,
-              "__name__": true,
-              "job": true,
-              "instance": true,
-              "namespace_1": true,
-              "pod": true,
-              "service": true,
-              "endpoint": true,
-              "container_1": true
-            },
-            "indexByName": {
-              "cluster": 0,
-              "application": 1,
-              "chart": 2,
-              "dependency": 3,
-              "version": 4,
-              "latest": 5,
-              "update": 6
-            },
-            "renameByName": {}
-          }
-        },
-        {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "cluster",
-                "application",
-                "chart",
-                "dependency",
-                "version",
-                "latest",
-                "update"
-              ]
-            }
-          }
+          "legendFormat": "charts · major"
         }
       ],
       "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        },
-        "sortBy": []
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "update"
-            },
-            "properties": [
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "major": {
-                        "text": "major",
-                        "color": "red",
-                        "index": 0
-                      },
-                      "minor": {
-                        "text": "minor",
-                        "color": "orange",
-                        "index": 1
-                      },
-                      "patch": {
-                        "text": "patch",
-                        "color": "yellow",
-                        "index": 2
-                      },
-                      "newer": {
-                        "text": "newer",
-                        "color": "purple",
-                        "index": 3
-                      },
-                      "digest": {
-                        "text": "digest",
-                        "color": "blue",
-                        "index": 4
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "type": "row",
-      "title": "Vulnerabilities",
-      "id": 22,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 54
-      },
-      "panels": []
-    },
-    {
-      "type": "stat",
-      "title": "Images with critical CVEs",
-      "id": 23,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "Distinct images with at least one critical vulnerability, in the selected clusters",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 55
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "count(kube_tower_image_vulnerabilities{severity=\"critical\"} > 0 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) or vector(0)",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
           "fields": "",
           "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "value",
-        "justifyMode": "center"
+        }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
-          "noValue": "0",
+          "min": 0,
           "color": {
-            "mode": "thresholds"
+            "mode": "fixed",
+            "fixedColor": "blue"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
               }
             ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "images · minor/patch"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "images · major"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charts · minor/patch"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "charts · major"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 14
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Release age of the running image versions",
+      "id": 103,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Images by the age of the release they run (green under 6 months, yellow under a year, orange under 2 years, red beyond)",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count((kube_tower_image_release_age_days{release=\"current\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) < 180) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "< 6 months"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count((kube_tower_image_release_age_days{release=\"current\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) >= 180 < 365) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "6-12 months"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count((kube_tower_image_release_age_days{release=\"current\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) >= 365 < 730) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "1-2 years"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count((kube_tower_image_release_age_days{release=\"current\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) >= 730) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "> 2 years"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "< 6 months"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "6-12 months"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#EAB839"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1-2 years"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "> 2 years"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 14
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Release age of the newest image releases",
+      "id": 104,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Images by the age of their newest release: an old newest release may mean an unmaintained image",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count((min by (image, tag) (kube_tower_image_release_age_days{release=~\"latest_.*\"}) and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) < 180) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "< 6 months"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count((min by (image, tag) (kube_tower_image_release_age_days{release=~\"latest_.*\"}) and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) >= 180 < 365) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "6-12 months"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count((min by (image, tag) (kube_tower_image_release_age_days{release=~\"latest_.*\"}) and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) >= 365 < 730) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "1-2 years"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count((min by (image, tag) (kube_tower_image_release_age_days{release=~\"latest_.*\"}) and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})) >= 730) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "> 2 years"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "< 6 months"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "6-12 months"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#EAB839"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1-2 years"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "> 2 years"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 14
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Release age of the deployed chart versions",
+      "id": 105,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Helm charts by the age of the version deployed",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_release_age_days{cluster=~\"$cluster\", release=\"current\"} < 180) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "< 6 months"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_release_age_days{cluster=~\"$cluster\", release=\"current\"} >= 180 < 365) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "6-12 months"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_release_age_days{cluster=~\"$cluster\", release=\"current\"} >= 365 < 730) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "1-2 years"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_release_age_days{cluster=~\"$cluster\", release=\"current\"} >= 730) or vector(0)",
+          "instant": true,
+          "range": false,
+          "legendFormat": "> 2 years"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "< 6 months"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "6-12 months"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#EAB839"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1-2 years"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "> 2 years"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 14
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outdated over time",
+      "id": 20,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_image_outdated == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+          "legendFormat": "images"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_outdated{cluster=~\"$cluster\"} == 1)",
+          "legendFormat": "charts"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_dependency_outdated{cluster=~\"$cluster\"} == 1)",
+          "legendFormat": "subcharts"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 10
           }
         },
         "overrides": []
       }
     },
     {
+      "type": "timeseries",
+      "title": "Minor/patch and major updates over time",
+      "id": 106,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_image_update_available{update=\"minor\"} == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+          "legendFormat": "images · minor/patch"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_image_update_available{update=\"major\"} == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+          "legendFormat": "images · major"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_update_available{cluster=~\"$cluster\", update=\"minor\"} == 1)",
+          "legendFormat": "charts · minor/patch"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_chart_update_available{cluster=~\"$cluster\", update=\"major\"} == 1)",
+          "legendFormat": "charts · major"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      }
+    },
+    {
+      "type": "row",
+      "title": "Vulnerabilities",
+      "id": 142,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "panels": []
+    },
+    {
       "type": "stat",
-      "title": "Images with high CVEs",
+      "title": "High CVE images",
       "id": 24,
       "datasource": {
         "type": "prometheus",
@@ -1743,8 +1923,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 4,
-        "y": 55
+        "x": 0,
+        "y": 31
       },
       "targets": [
         {
@@ -1797,7 +1977,7 @@
     },
     {
       "type": "stat",
-      "title": "Fixable critical/high CVEs",
+      "title": "Fixable crit./high",
       "id": 25,
       "datasource": {
         "type": "prometheus",
@@ -1807,8 +1987,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 8,
-        "y": 55
+        "x": 4,
+        "y": 31
       },
       "targets": [
         {
@@ -1871,8 +2051,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 12,
-        "y": 55
+        "x": 8,
+        "y": 31
       },
       "targets": [
         {
@@ -1925,7 +2105,7 @@
     },
     {
       "type": "stat",
-      "title": "Failed vulnerability scans",
+      "title": "Failed scans",
       "id": 27,
       "datasource": {
         "type": "prometheus",
@@ -1935,8 +2115,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 16,
-        "y": 55
+        "x": 12,
+        "y": 31
       },
       "targets": [
         {
@@ -1989,7 +2169,7 @@
     },
     {
       "type": "stat",
-      "title": "Last vulnerability scan",
+      "title": "Last CVE scan",
       "id": 28,
       "datasource": {
         "type": "prometheus",
@@ -1999,8 +2179,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 20,
-        "y": 55
+        "x": 16,
+        "y": 31
       },
       "targets": [
         {
@@ -2057,6 +2237,70 @@
       }
     },
     {
+      "type": "stat",
+      "title": "Platform CVEs",
+      "id": 107,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Critical and high vulnerabilities of the Kubernetes and containerd versions run by the clusters (OSV)",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(kube_tower_platform_vulnerabilities{severity=~\"critical|high\"}) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 31
+      }
+    },
+    {
       "type": "piechart",
       "title": "Vulnerabilities by severity",
       "id": 29,
@@ -2069,7 +2313,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 59
+        "y": 35
       },
       "targets": [
         {
@@ -2199,9 +2443,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 18,
+        "w": 12,
         "x": 6,
-        "y": 59
+        "y": 35
       },
       "targets": [
         {
@@ -2312,20 +2556,14 @@
       }
     },
     {
-      "type": "table",
-      "title": "Most vulnerable images",
-      "id": 31,
+      "type": "bargauge",
+      "title": "Kubernetes and containerd vulnerabilities",
+      "id": 108,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Vulnerabilities per image and severity, the most critical first; fixable: fixed in a newer version of the package",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 67
-      },
+      "description": "Known vulnerabilities of the versions run by the clusters (OSV)",
       "targets": [
         {
           "refId": "A",
@@ -2333,141 +2571,443 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"critical\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+          "expr": "sum by (component, version) (kube_tower_platform_vulnerabilities)",
           "instant": true,
           "range": false,
-          "format": "table"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"high\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"medium\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "refId": "D",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"low\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "refId": "E",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"unknown\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        },
-        {
-          "refId": "F",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities_fixable and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {
-              "image": 0,
-              "tag": 1,
-              "critical": 2,
-              "high": 3,
-              "medium": 4,
-              "low": 5,
-              "unknown": 6,
-              "fixable": 7
-            },
-            "renameByName": {
-              "Value #A": "critical",
-              "Value #B": "high",
-              "Value #C": "medium",
-              "Value #D": "low",
-              "Value #E": "unknown",
-              "Value #F": "fixable"
-            }
-          }
-        },
-        {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "image",
-                "tag",
-                "critical",
-                "high",
-                "medium",
-                "low",
-                "unknown",
-                "fixable"
-              ]
-            }
-          }
+          "legendFormat": "{{component}} {{version}}"
         }
       ],
       "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
           ],
-          "fields": ""
-        },
-        "sortBy": [
-          {
-            "displayName": "critical",
-            "desc": true
-          }
-        ]
+          "fields": "",
+          "values": false
+        }
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": true,
-            "cellOptions": {
-              "type": "auto"
-            }
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 35
+      }
+    },
+    {
+      "type": "row",
+      "title": "Security and compliance (Trivy Operator)",
+      "id": 143,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Critical findings",
+      "id": 109,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Failed checks and exposed secrets of the Trivy Operator security reports",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(kube_tower_security_findings{cluster=~\"$cluster\", severity=\"critical\"}) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "dark-red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 44
+      }
+    },
+    {
+      "type": "stat",
+      "title": "High findings",
+      "id": 110,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(kube_tower_security_findings{cluster=~\"$cluster\", severity=\"high\"}) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 44
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failing resources",
+      "id": 111,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(kube_tower_security_resources{cluster=~\"$cluster\", result=\"fail\"}) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 44
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Resources checked",
+      "id": 112,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(kube_tower_security_resources{cluster=~\"$cluster\"}) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 44
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Compliance passed",
+      "id": 113,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Over every compliance framework (CIS, NSA, PSS...)",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "100 * sum(kube_tower_compliance_controls{cluster=~\"$cluster\", result=\"pass\"}) / sum(kube_tower_compliance_controls{cluster=~\"$cluster\"})",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 44
+      }
+    },
+    {
+      "type": "piechart",
+      "title": "Findings by severity",
+      "id": 114,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (severity) (kube_tower_security_findings{cluster=~\"$cluster\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "value"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": [
@@ -2482,12 +3022,6 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "dark-red"
-                }
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
                 }
               }
             ]
@@ -2504,12 +3038,6 @@
                   "mode": "fixed",
                   "fixedColor": "red"
                 }
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
               }
             ]
           },
@@ -2525,169 +3053,57 @@
                   "mode": "fixed",
                   "fixedColor": "orange"
                 }
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
               }
             ]
-          }
-        ]
-      }
-    },
-    {
-      "type": "table",
-      "title": "Workloads running an image with critical vulnerabilities",
-      "id": 32,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "description": "",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 77
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
           },
-          "expr": "kube_tower_image_workload_info{cluster=~\"$cluster\", namespace=~\"$namespace\"} * on (image, tag) group_left (source) (kube_tower_image_vulnerabilities{severity=\"critical\"} > 0)",
-          "instant": true,
-          "range": false,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true
-            },
-            "indexByName": {
-              "cluster": 0,
-              "namespace": 1,
-              "kind": 2,
-              "workload": 3,
-              "container": 4,
-              "image": 5,
-              "tag": 6,
-              "critical": 7,
-              "source": 8
-            },
-            "renameByName": {
-              "Value": "critical"
-            }
-          }
-        },
-        {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "cluster",
-                "namespace",
-                "kind",
-                "workload",
-                "container",
-                "image",
-                "tag",
-                "critical",
-                "source"
-              ]
-            }
-          }
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "fields": ""
-        },
-        "sortBy": [
-          {
-            "displayName": "critical",
-            "desc": true
-          }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          }
-        },
-        "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "critical"
+              "options": "low"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "dark-red"
+                  "fixedColor": "yellow"
                 }
-              },
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unknown"
+            },
+            "properties": [
               {
-                "id": "custom.cellOptions",
+                "id": "color",
                 "value": {
-                  "type": "color-text"
+                  "mode": "fixed",
+                  "fixedColor": "text"
                 }
               }
             ]
           }
         ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 48
       }
     },
     {
-      "type": "row",
-      "title": "Clusters and scans",
-      "id": 18,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 87
-      },
-      "panels": []
-    },
-    {
-      "type": "table",
-      "title": "Clusters",
-      "id": 19,
+      "type": "bargauge",
+      "title": "Findings by type",
+      "id": 115,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "description": "",
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 88
-      },
       "targets": [
         {
           "refId": "A",
@@ -2695,135 +3111,230 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "kube_tower_cluster_info{cluster=~\"$cluster\"} * on (cluster) group_left kube_tower_cluster_reachable",
+          "expr": "sum by (type) (kube_tower_security_findings{cluster=~\"$cluster\"})",
           "instant": true,
           "range": false,
-          "format": "table"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "job": true,
-              "instance": true,
-              "namespace_1": true,
-              "pod": true,
-              "service": true,
-              "endpoint": true,
-              "container_1": true
-            },
-            "indexByName": {
-              "cluster": 0,
-              "source": 1,
-              "version": 2,
-              "Value": 3
-            },
-            "renameByName": {}
-          }
-        },
-        {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "names": [
-                "cluster",
-                "source",
-                "version",
-                "Value"
-              ]
-            }
-          }
+          "legendFormat": "{{type}}"
         }
       ],
       "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
           ],
-          "fields": ""
-        },
-        "sortBy": []
+          "fields": "",
+          "values": false
+        }
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "filterable": true,
-            "cellOptions": {
-              "type": "auto"
-            }
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Value"
-            },
-            "properties": [
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
               {
-                "id": "displayName",
-                "value": "reachable"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "0": {
-                        "text": "no",
-                        "color": "red",
-                        "index": 0
-                      },
-                      "1": {
-                        "text": "yes",
-                        "color": "green",
-                        "index": 1
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-text"
-                }
-              },
-              {
-                "id": "custom.align",
-                "value": "left"
-              },
-              {
-                "id": "custom.width",
-                "value": 90
+                "color": "blue",
+                "value": null
               }
             ]
           }
-        ]
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 48
       }
     },
     {
-      "type": "timeseries",
-      "title": "Outdated over time",
-      "id": 20,
+      "type": "bargauge",
+      "title": "Most exposed namespaces",
+      "id": 116,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "topk(10, sum by (cluster, namespace) (kube_tower_security_findings{cluster=~\"$cluster\", namespace=~\"$namespace\"}))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{namespace}} ({{cluster}})"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 88
+        "w": 6,
+        "x": 12,
+        "y": 48
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Compliance by framework",
+      "id": 117,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Share of the controls passed",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "100 * sum by (compliance) (kube_tower_compliance_controls{cluster=~\"$cluster\", result=\"pass\"}) / sum by (compliance) (kube_tower_compliance_controls{cluster=~\"$cluster\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{compliance}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 48
+      }
+    },
+    {
+      "type": "row",
+      "title": "Clusters and scans",
+      "id": 144,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 56
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Scan errors",
+      "id": 7,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Non fatal collection errors of the last scan (e.g. a resource kube-tower is not allowed to list): see the Status page",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 57
       },
       "targets": [
         {
@@ -2832,26 +3343,591 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(kube_tower_image_outdated == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
-          "legendFormat": "images"
+          "expr": "max(kube_tower_last_scan_errors)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "K8s end of life (days)",
+      "id": 118,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Days until the first end of life of the Kubernetes releases of the clusters (negative once passed)",
+      "targets": [
         {
-          "refId": "B",
+          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(kube_tower_chart_outdated{cluster=~\"$cluster\"} == 1)",
-          "legendFormat": "charts"
+          "expr": "min(kube_tower_kubernetes_end_of_life_days{cluster=~\"$cluster\"})",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 57
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Nodes not ready",
+      "id": 119,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
         {
-          "refId": "C",
+          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(kube_tower_chart_dependency_outdated{cluster=~\"$cluster\"} == 1)",
-          "legendFormat": "subcharts"
+          "expr": "sum(kube_tower_nodes{cluster=~\"$cluster\", ready=\"false\"}) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 57
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Deprecated APIs",
+      "id": 120,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Deprecated APIs still requested that a coming Kubernetes release removes",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(kube_tower_deprecated_api_requested{cluster=~\"$cluster\", removed_release!=\"\"}) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 57
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Scan in progress",
+      "id": 121,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(kube_tower_scan_in_progress)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 57
+      }
+    },
+    {
+      "type": "stat",
+      "title": "kube-tower version",
+      "id": 122,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "kube_tower_build_info",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{version}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "name",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "0",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 57
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Kubernetes end of life by cluster (days)",
+      "id": 123,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "kube_tower_kubernetes_end_of_life_days{cluster=~\"$cluster\"}",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{cluster}} ({{version}})"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 61
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Nodes by kubelet version",
+      "id": 124,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (cluster, kubelet_version) (kube_tower_nodes{cluster=~\"$cluster\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{cluster}} {{kubelet_version}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 61
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Deprecated APIs by removal",
+      "id": 125,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count by (cluster, removed_release) (kube_tower_deprecated_api_requested{cluster=~\"$cluster\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{cluster}} → {{removed_release}}"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 61
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Scans",
+      "id": 126,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Scans in the last 6 hours, by result",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (result) (increase(kube_tower_scans_total[6h]))",
+          "legendFormat": "{{result}}"
         }
       ],
       "options": {
@@ -2872,7 +3948,44 @@
             "fillOpacity": 10
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "success"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failure"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 61
       }
     },
     {
@@ -2884,10 +3997,10 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 88
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 69
       },
       "targets": [
         {
@@ -2920,6 +4033,2868 @@
         },
         "overrides": []
       }
+    },
+    {
+      "type": "row",
+      "title": "CPU and memory (krr)",
+      "id": 145,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      },
+      "panels": []
+    },
+    {
+      "type": "piechart",
+      "title": "Containers by fit",
+      "id": 127,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Fit of the requests and limits of the containers analysed by krr",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (fit) (kube_tower_resources_containers{cluster=~\"$cluster\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{fit}}"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "value"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "warning"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ok"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "good"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 76
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "CPU requested and recommended (cores)",
+      "id": 128,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (cluster) (kube_tower_resources_current{cluster=~\"$cluster\", resource=\"cpu\", type=\"request\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{cluster}} requested"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (cluster) (kube_tower_resources_recommended{cluster=~\"$cluster\", resource=\"cpu\", type=\"request\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{cluster}} recommended"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 6,
+        "y": 76
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Memory requested and recommended",
+      "id": 129,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (cluster) (kube_tower_resources_current{cluster=~\"$cluster\", resource=\"memory\", type=\"request\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{cluster}} requested"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (cluster) (kube_tower_resources_recommended{cluster=~\"$cluster\", resource=\"memory\", type=\"request\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{cluster}} recommended"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "top",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 15,
+        "y": 76
+      }
+    },
+    {
+      "type": "row",
+      "title": "Tables · Container images",
+      "id": 146,
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 84
+      },
+      "panels": [
+        {
+          "type": "table",
+          "title": "Outdated images",
+          "id": 13,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "One line per image: an image used in several clusters is listed once",
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 85
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_image_outdated == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "image": 0,
+                  "tag": 1,
+                  "latest": 2,
+                  "update": 3
+                },
+                "renameByName": {}
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "image",
+                    "tag",
+                    "latest",
+                    "update"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "image",
+                "desc": false
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "update"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "major": {
+                            "text": "major",
+                            "color": "red",
+                            "index": 0
+                          },
+                          "minor": {
+                            "text": "minor",
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "patch": {
+                            "text": "patch",
+                            "color": "yellow",
+                            "index": 2
+                          },
+                          "newer": {
+                            "text": "newer",
+                            "color": "purple",
+                            "index": 3
+                          },
+                          "digest": {
+                            "text": "digest",
+                            "color": "blue",
+                            "index": 4
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "table",
+          "title": "Minor/patch and major updates of the images",
+          "id": 130,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "One line per image and kind of update: an image behind in its own major version with a newer major version has two",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_image_update_available == 1 and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true,
+                  "Value": true
+                },
+                "indexByName": {
+                  "image": 0,
+                  "tag": 1,
+                  "update": 2,
+                  "version": 3
+                },
+                "renameByName": {}
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "image",
+                    "tag",
+                    "update",
+                    "version"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "image",
+                "desc": false
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "update"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "major": {
+                            "text": "major",
+                            "color": "red",
+                            "index": 0
+                          },
+                          "minor": {
+                            "text": "minor",
+                            "color": "orange",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 95
+          }
+        },
+        {
+          "type": "table",
+          "title": "Release age of the images",
+          "id": 131,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Days since the release of the current version, of the latest minor/patch release and of the latest major release",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_image_release_age_days and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"})",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "image": 0,
+                  "tag": 1,
+                  "release": 2,
+                  "version": 3,
+                  "Value": 4
+                },
+                "renameByName": {
+                  "Value": "age"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "image",
+                    "tag",
+                    "release",
+                    "version",
+                    "age"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "age",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "age"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "suffix: days"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 0
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "#EAB839",
+                          "value": 180
+                        },
+                        {
+                          "color": "orange",
+                          "value": 365
+                        },
+                        {
+                          "color": "red",
+                          "value": 730
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "thresholds"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 105
+          }
+        },
+        {
+          "type": "table",
+          "title": "Workloads running an outdated image",
+          "id": 14,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "",
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 115
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_image_workload_info{cluster=~\"$cluster\", namespace=~\"$namespace\"} * on (image, tag) group_left (latest, update) (kube_tower_image_outdated == 1)",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "namespace": 1,
+                  "kind": 2,
+                  "workload": 3,
+                  "container": 4,
+                  "image": 5,
+                  "tag": 6,
+                  "latest": 7,
+                  "update": 8
+                },
+                "renameByName": {}
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "namespace",
+                    "kind",
+                    "workload",
+                    "container",
+                    "image",
+                    "tag",
+                    "latest",
+                    "update"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "namespace",
+                "desc": false
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "update"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "major": {
+                            "text": "major",
+                            "color": "red",
+                            "index": 0
+                          },
+                          "minor": {
+                            "text": "minor",
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "patch": {
+                            "text": "patch",
+                            "color": "yellow",
+                            "index": 2
+                          },
+                          "newer": {
+                            "text": "newer",
+                            "color": "purple",
+                            "index": 3
+                          },
+                          "digest": {
+                            "text": "digest",
+                            "color": "blue",
+                            "index": 4
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Tables · Helm charts",
+      "id": 147,
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 125
+      },
+      "panels": [
+        {
+          "type": "table",
+          "title": "Helm charts",
+          "id": 16,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "status is the worst status of the chart and its subcharts",
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 126
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_chart_outdated{cluster=~\"$cluster\"}",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "application": 1,
+                  "destination_namespace": 2,
+                  "chart": 3,
+                  "source": 4,
+                  "version": 5,
+                  "latest": 6,
+                  "update": 7,
+                  "status": 8
+                },
+                "renameByName": {
+                  "destination_namespace": "namespace"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "application",
+                    "destination_namespace",
+                    "chart",
+                    "source",
+                    "version",
+                    "latest",
+                    "update",
+                    "status"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "status",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "status"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "up-to-date": {
+                            "text": "up-to-date",
+                            "color": "green",
+                            "index": 0
+                          },
+                          "outdated": {
+                            "text": "outdated",
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "unknown": {
+                            "text": "unknown",
+                            "color": "text",
+                            "index": 2
+                          },
+                          "error": {
+                            "text": "error",
+                            "color": "red",
+                            "index": 3
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "update"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "major": {
+                            "text": "major",
+                            "color": "red",
+                            "index": 0
+                          },
+                          "minor": {
+                            "text": "minor",
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "patch": {
+                            "text": "patch",
+                            "color": "yellow",
+                            "index": 2
+                          },
+                          "newer": {
+                            "text": "newer",
+                            "color": "purple",
+                            "index": 3
+                          },
+                          "digest": {
+                            "text": "digest",
+                            "color": "blue",
+                            "index": 4
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "table",
+          "title": "Minor/patch and major updates of the charts",
+          "id": 132,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_chart_update_available{cluster=~\"$cluster\"} == 1",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true,
+                  "Value": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "application": 1,
+                  "chart": 2,
+                  "version_current": 3,
+                  "update": 4,
+                  "version": 5
+                },
+                "renameByName": {}
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "application",
+                    "chart",
+                    "version_current",
+                    "update",
+                    "version"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "chart",
+                "desc": false
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "update"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "major": {
+                            "text": "major",
+                            "color": "red",
+                            "index": 0
+                          },
+                          "minor": {
+                            "text": "minor",
+                            "color": "orange",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 136
+          }
+        },
+        {
+          "type": "table",
+          "title": "Release age of the charts",
+          "id": 133,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Days since the release of the deployed version, of the latest minor/patch release and of the latest major release",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_chart_release_age_days{cluster=~\"$cluster\"}",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "application": 1,
+                  "chart": 2,
+                  "release": 3,
+                  "version": 4,
+                  "Value": 5
+                },
+                "renameByName": {
+                  "Value": "age"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "application",
+                    "chart",
+                    "release",
+                    "version",
+                    "age"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "age",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "age"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "suffix: days"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 0
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "#EAB839",
+                          "value": 180
+                        },
+                        {
+                          "color": "orange",
+                          "value": 365
+                        },
+                        {
+                          "color": "red",
+                          "value": 730
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "thresholds"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-background",
+                      "mode": "basic"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 144
+          }
+        },
+        {
+          "type": "table",
+          "title": "Outdated subcharts",
+          "id": 17,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "",
+          "gridPos": {
+            "h": 7,
+            "w": 24,
+            "x": 0,
+            "y": 152
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_chart_dependency_outdated{cluster=~\"$cluster\"} == 1",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "application": 1,
+                  "chart": 2,
+                  "dependency": 3,
+                  "version": 4,
+                  "latest": 5,
+                  "update": 6
+                },
+                "renameByName": {}
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "application",
+                    "chart",
+                    "dependency",
+                    "version",
+                    "latest",
+                    "update"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": []
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "update"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "major": {
+                            "text": "major",
+                            "color": "red",
+                            "index": 0
+                          },
+                          "minor": {
+                            "text": "minor",
+                            "color": "orange",
+                            "index": 1
+                          },
+                          "patch": {
+                            "text": "patch",
+                            "color": "yellow",
+                            "index": 2
+                          },
+                          "newer": {
+                            "text": "newer",
+                            "color": "purple",
+                            "index": 3
+                          },
+                          "digest": {
+                            "text": "digest",
+                            "color": "blue",
+                            "index": 4
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Tables · Vulnerabilities",
+      "id": 148,
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 159
+      },
+      "panels": [
+        {
+          "type": "table",
+          "title": "Most vulnerable images",
+          "id": 31,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Vulnerabilities per image and severity, the most critical first; fixable: fixed in a newer version of the package",
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 160
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"critical\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"high\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"medium\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"low\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            },
+            {
+              "refId": "E",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities{severity=\"unknown\"} and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            },
+            {
+              "refId": "F",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (image, tag) (kube_tower_image_vulnerabilities_fixable and on (image, tag) group by (image, tag) (kube_tower_image_workload_info{cluster=~\"$cluster\"} or kube_tower_image_nodes{cluster=~\"$cluster\"}))",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "indexByName": {
+                  "image": 0,
+                  "tag": 1,
+                  "critical": 2,
+                  "high": 3,
+                  "medium": 4,
+                  "low": 5,
+                  "unknown": 6,
+                  "fixable": 7
+                },
+                "renameByName": {
+                  "Value #A": "critical",
+                  "Value #B": "high",
+                  "Value #C": "medium",
+                  "Value #D": "low",
+                  "Value #E": "unknown",
+                  "Value #F": "fixable"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "image",
+                    "tag",
+                    "critical",
+                    "high",
+                    "medium",
+                    "low",
+                    "unknown",
+                    "fixable"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "critical",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "critical"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "dark-red"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "high"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "medium"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "table",
+          "title": "Workloads running an image with critical vulnerabilities",
+          "id": 32,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "",
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 170
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_image_workload_info{cluster=~\"$cluster\", namespace=~\"$namespace\"} * on (image, tag) group_left (source) (kube_tower_image_vulnerabilities{severity=\"critical\"} > 0)",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "namespace": 1,
+                  "kind": 2,
+                  "workload": 3,
+                  "container": 4,
+                  "image": 5,
+                  "tag": 6,
+                  "critical": 7,
+                  "source": 8
+                },
+                "renameByName": {
+                  "Value": "critical"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "namespace",
+                    "kind",
+                    "workload",
+                    "container",
+                    "image",
+                    "tag",
+                    "critical",
+                    "source"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "critical",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "critical"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "dark-red"
+                    }
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Tables · Security and compliance",
+      "id": 149,
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 180
+      },
+      "panels": [
+        {
+          "type": "table",
+          "title": "Findings by namespace",
+          "id": 134,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Failed checks and exposed secrets of the Trivy Operator reports",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_security_findings{cluster=~\"$cluster\", namespace=~\"$namespace\"} > 0",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "namespace": 1,
+                  "type": 2,
+                  "severity": 3,
+                  "Value": 4
+                },
+                "renameByName": {
+                  "Value": "findings"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "namespace",
+                    "type",
+                    "severity",
+                    "findings"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "findings",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "severity"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "critical": {
+                            "text": "critical",
+                            "color": "dark-red",
+                            "index": 0
+                          },
+                          "high": {
+                            "text": "high",
+                            "color": "red",
+                            "index": 1
+                          },
+                          "medium": {
+                            "text": "medium",
+                            "color": "orange",
+                            "index": 2
+                          },
+                          "low": {
+                            "text": "low",
+                            "color": "yellow",
+                            "index": 3
+                          },
+                          "unknown": {
+                            "text": "unknown",
+                            "color": "text",
+                            "index": 4
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 181
+          }
+        },
+        {
+          "type": "table",
+          "title": "Failed compliance controls",
+          "id": 135,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_compliance_controls{cluster=~\"$cluster\", result=\"fail\"} > 0",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "compliance": 1,
+                  "title": 2,
+                  "Value": 3
+                },
+                "renameByName": {
+                  "Value": "failed"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "compliance",
+                    "title",
+                    "failed"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "failed",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 191
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Tables · Clusters and nodes",
+      "id": 150,
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 201
+      },
+      "panels": [
+        {
+          "type": "table",
+          "title": "Clusters",
+          "id": 19,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "",
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 202
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_cluster_info{cluster=~\"$cluster\"} * on (cluster) group_left kube_tower_cluster_reachable",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "source": 1,
+                  "version": 2,
+                  "Value": 3
+                },
+                "renameByName": {}
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "source",
+                    "version",
+                    "Value"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": []
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Value"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "reachable"
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "0": {
+                            "text": "no",
+                            "color": "red",
+                            "index": 0
+                          },
+                          "1": {
+                            "text": "yes",
+                            "color": "green",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "custom.align",
+                    "value": "left"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 90
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "table",
+          "title": "Node groups",
+          "id": 136,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Nodes by role, node group, kubelet version and readiness",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_nodes{cluster=~\"$cluster\"}",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "role": 1,
+                  "pool": 2,
+                  "kubelet_version": 3,
+                  "ready": 4,
+                  "Value": 5
+                },
+                "renameByName": {
+                  "Value": "nodes"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "role",
+                    "pool",
+                    "kubelet_version",
+                    "ready",
+                    "nodes"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "cluster",
+                "desc": false
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ready"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "true": {
+                            "text": "true",
+                            "color": "green",
+                            "index": 0
+                          },
+                          "false": {
+                            "text": "false",
+                            "color": "red",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 210
+          }
+        },
+        {
+          "type": "table",
+          "title": "Deprecated APIs requested",
+          "id": 137,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Requested since the API server started; removed_release: the Kubernetes release that removes them",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_deprecated_api_requested{cluster=~\"$cluster\"}",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true,
+                  "Value": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "group": 1,
+                  "version": 2,
+                  "resource": 3,
+                  "subresource": 4,
+                  "removed_release": 5
+                },
+                "renameByName": {}
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "group",
+                    "version",
+                    "resource",
+                    "subresource",
+                    "removed_release"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "removed_release",
+                "desc": false
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 218
+          }
+        },
+        {
+          "type": "table",
+          "title": "Images present on nodes",
+          "id": 138,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Images in node.status.images, with the number of nodes holding them",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "kube_tower_image_nodes{cluster=~\"$cluster\"}",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "image": 1,
+                  "tag": 2,
+                  "Value": 3
+                },
+                "renameByName": {
+                  "Value": "nodes"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "image",
+                    "tag",
+                    "nodes"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "nodes",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 226
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Tables · CPU and memory (krr)",
+      "id": 151,
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 234
+      },
+      "panels": [
+        {
+          "type": "table",
+          "title": "CPU and memory requests (krr)",
+          "id": 139,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "description": "Current and recommended requests of each container",
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "max without (__name__, resource) (kube_tower_resources_current{cluster=~\"$cluster\", namespace=~\"$namespace\", type=\"request\", resource=\"cpu\"})",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "max without (__name__, resource) (kube_tower_resources_recommended{cluster=~\"$cluster\", namespace=~\"$namespace\", type=\"request\", resource=\"cpu\"})",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "max without (__name__, resource) (kube_tower_resources_current{cluster=~\"$cluster\", namespace=~\"$namespace\", type=\"request\", resource=\"memory\"})",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "max without (__name__, resource) (kube_tower_resources_recommended{cluster=~\"$cluster\", namespace=~\"$namespace\", type=\"request\", resource=\"memory\"})",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "namespace_1": true,
+                  "pod": true,
+                  "service": true,
+                  "endpoint": true,
+                  "container_1": true,
+                  "Value": true
+                },
+                "indexByName": {
+                  "cluster": 0,
+                  "namespace": 1,
+                  "kind": 2,
+                  "workload": 3,
+                  "container": 4,
+                  "Value #A": 5,
+                  "Value #B": 6,
+                  "Value #C": 7,
+                  "Value #D": 8
+                },
+                "renameByName": {
+                  "Value #A": "CPU current",
+                  "Value #B": "CPU recommended",
+                  "Value #C": "memory current",
+                  "Value #D": "memory recommended"
+                }
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "cluster",
+                    "namespace",
+                    "kind",
+                    "workload",
+                    "container",
+                    "CPU current",
+                    "CPU recommended",
+                    "memory current",
+                    "memory recommended"
+                  ]
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "workload",
+                "desc": false
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "memory current"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "memory recommended"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 235
+          }
+        }
+      ]
     }
   ]
 }

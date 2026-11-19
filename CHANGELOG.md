@@ -20,9 +20,31 @@ All notable changes to this project are documented here. The format follows
   under 6 months, yellow under a year, orange under 2 years, red beyond. You see whether the version you run
   is recent enough, and whether its major version or the image is still maintained. The ages are set with
   `images.releaseAgeDays` (default `[180, 365, 730]`).
+- Helm charts page: the same **Latest minor/patch** and **Latest major** columns, each with its release date,
+  and the release dates of the deployed and latest versions **colored by their age** (`images.releaseAgeDays`).
+  The columns sort by release date; the detail panel lists the three versions. The API and the snapshot have
+  the new `current_released`, `minor_version` and `minor_released` fields of the charts (`minor_version` of
+  the subcharts too).
+- Images and Helm charts pages: **Update** chips, *minor/patch* (a newer release in the same major version:
+  the safe update) and *major* (a newer major version), with their counts (`?available=minor`,
+  `?available=major`). An image or a chart can be in both.
+- Overview: a **Minor/patch or major** card counts the images and Helm charts with each kind of update, and
+  links to the lists filtered on it.
+- Metrics: `kube_tower_image_update_available` and `kube_tower_chart_update_available` (`update` label
+  `minor` or `major`, with the latest version of each), `kube_tower_image_release_age_days` and
+  `kube_tower_chart_release_age_days` (age of the current, latest minor/patch and latest major releases).
 
 ### Changed
 
+- **Grafana dashboard** reorganised, with every metric of the exporter: the graphs come first, by subject
+  (overview, versions, vulnerabilities, security and compliance, clusters and scans, CPU and memory), and
+  every table is in a folded *Tables · ...* row at the bottom, opened on demand, so the page stays short.
+  New panels: minor/patch or major updates (now and over time), release age of the running and newest
+  image versions and of the deployed chart versions, Kubernetes and containerd CVEs, Trivy Operator findings
+  and compliance, Kubernetes end of life, nodes by kubelet version, deprecated APIs, scans, kube-tower
+  version, krr fits and CPU / memory requested and recommended; tables of the updates and release ages,
+  security findings, failed compliance controls, node groups, deprecated APIs, images on nodes and krr
+  requests.
 - Administration, **Pods** tab: a role tile is green while enough pods run the role (an active controller,
   at least one pod for the other roles), even when some pods are lost; only the number of lost (or not
   ready) pods is shown in orange. The tile turns red when no pod alive runs the role.

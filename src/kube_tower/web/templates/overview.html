@@ -76,6 +76,19 @@
       </table>
       {% else %}<p><small>None.</small></p>{% endif %}
     </article>
+    <article>
+      <header>{{ icon("charts") }}Minor/patch or major <small>· updates available</small></header>
+      <table class="compact available-updates">
+        <thead><tr><td></td>{% for kind, label in available_kinds.items() %}<th scope="col">{{ label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for path, label, counts in (("images", "Images", s.images_available), ("charts", "Helm charts", s.charts_available)) %}
+          <tr><th scope="row">{{ label }}</th>{% for kind, kind_label in available_kinds.items() %}
+            <td><a href="{{ path }}?available={{ kind }}" title="Show the {{ label | lower }} with a newer {{ 'minor or patch release' if kind == 'minor' else 'major version' }}">{{ counts[kind] }}</a></td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p><small>A minor/patch update stays in the same major version: the safe step, before a major one.</small></p>
+    </article>
     {% if snapshot.trivy_operator %}
     <article>
       <header>{{ icon("security") }}Security <small>· Trivy Operator</small></header>

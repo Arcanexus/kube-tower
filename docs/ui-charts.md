@@ -12,14 +12,27 @@ and all its subcharts. How lists and detail panels work in general is in
 | Column | Meaning |
 | --- | --- |
 | Chart | Chart name |
-| Current, Latest | Version deployed and latest version published, with its release date: `created` in the `index.yaml` of the repository, or the `org.opencontainers.image.created` annotation of an OCI chart (pushed with Helm 3.15 or later). Off with `helm.fetchReleaseDates: false` |
+| Current | Version deployed, with its release date |
+| Latest minor/patch | Latest version of the same major version (`18.0.0` → `18.4.2`), with its release date. The current version when there is no newer one |
+| Latest major | When a newer major version is published: the latest version (`20.1.0`), with its release date; `—` when there is none |
 | Status | The chart and its subcharts as **one tree** (3 levels), each with its version (→ latest when behind) and its status |
 | Repository | Where the chart comes from, and its type (`helm`, `oci`, `git`) |
 | Deployed by | *ArgoCD Application*, *Flux HelmRelease* or *Helm release*, its name, cluster and destination namespace |
 
+- **Release dates** come from `created` in the `index.yaml` of the repository, or the
+  `org.opencontainers.image.created` annotation of an OCI chart (pushed with Helm 3.15 or later); off with
+  `helm.fetchReleaseDates: false`. They are **colored by their age** like on the
+  [Images page](ui-images.md#release-dates-and-their-age): green under 6 months, yellow under a year, orange
+  under 2 years, red beyond (`images.releaseAgeDays`). An old deployed version is due for an update; an old
+  latest version may mean a chart that is no longer maintained.
+- The *Latest minor/patch* and *Latest major* columns **sort by release date**, oldest first, then newest
+  first; the charts without a date come last.
 - A chart up to date with an outdated subchart says how many subcharts are behind, and counts as
   `outdated` in the chips and the sort.
 - **Search** by chart, Application, HelmRelease, release or repository (`flux`, `helm release` find them all).
+- **Chips**: the version status (worst of the chart and its subcharts), and the **Update** chips:
+  *minor/patch* lists the charts with a newer version in their major version (the safe update), *major*
+  those with a newer major version. A chart can be in both. Only the chart itself counts, not its subcharts.
 - How each kind of source is compared: [statuses and versions](statuses.md#helm-charts).
 
 ## Subcharts not deployed
@@ -42,7 +55,8 @@ with the reason (e.g. `bitwarden-sdk-server.enabled is false`):
 ## Detail panel
 
 The **Check versions** [rescan](usage.md#rescan-one-image-or-chart) button sits at the top, next to the
-full screen and close buttons. Then the subchart tree with the repository of each subchart, the source
+full screen and close buttons. Then the current, latest minor/patch and latest major versions, each with
+its release date colored by its age, the subchart tree with the repository of each subchart, the source
 with links to the repository and Artifact Hub (for a Helm release, the repository found in
 `helm.repositories` or on Artifact Hub), and the ArgoCD Application, Flux HelmRelease or Helm release.
 

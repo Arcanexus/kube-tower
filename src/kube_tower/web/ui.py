@@ -38,12 +38,21 @@ from kube_tower.models import (
 from kube_tower.processes import ProcessInfo, RoleStatus, roles_status
 from kube_tower.resources import krr_process
 from kube_tower.scanner import chart_key, image_key
-from kube_tower.versions import update_kind, versioning
+from kube_tower.versions import versioning
 from kube_tower.web.login import can, can_act, current_permissions, current_user, snapshot_of, visible_checks
 from kube_tower.web.metrics import image_update
 from kube_tower.web.resourceview import FIT_ICONS, FIT_RANK, FIT_WORDS, by_cluster, change_text, manifest, shown, text_of
 from kube_tower.web.resourceview import summarize as summarize_resources
 from kube_tower.web.summary import UPDATE_KINDS, fixable_critical, summarize, todo, workloads
+from kube_tower.web.updates import (
+    AVAILABLE,
+    RELEASE_AGE_TEXT,
+    available,
+    chart_updates,
+    image_updates,
+    image_versions,
+    release_age,
+)
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -300,7 +309,9 @@ IMAGE_COLUMNS = [
 CHART_COLUMNS = [
     Column(lambda c: natural(c.chart)),
     Column(lambda c: natural(c.version or "")),
-    Column(lambda c: natural(c.latest_version or "")),
+    # Latest minor/patch and latest major: by release date, oldest first (no date: last)
+    Column(lambda c: chart_updates(c)[0][1]),
+    Column(lambda c: chart_updates(c)[1][1]),
     Column(lambda c: STATUS_RANK[c.worst_status]),
     Column(lambda c: c.repository),
     Column(lambda c: (c.manager_label, natural(c.application))),
@@ -419,59 +430,6 @@ def short_digest(value: str | None) -> str:
         return ""
     algo, _, hexa = value.partition(":")
     return f"{algo}:{hexa[:12]}" if hexa else value[:19]
-
-
-def image_versions(r: ImageReport) -> tuple[tuple[str, str], tuple[str, str]]:
-    """((current tag, current digest), (latest tag, latest digest)) of an image, to show both side by side.
-    The current digest is the pinned one, else the running one, else the one published for the tag.
-    The latest is unknown ("") when the registry could not tell.
-    """
-    tag = r.image.tag or ""
-    running = sorted(r.running_digests)
-    current = (tag, r.image.digest or (running[0] if running else "") or r.tag_digest or "")
-    if r.latest_tag:
-        latest = (r.latest_tag, r.latest_digest or "")
-    elif r.status == Status.OUTDATED and r.latest_digest:  # same tag pushed again (latest, 1.25...)
-        latest = (tag, r.latest_digest)
-    elif r.status == Status.UP_TO_DATE:
-        latest = (tag, r.tag_digest or current[1])
-    else:
-        latest = ("", "")
-    return current, latest
-
-
-# A release older than each of these ages (images.releaseAgeDays) turns yellow, orange, then red.
-RELEASE_AGES = ("recent", "aging", "old", "stale")
-RELEASE_AGE_TEXT = {
-    "recent": "recent",
-    "aging": "aging",
-    "old": "old",
-    "stale": "very old: check that it is still maintained",
-}
-
-
-def release_age(when: datetime | None, days: Sequence[int] = (180, 365, 730), now: datetime | None = None) -> str:
-    """The age class of a release date (RELEASE_AGES), empty when unknown. `days`: images.releaseAgeDays."""
-    if when is None:
-        return ""
-    elapsed = ((now or datetime.now(UTC)) - when).days
-    return RELEASE_AGES[sum(1 for d in days if elapsed >= d)]
-
-
-def image_updates(r: ImageReport) -> tuple[tuple[str, str, datetime | None], tuple[str, str, datetime | None]]:
-    """((tag, digest, release date) of the latest minor or patch release, same of the latest major release) of
-    an image, for their own columns. The first one is the latest of the same major version, the current tag
-    when there is none (or the latest of all for versions without major numbers: calendar, date...); the
-    second one is empty ("") unless a newer major version is published.
-    """
-    current, latest = image_versions(r)
-    if r.latest_tag and update_kind(r.image.tag, r.latest_tag) == "major":
-        major = (r.latest_tag, r.latest_digest or "", r.latest_released)
-        if r.minor_tag and r.minor_tag != r.image.tag:
-            return (r.minor_tag, "", r.minor_released), major
-        return (current[0], r.tag_digest or current[1], r.current_released), major
-    released = r.latest_released if latest[0] and latest[0] == r.latest_tag else None
-    return (latest[0], latest[1], released), ("", "", None)
 
 
 def image_size(r: ImageReport) -> tuple[int, int] | None:
@@ -608,6 +566,7 @@ templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulner
 templates.env.globals.update(image_update=image_update, fixable_critical=fixable_critical)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
 templates.env.globals.update(release_age=release_age, release_age_text=RELEASE_AGE_TEXT, image_updates=image_updates)
+templates.env.globals.update(chart_updates=chart_updates, available=available, available_kinds=AVAILABLE)
 templates.env.globals["release_age_days"] = (180, 365, 730)  # images.releaseAgeDays, set by mount()
 templates.env.globals.update(versioning=versioning, image_versions=image_versions, image_size=image_size, usage_tree=usage_tree)
 templates.env.filters.update(plural=plural, duration=duration, short_digest=short_digest, age=age)
@@ -677,6 +636,7 @@ def mount(app: FastAPI) -> None:
     async def images(request: Request):
         p = request.query_params
         q, status, severity, fixable = p.get("q", ""), p.get("status", ""), p.get("severity", ""), p.get("fixable", "") == "1"
+        update_available = p.get("available", "")  # minor or major (AVAILABLE)
         cluster, running = global_filters(request)
         # Set by the links of the Overview: a registry, a kind of pending update (major, minor...).
         registry, update = p.get("registry", ""), p.get("update", "")
@@ -710,6 +670,8 @@ def mount(app: FastAPI) -> None:
         counts = {id(r): r.vulnerabilities.counts() if _fixable(r) >= 0 else {} for r in matching}
         affected = {s: sum(1 for r in matching if counts[id(r)].get(s)) for s in Severity}
         with_fix = sum(1 for r in matching if _fixable(r) > 0)
+        kinds = {id(r): available(r) for r in matching}
+        available_counts = {k: sum(1 for r in matching if k in kinds[id(r)]) for k in AVAILABLE}
         level = Severity.parse(severity) if severity in Severity._value2member_map_ else None
         rows = [
             r
@@ -717,6 +679,7 @@ def mount(app: FastAPI) -> None:
             if (not status or r.status.value == status)
             and (level is None or counts[id(r)].get(level))
             and (not fixable or _fixable(r) > 0)
+            and (not update_available or update_available in kinds[id(r)])
         ]
         listing = list_page(request, "images", rows, IMAGE_COLUMNS)
         return render(
@@ -732,6 +695,8 @@ def mount(app: FastAPI) -> None:
             fixable=fixable,
             affected=affected,
             with_fix=with_fix,
+            update_available=update_available,
+            available_counts=available_counts,
             found=found,
             chips=chips,
         )
@@ -759,6 +724,7 @@ def mount(app: FastAPI) -> None:
     @app.get("/charts", response_class=HTMLResponse, include_in_schema=False)
     async def charts(request: Request):
         q, status = request.query_params.get("q", ""), request.query_params.get("status", "")
+        update_available = request.query_params.get("available", "")  # minor or major (AVAILABLE)
         cluster, _ = global_filters(request)
         matching = [
             c
@@ -766,9 +732,13 @@ def mount(app: FastAPI) -> None:
             if _matches(f"{c.application} {c.chart} {c.repository} {c.manager_label}", q)
             and (not cluster or c.cluster == cluster)
         ]
-        listing = list_page(
-            request, "charts", [c for c in matching if not status or c.worst_status.value == status], CHART_COLUMNS
-        )
+        kinds = {id(c): available(c) for c in matching}
+        rows = [
+            c
+            for c in matching
+            if (not status or c.worst_status.value == status) and (not update_available or update_available in kinds[id(c)])
+        ]
+        listing = list_page(request, "charts", rows, CHART_COLUMNS)
         subcharts = sum(1 for c in matching if c.status != Status.OUTDATED and c.worst_status == Status.OUTDATED)
         return render(
             request,
@@ -779,6 +749,8 @@ def mount(app: FastAPI) -> None:
             matching=matching,
             q=q,
             status=status,
+            update_available=update_available,
+            available_counts={k: sum(1 for c in matching if k in kinds[id(c)]) for k in AVAILABLE},
             outdated_subcharts=subcharts,
         )
 
