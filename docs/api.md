@@ -45,6 +45,14 @@ curl -s -u admin:$PASSWORD http://kube-tower/api/snapshot \
 ```
 
 ```sh
+# Updates that stay in the same major version (minor_tag: latest release of the same major version,
+# latest_tag: latest of all), with the release date of the current tag
+curl -s -u admin:$PASSWORD http://kube-tower/api/snapshot \
+  | jq -r '.images[] | select(.minor_tag and .minor_tag != .image.tag)
+           | "\(.image.ref) (\(.current_released // "?")) -> \(.minor_tag) (\(.minor_released // "?"))"'
+```
+
+```sh
 # Images with critical vulnerabilities, with the number of them
 curl -s -u admin:$PASSWORD http://kube-tower/api/snapshot \
   | jq -r '.images[] | {ref: .image.ref, n: ([.vulnerabilities.vulnerabilities[]? | select(.severity=="critical")] | length)}

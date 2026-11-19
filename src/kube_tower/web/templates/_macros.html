@@ -43,26 +43,30 @@
 <span class="image-cell">{{ running_icon(r) }}<code class="image-name" title="{{ r.image.name }}"><span class="registry">{{ r.image.registry }}/</span>{{ r.image.repository }}</code></span>
 {%- endmacro %}
 
-{% macro released(date) -%}
+{% macro released(date, aged=False) -%}
 {# When a latest version was published: a datetime (ImageReport/ChartReport.latest_released) or a
-   YYYY-MM-DD text (PlatformVersion). #}
+   YYYY-MM-DD text (PlatformVersion). `aged`: colored by its age (images.releaseAgeDays), from green to red. #}
 {%- if date is string %}<small class="released" title="Released {{ date }}">{{ icon("calendar") }}{{ date }}</small>
-{%- elif date %}<small class="released" title="Released {{ date.strftime('%Y-%m-%d %H:%M UTC') }}, {{ date | age }}">{{ icon("calendar") }}{{ date.strftime("%Y-%m-%d") }}</small>{% endif -%}
+{%- elif date %}{% set level = release_age(date, release_age_days) if aged else "" %}<small class="released{{ ' age-' ~ level if level }}" title="Released {{ date.strftime('%Y-%m-%d %H:%M UTC') }}, {{ date | age }}{{ ': ' ~ release_age_text[level] if level }}">{{ icon("calendar") }}{{ date.strftime("%Y-%m-%d") }}</small>{% endif -%}
 {%- endmacro %}
 
-{% macro version_cell(tag_value, digest_value, other="", warn=True, copyable=False, released_at=None) -%}
+{% macro version_cell(tag_value, digest_value, other="", warn=True, copyable=False, released_at=None, aged=False) -%}
 {# A version and its short digest below, to compare current and latest at a glance; `other` is the digest
    of the other column: a different digest is highlighted. #}
 {% set shown = (tag(tag_value) if warn else tag_value) if tag_value else ("pinned digest" if digest_value else "—") %}
 {% set version_tag %}<span class="version-tag" title="{{ tag_value }}">{{ shown }}</span>{% endset %}
 <span class="version-cell">{% if copyable and tag_value %}{% call copy(tag_value) %}{{ version_tag }}{% endcall %}{% else %}{{ version_tag }}{% endif %}
-{%- if digest_value %}{% if copyable %}{% call copy(digest_value) %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}">{{ digest_value | short_digest }}</small>{% endcall %}{% else %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}" title="{{ digest_value }}">{{ digest_value | short_digest }}</small>{% endif %}{% endif %}{{ released(released_at) }}</span>
+{%- if digest_value %}{% if copyable %}{% call copy(digest_value) %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}">{{ digest_value | short_digest }}</small>{% endcall %}{% else %}<small class="digest-short {{ 'digest-differs' if other and other != digest_value }}" title="{{ digest_value }}">{{ digest_value | short_digest }}</small>{% endif %}{% endif %}{{ released(released_at, aged) }}</span>
 {%- endmacro %}
 
 {% macro version_cells(r) -%}
+{# Current version, latest minor or patch release (same major version), latest major release: each with its
+   release date colored by its age. #}
 {% set current, latest = image_versions(r) %}
-<td data-sort="{{ current[0] }}">{{ version_cell(current[0], current[1]) }}</td>
-<td data-sort="{{ latest[0] }}">{% if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False, released_at=r.latest_released if latest[0] == r.latest_tag) }}{% else %}<small class="muted-text" title="The registry could not tell (see the status)">unknown</small>{% endif %}</td>
+{% set minor, major = image_updates(r) %}
+<td data-sort="{{ current[0] }}"><small class="show-sm version-label">current</small>{{ version_cell(current[0], current[1], released_at=r.current_released if current[0] == r.image.tag else None, aged=True) }}</td>
+<td data-sort="{{ minor[0] }}">{% if minor[0] or minor[1] %}<small class="show-sm version-label">minor / patch</small>{{ version_cell(minor[0], minor[1], current[1], warn=False, released_at=minor[2], aged=True) }}{% else %}<small class="muted-text" title="The registry could not tell (see the status)">unknown</small>{% endif %}</td>
+<td data-sort="{{ major[0] }}"{% if not major[0] %} class="hide-sm"{% endif %}>{% if major[0] %}<small class="show-sm version-label">major</small>{{ version_cell(major[0], major[1], current[1], warn=False, released_at=major[2], aged=True) }}{% else %}<small class="muted-text" title="No newer major version">—</small>{% endif %}</td>
 {%- endmacro %}
 
 {% macro chip(name, value, active, count, label, title) -%}

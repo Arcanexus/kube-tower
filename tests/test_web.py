@@ -495,10 +495,54 @@ def test_release_dates_next_to_the_latest_versions():
     chart = scanner.snapshot.charts[0]
     chart.latest_released = datetime(2026, 9, 1, tzinfo=UTC)
     page = client.get("/images").text
-    assert '<small class="released" title="Released 2026-10-12 08:00 UTC, ' in page and "2026-10-12</small>" in page
+    assert '<small class="released age-' in page and "2026-10-12</small>" in page
     detail = client.get("/images/detail", params={"ref": str(nginx.image)}).text
-    assert detail.count("2026-10-12</small>") == 2  # summary and Latest tag
-    assert "2026-09-01</small>" in client.get("/charts").text
+    assert detail.count("2026-10-12</small>") == 2  # summary and Latest minor / patch
+    charts = client.get("/charts").text
+    assert '<small class="released" title="Released 2026-09-01 00:00 UTC, ' in charts  # charts: no age color
+
+
+def test_latest_minor_and_major_columns():
+    from datetime import UTC, datetime, timedelta
+
+    from kube_tower.web.ui import image_updates, release_age
+
+    now = datetime(2026, 11, 19, tzinfo=UTC)
+    ages = [release_age(now - timedelta(days=d), now=now) for d in (0, 179, 180, 400, 800)]
+    assert ages == ["recent", "recent", "aging", "old", "stale"]
+    assert release_age(now - timedelta(days=100), (30, 60, 90), now) == "stale" and release_age(None) == ""
+
+    client, scanner = _client()
+    nginx = scanner.snapshot.images[0]
+    # A minor update only: in the minor / patch column, none in the major one
+    assert image_updates(nginx) == (("1.27", "", None), ("", "", None))
+    page = client.get("/images?running=0").text
+    assert ">Minor / patch</th>" in page and ">Major</th>" in page and 'title="No newer major version">—' in page
+    # A major update too, with the dates of the three versions
+    today = datetime.now(UTC)
+    nginx.latest_tag, nginx.minor_tag, nginx.latest_digest = "2.0", "1.27", "sha256:major"
+    nginx.current_released = today - timedelta(days=800)
+    nginx.minor_released = today - timedelta(days=200)
+    nginx.latest_released = today - timedelta(days=3)
+    minor, major = image_updates(nginx)
+    assert (minor[0], major[0], major[1]) == ("1.27", "2.0", "sha256:major")
+    page = client.get("/images?running=0").text
+    for level in ("stale", "aging", "recent"):
+        assert f'<small class="released age-{level}"' in page
+    assert "very old: check that it is still maintained" in page
+    assert '<small class="show-sm version-label">major</small>' in page
+    detail = client.get("/images/detail", params={"ref": str(nginx.image)}).text
+    assert "Latest major</th><td>" in detail and "Upgrade to (minor / patch)" in detail and "Upgrade to (major)" in detail
+    assert 'class="version-label">major</small>' in detail
+    # Already on the latest minor: the current tag stays in the minor / patch column
+    nginx.minor_tag, nginx.tag_digest = "1.25", "sha256:cur"
+    assert image_updates(nginx)[0] == ("1.25", "sha256:cur", nginx.current_released)
+    nginx.minor_tag = None  # report of an older kube-tower process
+    assert image_updates(nginx)[0][0] == "1.25"
+    detail = client.get("/images/detail", params={"ref": str(nginx.image)}).text
+    assert "Upgrade to (minor / patch)" not in detail
+    # Sorted on the major column
+    assert client.get("/images?running=0&sort=3").status_code == 200
 
 
 def test_image_size():
@@ -881,8 +925,9 @@ def test_list_pages_layout_and_sortable_columns():
         page = client.get(path).text
         assert 'class="overflow-auto table-wrap"' in page and "<th data-sort" in page, path
     images = client.get("/images").text
-    assert re.search(r'<td data-sort="0">\s*<span class="badge badge-outdated badge-minor"', images)  # outdated sorts first
-    assert '<th data-sort="desc" data-server-sort="5" class="hide-sm">Used by</th>' in images
+    outdated_first = r'<td data-sort="0" class="cell-update">\s*<span class="badge badge-outdated badge-minor"'
+    assert re.search(outdated_first, images)  # outdated sorts first
+    assert '<th data-sort="desc" data-server-sort="6" class="hide-sm">Used by</th>' in images
     assert 'class="content "' in client.get("/administration?tab=settings").text  # documents scroll as a whole
 
 
@@ -934,7 +979,7 @@ def test_natural_sort_and_empty_values_last():
     client, _ = _client()
     # charts accept a sort too, the vulnerabilities of the images sort the most vulnerable first
     assert 'aria-sort="ascending"' in client.get("/charts?sort=0").text
-    assert 'aria-sort="descending"' in client.get("/images?sort=4").text
+    assert 'aria-sort="descending"' in client.get("/images?sort=5").text
     assert Column(len).descending is False
 
 
@@ -1075,7 +1120,7 @@ def test_images_show_current_and_latest_with_digests():
     # registry dimmed, full name on hover
     assert '<code class="image-name" title="ghcr.io/org/app"><span class="registry">ghcr.io/</span>org/app</code>' in page
     detail = client.get("/images/detail?ref=docker.io/library/nginx:1.25").text
-    assert 'class="drawer-summary"' in detail and detail.index("drawer-summary") < detail.index("<h4>Used by</h4>")
+    assert 'class="drawer-summary version-lines"' in detail and detail.index("drawer-summary") < detail.index("<h4>Used by</h4>")
     # two summary cards, then foldable sections: Used by, Vulnerabilities open; the rest folded
     assert detail.count('class="detail-card"') == 2
     assert detail.count('class="vuln-tile vuln-tile-') == 4 and "with a fix" in detail  # unknown only when found

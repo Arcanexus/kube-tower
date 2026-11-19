@@ -111,6 +111,18 @@ def latest_matching(current: str, candidates: list[str], include_prerelease: boo
     return best.raw
 
 
+def latest_same_major(current: str, candidates: list[str], include_prerelease: bool = False) -> str | None:
+    """The highest candidate of the same major version as `current` (its latest minor or patch release), with
+    the rules of latest_matching. For a tag that has no major and minor numbers (`7`, calendar, date or build
+    versions), the same as latest_matching.
+    """
+    cur = parse(current)
+    if cur is None or scheme(cur) != Scheme.SEMVER or len(cur.numbers) < 2:
+        return latest_matching(current, candidates, include_prerelease)
+    same = [t for t in candidates if (v := parse(t)) is not None and v.numbers[:1] == cur.numbers[:1]]
+    return latest_matching(current, same, include_prerelease)
+
+
 def latest_semver(candidates: list[str], include_prerelease: bool = False) -> str | None:
     """Return the highest semver-like version, ignoring shape (used for Helm charts)."""
     best: Version | None = None

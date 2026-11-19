@@ -36,7 +36,7 @@ unreachable clusters, critical vulnerabilities with a fix, major updates.
 
 ![Overview](images/overview.png)
 
-- **Images**: every image with its current and latest version and its vulnerabilities; click a line for
+- **Images**: every image with its current version, its latest minor / patch and major releases (release dates colored by age) and its vulnerabilities; click a line for
   its details and where it is used.
 - **Helm charts**: every chart of the ArgoCD Applications and Flux HelmReleases with its subcharts.
 - **Security**: the reports of Trivy Operator, when it is installed.
