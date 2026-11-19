@@ -34,12 +34,16 @@
 {% set actions %}{{ rescan(buttons, "images/detail?ref=" ~ ref ~ ("&cve=" ~ (cve | urlencode) if cve else ""), rescanning, checking_versions) }}{% endset %}
 {% call drawer(r.image.name, r.image.registry, actions) %}
 {% set current, latest = image_versions(r) %}
+{% set minor, major = image_updates(r) %}
 <div class="detail-cards">
   <section class="detail-card" aria-label="Version">
     <small class="counters-label">Version</small>
     <p>{{ update_badge(r) }}{% if r.message %} <small>{{ r.message }}</small>{% endif %}</p>
-    <p class="drawer-summary" aria-label="Current and latest version">{{ version_cell(current[0], current[1], copyable=True, released_at=r.current_released if current[0] == r.image.tag else None) }}<span class="arrow" aria-hidden="true">→</span>
-      {%- if latest[0] or latest[1] %}{{ version_cell(latest[0], latest[1], current[1], warn=False, copyable=True, released_at=r.latest_released if latest[0] == r.latest_tag) }}{% else %}<small class="muted-text">latest unknown</small>{% endif %}</p>
+    <div class="drawer-summary version-lines" aria-label="Current version, latest minor or patch release and latest major release">
+      <small class="version-label">current</small>{{ version_cell(current[0], current[1], copyable=True, released_at=r.current_released if current[0] == r.image.tag else None, aged=True) }}
+      <small class="version-label">latest minor/patch</small>{% if minor[0] or minor[1] %}{{ version_cell(minor[0], minor[1], current[1], warn=False, copyable=True, released_at=minor[2], aged=True) }}{% else %}<small class="muted-text">unknown</small>{% endif %}
+      {% if major[0] %}<small class="version-label">latest major</small>{{ version_cell(major[0], major[1], current[1], warn=False, copyable=True, released_at=major[2], aged=True) }}{% endif %}
+    </div>
     {% if r.image.is_latest %}
     <p class="tag-latest">{{ icon("warning") }}This image uses <code>latest</code> (or no tag): the running version changes on every pull. Pin a version instead.</p>
     {% endif %}
@@ -94,12 +98,15 @@
   <tr><th scope="row">Reference</th><td>{% call copy(r.image | string) %}<code>{{ r.image }}</code>{% endcall %}</td></tr>
   <tr><th scope="row">Current tag</th><td>{% call copy(r.image.tag) %}{{ tag(r.image.tag) }}{% endcall %}</td></tr>
   {% if versioning(r.image.tag) %}<tr><th scope="row">Versioning</th><td>{{ versioning(r.image.tag) }} <small>(only tags of the same scheme are compared)</small></td></tr>{% endif %}
-  <tr><th scope="row">Latest tag</th><td>{{ copy(r.latest_tag) if r.latest_tag else "n/a" }} {{ released(r.latest_released) }}</td></tr>
+  <tr><th scope="row">Current release</th><td>{{ released(r.current_released, True) if r.current_released else "unknown" }}</td></tr>
+  <tr><th scope="row">Latest minor/patch</th><td>{{ copy(minor[0]) if r.latest_tag and minor[0] else "n/a" }} {{ released(minor[2], True) }}</td></tr>
+  {% if major[0] %}<tr><th scope="row">Latest major</th><td>{{ copy(major[0]) }} {{ released(major[2], True) }}</td></tr>{% endif %}
   {% set size = image_size(r) %}
   <tr><th scope="row">Size</th><td>{% if size %}{{ size[0] | filesizeformat }}{% if size[1] != size[0] %} to {{ size[1] | filesizeformat }} <small>(depends on the digest or the architecture)</small>{% endif %}
     {% else %}<small>unknown (no node has pulled it)</small>{% endif %}</td></tr>
   {% if r.latest_tag and r.status == Status.OUTDATED %}
-  <tr><th scope="row">Upgrade to</th><td>{% call copy(r.image.name ~ ":" ~ r.latest_tag) %}<code>{{ r.image.name }}:{{ r.latest_tag }}</code>{% endcall %}</td></tr>
+  {% if major[0] and minor[0] != r.image.tag %}<tr><th scope="row">Upgrade to (minor/patch)</th><td>{% call copy(r.image.name ~ ":" ~ minor[0]) %}<code>{{ r.image.name }}:{{ minor[0] }}</code>{% endcall %}</td></tr>{% endif %}
+  <tr><th scope="row">Upgrade to{{ " (major)" if major[0] }}</th><td>{% call copy(r.image.name ~ ":" ~ r.latest_tag) %}<code>{{ r.image.name }}:{{ r.latest_tag }}</code>{% endcall %}</td></tr>
   {% endif %}
 </table>
 <h5>Digests</h5>

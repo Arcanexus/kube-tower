@@ -14,11 +14,29 @@ checks in error, then the most vulnerable.
 | Column | Meaning |
 | --- | --- |
 | Image | Normalized name (`nginx` becomes `docker.io/library/nginx`), with an icon: green ▶ a pod runs it, grey ⏸ none does |
-| Current | Tag used by the workloads, with the start of its digest |
-| Latest | Highest tag of the same shape and [versioning scheme](statuses.md#versioning-schemes), with its digest (orange when it differs) and its release date |
+| Current | Tag used by the workloads, with the start of its digest and its [release date](#release-dates-and-their-age) |
+| Latest minor/patch | Latest release of the same major version: highest tag of the same shape, [versioning scheme](statuses.md#versioning-schemes) and major number (`15.4` → `15.10`), with its digest (orange when it differs) and its release date. The current tag when there is no newer one. For versions without major number (calendar, date, build number, `redis:7`), the highest of all |
+| Latest major | When a newer major version exists: the latest release of the newest major version, with its latest patch (`15.4` → `17.6`, not `16.0` or `17.0`), with its digest and release date; `—` when there is none |
 | Update | `major`, `minor`, `patch`, `newer` or `new digest`, else the [status](statuses.md) |
 | Vulnerabilities | Count by severity (C, H, M, L), `pending` while scanning, `scan failed` (reason on hover) or `not scanned` (see [troubleshooting](troubleshooting.md#vulnerabilities)) |
 | Used by | Number of workloads (or `cached on nodes`) and their clusters |
+
+### Release dates and their age
+
+Each version shows its release date, colored by its age:
+
+| Color | Age (default) | For the current version | For a latest version |
+| --- | --- | --- | --- |
+| green | under 6 months | recent | its project releases |
+| yellow | 6 months to a year | aging | |
+| orange | 1 to 2 years | old: plan an update | no release for a while |
+| red | over 2 years | very old | probably no longer maintained |
+
+So you see at a glance whether the version you run is recent enough, and whether its major version (the
+*Latest minor/patch* column) or the image itself (the *Latest major* column) is still maintained: a red *Latest minor/patch*
+next to a green *Latest major* means the major version you run gets no more fixes. Hover a date for its exact time
+and age. Change the ages with `images.releaseAgeDays` (default `[180, 365, 730]`, see
+[configuration](configuration.md)).
 
 Also shown:
 
@@ -39,8 +57,9 @@ Also shown:
 ![Image details](images/image-detail.png)
 
 The [rescan](usage.md#rescan-one-image-or-chart) buttons sit at the top, next to the full screen and
-close buttons. Below, two cards side by side: the **version** (status, current → latest, each with its
-digest and release date, and the links to the page and the tags of the image on its registry: Docker Hub,
+close buttons. Below, two cards side by side: the **version** (status, then one line each for the current
+version, the latest minor / patch release and, when there is one, the latest major release, each with its
+release date colored by its age and its digest, and the links to the page and the tags of the image on its registry: Docker Hub,
 GitHub Packages, Quay, ECR Public Gallery, Microsoft Artifact Registry) and the
 **vulnerabilities** (total, a *fix available* or *no fix yet* status, one tile per severity, a bar of how many
 have a fix, an end of life OS, and the source, date and OS of the scan). Both cards have the same layout:
@@ -50,7 +69,7 @@ folded or unfolded with a click on its title:
 | Section | Opened | Content |
 | --- | --- | --- |
 | Used by | yes | Tree cluster › namespace › workload › pods, with nodes and containers; the nodes caching the image close each cluster |
-| Versions and digests | no | Reference, versioning scheme, latest tag, upgrade target, **size**; digests of the running pods, digest published for the same tag (different: the tag was pushed again), digest of the latest tag |
+| Versions and digests | no | Reference, versioning scheme, release of the current tag, latest minor / patch and latest major tags with their release dates, upgrade targets (minor / patch and major), **size**; digests of the running pods, digest published for the same tag (different: the tag was pushed again), digest of the latest tag |
 | Vulnerabilities | yes | Source (Trivy Operator or Trivy), scan date, scanned digest, OS |
 | All vulnerabilities | no (yes after a CVE search) | Each one with severity, score, package, installed and fixed version, linked to its advisory |
 
@@ -60,7 +79,7 @@ Notes:
   unpacked size with Docker. A range when nodes differ; unknown if no node pulled it.
 - A workload without pod says **no pod running** (scaled to zero, CronJob between two runs).
 - Published digests need `images.fetchTagDigests` (on by default).
-- The **release date** of the latest tag (and, in the detail panel, of the current tag) is when it was pushed on Docker Hub (its web API, outside the
+- The **release date** of each tag is when it was pushed on Docker Hub (its web API, outside the
   pull rate limit), else when the image was built: the `org.opencontainers.image.created` annotation,
   or the `created` date of its config (linux/amd64). Images built reproducibly carry a fixed date
   (1970, 1980) and show none. Each date is read once per version; turn it off with

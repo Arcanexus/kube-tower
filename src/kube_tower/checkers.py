@@ -14,7 +14,7 @@ from kube_tower.helmvalues import merge, not_deployed, parse_values, subchart_va
 from kube_tower.models import ChartDependency, ChartReport, ImageReport, Status
 from kube_tower.registry.helm import ChartFiles, HelmClient, normalize_dependency_repository
 from kube_tower.registry.oci import OCIClient
-from kube_tower.versions import is_newer, latest_matching, latest_semver, parse
+from kube_tower.versions import is_newer, latest_matching, latest_same_major, latest_semver, parse
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +145,7 @@ class ImageChecker:
             if parse(ref.tag) is not None:
                 tags = await self._tags(ref.registry, ref.repository)
                 report.latest_tag = latest_matching(ref.tag, tags, self.settings.include_prerelease)
+                report.minor_tag = latest_same_major(ref.tag, tags, self.settings.include_prerelease)
                 report.status = Status.OUTDATED if is_newer(report.latest_tag, ref.tag) else Status.UP_TO_DATE
                 await self._fetch_digests(report)
                 await self._fetch_release_date(report)
@@ -176,7 +177,7 @@ class ImageChecker:
             log.debug("cannot read digests of %s: %s", ref, explain(exc))
 
     async def _fetch_release_date(self, report: ImageReport) -> None:
-        """Best effort: when the current and latest tags were built or pushed, shown next to them."""
+        """Best effort: when the current, latest minor and latest tags were built or pushed, shown next to them."""
         if not self.settings.fetch_release_dates or not report.latest_tag:
             return
         ref = report.image
@@ -185,10 +186,12 @@ class ImageChecker:
             key = ("image", ref.registry, ref.repository, tag)
             return _release_date(self.memo, self.sem, key, lambda: self.oci.get_created(ref.registry, ref.repository, tag))
 
-        if ref.tag == report.latest_tag:
-            report.latest_released = report.current_released = await released(ref.tag)
-        else:
-            report.latest_released, report.current_released = await asyncio.gather(released(report.latest_tag), released(ref.tag))
+        # One lookup per distinct tag (often the same: up to date, or no newer major version).
+        tags = list(dict.fromkeys(t for t in (ref.tag, report.minor_tag, report.latest_tag) if t))
+        dates = dict(zip(tags, await asyncio.gather(*(released(t) for t in tags)), strict=True))
+        report.current_released = dates[ref.tag]
+        report.minor_released = dates.get(report.minor_tag or "")
+        report.latest_released = dates[report.latest_tag]
 
     async def check_all(self, reports: list[ImageReport]) -> None:
         log.info("checking %d image(s) against their registries", len(reports))

@@ -38,7 +38,7 @@ from kube_tower.models import (
 from kube_tower.processes import ProcessInfo, RoleStatus, roles_status
 from kube_tower.resources import krr_process
 from kube_tower.scanner import chart_key, image_key
-from kube_tower.versions import versioning
+from kube_tower.versions import update_kind, versioning
 from kube_tower.web.login import can, can_act, current_permissions, current_user, snapshot_of, visible_checks
 from kube_tower.web.metrics import image_update
 from kube_tower.web.resourceview import FIT_ICONS, FIT_RANK, FIT_WORDS, by_cluster, change_text, manifest, shown, text_of
@@ -290,7 +290,8 @@ def _fixable(r: ImageReport) -> int:
 IMAGE_COLUMNS = [
     Column(lambda r: str(r.image)),
     Column(lambda r: natural(r.image.tag or "")),
-    Column(lambda r: natural(r.latest_tag or "")),
+    Column(lambda r: natural(image_updates(r)[0][0])),
+    Column(lambda r: natural(image_updates(r)[1][0])),
     Column(lambda r: STATUS_RANK[r.status]),
     Column(lambda r: vulnerability_score(r), descending=True),
     Column(lambda r: workloads(r), descending=True),
@@ -438,6 +439,40 @@ def image_versions(r: ImageReport) -> tuple[tuple[str, str], tuple[str, str]]:
     return current, latest
 
 
+# A release older than each of these ages (images.releaseAgeDays) turns yellow, orange, then red.
+RELEASE_AGES = ("recent", "aging", "old", "stale")
+RELEASE_AGE_TEXT = {
+    "recent": "recent",
+    "aging": "aging",
+    "old": "old",
+    "stale": "very old: check that it is still maintained",
+}
+
+
+def release_age(when: datetime | None, days: Sequence[int] = (180, 365, 730), now: datetime | None = None) -> str:
+    """The age class of a release date (RELEASE_AGES), empty when unknown. `days`: images.releaseAgeDays."""
+    if when is None:
+        return ""
+    elapsed = ((now or datetime.now(UTC)) - when).days
+    return RELEASE_AGES[sum(1 for d in days if elapsed >= d)]
+
+
+def image_updates(r: ImageReport) -> tuple[tuple[str, str, datetime | None], tuple[str, str, datetime | None]]:
+    """((tag, digest, release date) of the latest minor or patch release, same of the latest major release) of
+    an image, for their own columns. The first one is the latest of the same major version, the current tag
+    when there is none (or the latest of all for versions without major numbers: calendar, date...); the
+    second one is empty ("") unless a newer major version is published.
+    """
+    current, latest = image_versions(r)
+    if r.latest_tag and update_kind(r.image.tag, r.latest_tag) == "major":
+        major = (r.latest_tag, r.latest_digest or "", r.latest_released)
+        if r.minor_tag and r.minor_tag != r.image.tag:
+            return (r.minor_tag, "", r.minor_released), major
+        return (current[0], r.tag_digest or current[1], r.current_released), major
+    released = r.latest_released if latest[0] and latest[0] == r.latest_tag else None
+    return (latest[0], latest[1], released), ("", "", None)
+
+
 def image_size(r: ImageReport) -> tuple[int, int] | None:
     """(smallest, largest) size in bytes of an image as its nodes report it, None when no node pulled it.
     The sizes of the running digests when known: a tag pushed again, or another architecture, has its own size.
@@ -571,11 +606,15 @@ def vulnerability_score(report: ImageReport) -> int:
 templates.env.globals.update(status_rank=STATUS_RANK, vulnerability_score=vulnerability_score, workloads=workloads)
 templates.env.globals.update(image_update=image_update, fixable_critical=fixable_critical)
 templates.env.globals.update(registry_links=registry_links, chart_links=chart_links, dependency_tree=dependency_tree)
+templates.env.globals.update(release_age=release_age, release_age_text=RELEASE_AGE_TEXT, image_updates=image_updates)
+templates.env.globals["release_age_days"] = (180, 365, 730)  # images.releaseAgeDays, set by mount()
 templates.env.globals.update(versioning=versioning, image_versions=image_versions, image_size=image_size, usage_tree=usage_tree)
 templates.env.filters.update(plural=plural, duration=duration, short_digest=short_digest, age=age)
 
 
 def mount(app: FastAPI) -> None:
+    if settings := getattr(app.state, "settings", None):
+        templates.env.globals["release_age_days"] = tuple(settings.images.release_age_days)
     app.add_middleware(GZipMiddleware, minimum_size=1000)  # pages and static files are mostly text
     app.mount("/static", CachedStaticFiles(directory=HERE / "static"), name="static")
 

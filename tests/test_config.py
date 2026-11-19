@@ -71,3 +71,14 @@ def test_roles(tmp_path, monkeypatch):
     (tmp_path / "config.yaml").write_text("roles: []\n")
     with pytest.raises(ValueError, match="no role"):
         load_settings(str(tmp_path / "config.yaml"))
+
+
+def test_release_age_days(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    assert load_settings(str(cfg)).images.release_age_days == [180, 365, 730]
+    cfg.write_text("images:\n  releaseAgeDays: [90, 180, 365]\n")
+    assert load_settings(str(cfg)).images.release_age_days == [90, 180, 365]
+    for bad in ("[365, 180, 730]", "[90, 180]", "[0, 1, 2]", "[90, 90, 180]", "[a, b, c]"):
+        cfg.write_text(f"images:\n  releaseAgeDays: {bad}\n")
+        with pytest.raises(ValueError, match="images.releaseAgeDays"):
+            load_settings(str(cfg))

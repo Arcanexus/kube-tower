@@ -20,6 +20,7 @@
   --kt-warn: #a5520c; --kt-warn-soft: #fdf0e3;
   --kt-err: #b42318; --kt-err-soft: #fdeceb;
   --kt-unk: #5d6675; --kt-unk-soft: #eef0f3;
+  --kt-age-aging: #7a6000; --kt-age-aging-soft: #fbf3cc;  /* release age between green and orange */
   --kt-danger: var(--kt-err);
   --kt-tree: #8a99b4;
   --kt-tooltip-bg: #18202c; --kt-tooltip-text: #fff;
@@ -41,6 +42,7 @@
   --kt-hover: #1b2438; --kt-code-bg: #1f283b;
   --kt-ok: #4cc38a; --kt-ok-soft: #163327; --kt-warn: #f0a35e; --kt-warn-soft: #3a2614;
   --kt-err: #ff8a80; --kt-err-soft: #3b1a1a; --kt-unk: #a5afbf; --kt-unk-soft: #242d3d;
+  --kt-age-aging: #e6c84f; --kt-age-aging-soft: #362f12;
   --kt-tree: #5f6f8c; --kt-tooltip-bg: #e6ebf3; --kt-tooltip-text: #0f1522;
   --kt-shadow: 0 1px 2px rgba(0, 0, 0, .3); --kt-sidebar-bg: #0b1120;
 }
@@ -52,6 +54,7 @@
     --kt-hover: #1b2438; --kt-code-bg: #1f283b;
     --kt-ok: #4cc38a; --kt-ok-soft: #163327; --kt-warn: #f0a35e; --kt-warn-soft: #3a2614;
     --kt-err: #ff8a80; --kt-err-soft: #3b1a1a; --kt-unk: #a5afbf; --kt-unk-soft: #242d3d;
+  --kt-age-aging: #e6c84f; --kt-age-aging-soft: #362f12;
     --kt-tree: #5f6f8c; --kt-tooltip-bg: #e6ebf3; --kt-tooltip-text: #0f1522;
     --kt-shadow: 0 1px 2px rgba(0, 0, 0, .3); --kt-sidebar-bg: #0b1120;
   }
@@ -617,6 +620,12 @@ td.cell-name { max-width: 21rem; }
 .drawer-summary { display: flex; align-items: flex-start; gap: .75rem; font-size: 1.1rem; }
 /* current and latest in two equal columns: their version, digest and date lines align */
 .drawer-summary > .version-cell { flex: 1 1 0; }
+/* Image details: current, latest minor / patch and latest major versions, one line each */
+.drawer-summary.version-lines { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .4rem .75rem; align-items: baseline; font-size: 1rem; margin-bottom: var(--kt-gap); }
+.version-lines .version-cell { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: .1rem .6rem; }
+.version-lines .version-tag { font-weight: 600; }
+.version-lines .released[class*="age-"] { align-self: baseline; }
+.version-lines .version-cell > .digest-short, .version-lines .version-cell > :has(.digest-short) { order: 1; flex-basis: 100%; }
 .drawer-summary .arrow { color: var(--kt-muted); line-height: 1.25; }
 
 /* Counters of the Vulnerabilities page: number of images */
@@ -874,6 +883,22 @@ td.cell-name { max-width: 21rem; }
 /* Release date of a latest version (released macro) */
 .released { display: inline-flex; align-items: center; color: var(--kt-muted); font-size: .72rem; white-space: nowrap; }
 .released .icon { width: .9em; height: .9em; margin-right: .25em; }
+/* Age of a release (released macro with aged=True, images.releaseAgeDays): green, yellow, orange, red */
+.released[class*="age-"] { align-self: flex-start; margin-top: .1rem; padding: 0 .35rem; border-radius: .3rem; font-weight: 600; }
+.released.age-recent { color: var(--kt-ok); background: var(--kt-ok-soft); }
+.released.age-aging { color: var(--kt-age-aging); background: var(--kt-age-aging-soft); }
+.released.age-old { color: var(--kt-warn); background: var(--kt-warn-soft); }
+.released.age-stale { color: var(--kt-err); background: var(--kt-err-soft); }
+/* The Update column of the images: its messages wrap, so the version columns keep their room */
+td.cell-update { max-width: 8.5rem; }
+/* Seven columns on the Images page: a narrower name and long tags cut (full value on hover) */
+.images-table td.cell-name { max-width: 18rem; }
+.images-table .image-name { max-width: 14rem; }
+.images-table .version-tag { max-width: 8.5rem; }
+/* Names of the version columns, shown on small screens where the table headers are hidden */
+.show-sm { display: none; }
+@media (max-width: 768px) { .show-sm { display: inline; } .show-sm.version-label { display: block; } table.stack-sm.images-table tr { align-items: flex-start; } }
+.version-label { color: var(--kt-muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .03em; margin-right: .35rem; }
 
 /* Resources page (krr): fits of the requests and limits */
 .fit-critical { background: var(--kt-err-soft); color: var(--kt-err); }

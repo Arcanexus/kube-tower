@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Images page: the latest **minor / patch** release (same major version) and the latest **major** release are
+  shown in their own columns, each with its release date, so a safe update and a major one are told apart
+  (`15.4` → `15.10`, or `17.6`: the latest patch of the newest major version, not the next major). The
+  detail panel lists the current, latest minor / patch and latest major versions, and an upgrade target for each. The API and the snapshot have the new `minor_tag` and
+  `minor_released` fields of the images.
+- Images page: the release dates of the current and latest versions are **colored by their age**: green
+  under 6 months, yellow under a year, orange under 2 years, red beyond. You see whether the version you run
+  is recent enough, and whether its major version or the image is still maintained. The ages are set with
+  `images.releaseAgeDays` (default `[180, 365, 730]`).
+
 ### Changed
 
 - Administration, **Pods** tab: a role tile is green while enough pods run the role (an active controller,

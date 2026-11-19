@@ -80,6 +80,9 @@ class ImagesSettings:
     fetch_tag_digests: bool = True
     # Read when the latest tag was built (Docker Hub API, OCI annotation or image config), shown next to it.
     fetch_release_dates: bool = True
+    # Ages in days where a release date turns from green (recent) to yellow, orange, then red (more than the
+    # last one): for the current version (is it recent enough?) and the latest ones (still maintained?).
+    release_age_days: list[int] = field(default_factory=lambda: [180, 365, 730])
     # fnmatch patterns on the image name (registry/repository), e.g. "registry.k8s.io/pause*".
     ignore: list[str] = field(default_factory=list)
     # Pages of 1000 tags read per repository: some have tens of thousands (CI builds), with the releases
@@ -489,6 +492,7 @@ def load_settings(path: str | None = None) -> Settings:
     if not oidc.client_id and oidc.client_id_env:
         oidc.client_id = os.environ.get(oidc.client_id_env, "").strip()
     settings.roles = check_roles(settings.roles)
+    check_release_age(settings.images.release_age_days)
     check_internal(settings)
     check_auth(settings.auth)
     return settings
@@ -502,6 +506,12 @@ def check_roles(roles: list[str]) -> list[str]:
     if not chosen:
         raise ValueError(f"no role: expected all or a list of {', '.join(ROLES)}")
     return [r for r in ROLES if r in chosen]
+
+
+def check_release_age(days: list[int]) -> None:
+    """Three ages in days, from the youngest: where a release turns yellow, orange, then red."""
+    if len(days) != 3 or not all(isinstance(d, int) and d > 0 for d in days) or sorted(set(days)) != list(days):
+        raise ValueError(f"images.releaseAgeDays {days!r}: expected 3 numbers of days in increasing order, e.g. [180, 365, 730]")
 
 
 def check_internal(settings: Settings) -> None:

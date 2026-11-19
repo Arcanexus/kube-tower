@@ -129,6 +129,10 @@ class ImageReport:
     sizes: dict[str, int] = field(default_factory=dict)
     latest_released: datetime | None = None  # when the latest tag was built or pushed
     current_released: datetime | None = None  # when the current tag was built or pushed
+    # Highest tag of the same major version (its latest minor or patch release), the current tag when there is
+    # none; latest_tag is the highest of all, a new major version when it differs from this one.
+    minor_tag: str | None = None
+    minor_released: datetime | None = None  # when minor_tag was built or pushed
 
     @property
     def clusters(self) -> list[str]:

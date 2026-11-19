@@ -1,6 +1,6 @@
 import pytest
 
-from kube_tower.versions import is_newer, latest_matching, latest_semver, parse, update_kind, versioning
+from kube_tower.versions import is_newer, latest_matching, latest_same_major, latest_semver, parse, update_kind, versioning
 
 
 def test_parse():
@@ -21,6 +21,23 @@ def test_parse():
 )
 def test_latest_matching(current, candidates, expected):
     assert latest_matching(current, candidates) == expected
+
+
+@pytest.mark.parametrize(
+    "current,candidates,expected",
+    [
+        ("1.25.3", ["1.25.4", "1.26.0", "2.0.1", "1.27.0-rc1"], "1.26.0"),  # 2.0.1 is the major update
+        ("v2.1", ["v2.2", "v3.0", "2.9"], "v2.2"),
+        ("15.4", ["15.10", "16.0", "17.2"], "15.10"),
+        ("2.0.0", ["3.0.0", "latest"], "2.0.0"),  # no newer minor or patch: the current tag
+        ("0.9.1", ["0.10.0", "1.0.0"], "0.10.0"),
+        ("7", ["7", "8"], "8"),  # no minor numbers: the latest of all
+        ("2024.8.3", ["2024.10.1", "2025.1.0"], "2025.1.0"),  # calendar versions: the latest of all
+        ("latest", ["1.0.0"], None),
+    ],
+)
+def test_latest_same_major(current, candidates, expected):
+    assert latest_same_major(current, candidates) == expected
 
 
 def test_latest_matching_prerelease():
