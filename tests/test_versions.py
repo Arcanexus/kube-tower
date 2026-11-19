@@ -1,6 +1,15 @@
 import pytest
 
-from kube_tower.versions import is_newer, latest_matching, latest_same_major, latest_semver, parse, update_kind, versioning
+from kube_tower.versions import (
+    is_newer,
+    latest_matching,
+    latest_same_major,
+    latest_semver,
+    latest_semver_same_major,
+    parse,
+    update_kind,
+    versioning,
+)
 
 
 def test_parse():
@@ -38,6 +47,14 @@ def test_latest_matching(current, candidates, expected):
 )
 def test_latest_same_major(current, candidates, expected):
     assert latest_same_major(current, candidates) == expected
+
+
+def test_latest_semver_same_major():
+    # Helm charts: any shape, the latest of the same major version
+    assert latest_semver_same_major("18.0.0", ["18.4.2", "19.0.0", "18.10", "20.1.0-rc.1"]) == "18.10"
+    assert latest_semver_same_major("v1.2.0", ["1.3.0", "2.0.0"]) == "1.3.0"
+    assert latest_semver_same_major("~1.2", ["1.3.0", "2.0.0"]) == "2.0.0"  # a constraint: the latest of all
+    assert latest_semver_same_major("3.0.0", ["1.0.0", "2.0.0"]) is None
 
 
 def test_latest_matching_prerelease():

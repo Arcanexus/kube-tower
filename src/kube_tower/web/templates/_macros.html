@@ -86,6 +86,21 @@
 </div>
 {%- endmacro %}
 
+{% macro available_chips(counts, active, what="images") -%}
+{# Chips of the updates available (ui.available): a newer minor or patch release, a newer major version. #}
+<div class="counters">
+  <small class="counters-label">Update</small>
+  {% for kind, label in available_kinds.items() %}
+  {{ chip("available", kind, active == kind, counts[kind], label, "Show only the " ~ what ~ " with a newer " ~ ("minor or patch release of their major version" if kind == "minor" else "major version")) }}
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro chart_version_cell(version, released_at) -%}
+{# A chart version and its release date, colored by its age (images.releaseAgeDays). #}
+<span class="version-cell"><span class="version-tag" title="{{ version }}">{{ version }}</span>{{ released(released_at, True) }}</span>
+{%- endmacro %}
+
 {% macro update_badge(r) -%}
 {# The Update column of an image: the kind of update when it is outdated (major, minor, patch, new digest…). #}
 {% if r.status == Status.OUTDATED %}{% set kind = image_update(r) %}
@@ -163,12 +178,13 @@
 </div>
 {%- endmacro %}
 
-{% macro filters(path, q, status, listing=none, placeholder="Filter…") -%}
-{# Search box of a list; the status is set by its chips (counters), the sort by its headers. #}
+{% macro filters(path, q, status, listing=none, placeholder="Filter…", hidden={}) -%}
+{# Search box of a list; the status (and the `hidden` fields) are set by its chips (counters), the sort by its headers. #}
 <form class="filters filters-search" hx-get="{{ path }}" hx-target="#results" hx-push-url="true"
       hx-trigger="input changed delay:300ms from:input[name=q], change">
   <input type="search" name="q" value="{{ q }}" placeholder="{{ placeholder }}" aria-label="Search">
   <input type="hidden" name="status" value="{{ status }}">
+  {% for name, value in hidden.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   {% if listing %}<input type="hidden" name="sort" value="{{ listing.sort }}"><input type="hidden" name="dir" value="{{ listing.direction }}">{% endif %}
 </form>
 {%- endmacro %}

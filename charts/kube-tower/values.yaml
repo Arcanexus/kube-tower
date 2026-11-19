@@ -159,7 +159,7 @@ config:
     # Read the published digests of the current and latest tags (shown in the image details)
     fetchTagDigests: true
     fetchReleaseDates: true
-    # Ages in days where a release date turns from green to yellow, orange, then red (Images page)
+    # Ages in days where a release date turns from green to yellow, orange, then red (Images and Helm charts pages)
     releaseAgeDays: [180, 365, 730]
     ignore: []
   helm:

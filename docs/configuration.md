@@ -38,7 +38,7 @@ images:
   checkFloatingDigests: true   # compare digests for latest/stable tags
   fetchTagDigests: true        # published digests of the current/latest tags (image details)
   fetchReleaseDates: true      # when the current and latest tags were built (Docker Hub API, OCI annotation or image config)
-  releaseAgeDays: [180, 365, 730]  # release dates turn yellow, orange, then red past these ages (days)
+  releaseAgeDays: [180, 365, 730]  # release dates of images and charts turn yellow, orange, then red past these ages (days)
   ignore:                      # fnmatch patterns on registry/repository[:tag]
     - registry.k8s.io/pause*
   maxTagPages: 50              # 1000 tags per page

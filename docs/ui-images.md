@@ -53,8 +53,12 @@ Also shown:
   (`CVE-2025-68121`, `2025-681`, `GHSA-`), several separated by spaces or commas.
 - With an ID, only the affected images are listed, with the matching IDs; their panel lists those
   vulnerabilities first.
-- **Chips**: the version status, and the **CVE** chips (critical or high, with a fix). Their numbers
-  are images.
+- **Chips**: the version status, the **Update** chips and the **CVE** chips (critical or high, with a
+  fix). Their numbers are images.
+- **Update** chips: *minor/patch* lists the images with a newer release in their major version (a new
+  minor or patch release, or a newer calendar or build version: the safe update), *major* those with a
+  newer major version. An image behind in its major version with a newer major version published is in
+  both. A tag pushed again (new digest) is in neither. The Overview links to them.
 
 ## Detail panel
 

@@ -894,10 +894,10 @@ td.cell-update { max-width: 8.5rem; }
 /* Seven columns on the Images page: a narrower name and long tags cut (full value on hover) */
 .images-table td.cell-name { max-width: 18rem; }
 .images-table .image-name { max-width: 14rem; }
-.images-table .version-tag { max-width: 8.5rem; }
+.images-table .version-tag, .chart-table .version-tag { max-width: 8.5rem; }
 /* Names of the version columns, shown on small screens where the table headers are hidden */
 .show-sm { display: none; }
-@media (max-width: 768px) { .show-sm { display: inline; } .show-sm.version-label { display: block; } table.stack-sm.images-table tr { align-items: flex-start; } }
+@media (max-width: 768px) { .show-sm { display: inline; } .show-sm.version-label { display: block; } table.stack-sm.images-table tr, table.stack-sm.chart-table tr { align-items: flex-start; } }
 .version-label { color: var(--kt-muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .03em; margin-right: .35rem; }
 
 /* Resources page (krr): fits of the requests and limits */

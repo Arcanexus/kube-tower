@@ -161,6 +161,10 @@ class ChartDependency:
     # or when the values could not be read. Its status is still the one of its version, ignored by worst_status.
     not_deployed: str | None = None
     latest_released: datetime | None = None  # when the latest version was published
+    # Latest version of the same major version (its latest minor or patch release); latest_version is the
+    # latest of all, a new major version when it differs from this one.
+    minor_version: str | None = None
+    minor_released: datetime | None = None
 
     @property
     def deployed(self) -> bool:
@@ -219,6 +223,11 @@ class ChartReport:
     ignore_missing_value_files: bool = False
     inline_values: dict = field(default_factory=dict)
     latest_released: datetime | None = None  # when the latest version was published
+    current_released: datetime | None = None  # when the deployed version was published
+    # Latest version of the same major version (its latest minor or patch release); latest_version is the
+    # latest of all, a new major version when it differs from this one.
+    minor_version: str | None = None
+    minor_released: datetime | None = None
     # What deploys the chart: argocd (an Application), flux (a HelmRelease) or helm (a release installed
     # with the helm command). `application` and `app_namespace` are then the HelmRelease or the release.
     manager: str = "argocd"

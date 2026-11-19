@@ -230,14 +230,35 @@ def test_dashboard_sharing_format():
     ]
     requires = {(r["type"], r["id"]) for r in dashboard["__requires"]}
     assert {("grafana", "grafana"), ("datasource", "prometheus")} <= requires
-    panels = {p["type"] for p in dashboard["panels"] if p["type"] != "row"}
+    # The panels of the collapsed rows ("Tables · ...") are inside their row
+    every = dashboard["panels"] + [q for p in dashboard["panels"] for q in p.get("panels", [])]
+    panels = {p["type"] for p in every if p["type"] != "row"}
     assert panels == {r["id"] for r in dashboard["__requires"] if r["type"] == "panel"}
     variable = dashboard["templating"]["list"][0]
     assert (variable["type"], variable["current"]["value"]) == ("datasource", "${DS_PROMETHEUS}")
-    sources = [p.get("datasource") for p in dashboard["panels"]] + [
-        t.get("datasource") for p in dashboard["panels"] for t in p.get("targets", [])
-    ]
+    sources = [p.get("datasource") for p in every] + [t.get("datasource") for p in every for t in p.get("targets", [])]
     assert all(s is None or s["uid"] == "${datasource}" for s in sources)
+
+
+def test_dashboard_layout():
+    """Graphs first, in open rows; the tables in collapsed rows below; no panel overlaps another."""
+    dashboard = json.loads((CHART / "dashboards" / "kube-tower.json").read_text())
+    rows = [p for p in dashboard["panels"] if p["type"] == "row"]
+    opened = [p for p in dashboard["panels"] if p["type"] not in ("row", "table")]
+    assert opened and not [p for p in dashboard["panels"] if p["type"] == "table"]  # no table in the open rows
+    collapsed = [r for r in rows if r["collapsed"]]
+    assert collapsed and all(r["title"].startswith("Tables") for r in collapsed)
+    assert rows.index(collapsed[0]) == len(rows) - len(collapsed)  # after every open row
+    assert all(q["type"] == "table" for r in collapsed for q in r["panels"])
+    every = dashboard["panels"] + [q for r in collapsed for q in r["panels"]]
+    cells = set()
+    for p in every:
+        g = p["gridPos"]
+        assert g["x"] + g["w"] <= 24, p["title"]
+        new = {(x, y) for x in range(g["x"], g["x"] + g["w"]) for y in range(g["y"], g["y"] + g["h"])}
+        assert not cells & new, p["title"]
+        cells |= new
+    assert len({p["id"] for p in every}) == len(every)
 
 
 def test_vulnerabilities_standalone_by_default(tmp_path):

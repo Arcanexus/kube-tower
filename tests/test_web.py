@@ -326,6 +326,11 @@ def test_metrics():
         'kube_tower_image_os_eosl{image="docker.io/library/nginx",os="debian 11",tag="1.25"} 1.0',
         'kube_tower_image_vulnerability_scan_failed{image="ghcr.io/org/app",tag="2.0"} 1.0',
         'kube_tower_image_vulnerability_scan_failed{image="docker.io/library/nginx",tag="1.25"} 0.0',
+        'kube_tower_image_update_available{image="docker.io/library/nginx",tag="1.25",update="minor",version="1.27"} 1.0',
+        'kube_tower_image_update_available{image="docker.io/library/nginx",tag="1.25",update="major",version=""} 0.0',
+        'kube_tower_image_update_available{image="docker.io/library/redis",tag="latest",update="minor",version=""} 0.0',
+        'kube_tower_chart_update_available{application="redis",chart="redis",cluster="c1",update="minor",version="",'
+        'version_current="18.0.0"} 0.0',
     ]
     for line in expected:
         assert line in lines, line
@@ -334,6 +339,41 @@ def test_metrics():
     # pods owned by the Deployment are not exported (pod names churn on every rollout)
     assert "web-7d9f-abcde" not in resp.text
     assert not any(line.startswith("kube_tower_image_workload_info") and 'kind="Node"' in line for line in lines)
+    assert not any(line.startswith("kube_tower_image_release_age_days{") for line in lines)  # no release date known
+
+
+def _with_release_dates(scanner):
+    """Release dates on nginx (minor and major updates) and the redis chart (a major update)."""
+    from datetime import timedelta
+
+    today = datetime.now(UTC)
+    nginx = scanner.snapshot.images[0]
+    nginx.latest_tag, nginx.minor_tag = "2.0", "1.27"
+    nginx.current_released, nginx.minor_released, nginx.latest_released = (today - timedelta(days=d) for d in (800, 200, 3))
+    redis = scanner.snapshot.charts[0]
+    redis.status, redis.latest_version, redis.minor_version = Status.OUTDATED, "19.0.0", "18.0.0"
+    redis.current_released, redis.latest_released = today - timedelta(days=400), today - timedelta(days=10)
+
+
+def test_update_and_release_age_metrics():
+    client, scanner = _client()
+    _with_release_dates(scanner)
+    lines = client.get("/metrics").text.splitlines()
+    values = {line.rsplit(" ", 1)[0]: float(line.rsplit(" ", 1)[1]) for line in lines if not line.startswith("#")}
+    image = 'image="docker.io/library/nginx",release="{}",tag="1.25",version="{}"'
+    assert round(values["kube_tower_image_release_age_days{" + image.format("current", "1.25") + "}"]) == 800
+    assert round(values["kube_tower_image_release_age_days{" + image.format("latest_minor", "1.27") + "}"]) == 200
+    assert round(values["kube_tower_image_release_age_days{" + image.format("latest_major", "2.0") + "}"]) == 3
+    update = 'kube_tower_image_update_available{{image="docker.io/library/nginx",tag="1.25",update="{}",version="{}"}}'
+    assert values[update.format("minor", "1.27")] == 1 and values[update.format("major", "2.0")] == 1
+    chart = 'kube_tower_chart_release_age_days{{application="redis",chart="redis",cluster="c1",release="{}",version="{}"}}'
+    assert round(values[chart.format("current", "18.0.0")]) == 400 and round(values[chart.format("latest_major", "19.0.0")]) == 10
+    assert round(values[chart.format("latest_minor", "18.0.0")]) == 400  # on its latest minor: the current version
+    available = (
+        'kube_tower_chart_update_available{{application="redis",chart="redis",cluster="c1",update="{}",version="{}",'
+        'version_current="18.0.0"}}'
+    )
+    assert values[available.format("major", "19.0.0")] == 1 and values[available.format("minor", "")] == 0
 
 
 def test_administration_page_shows_credentials_without_secrets(monkeypatch):
@@ -371,10 +411,20 @@ def test_grafana_dashboard_uses_exported_metrics():
     dashboard = Path(__file__).parents[1] / "charts/kube-tower/dashboards/kube-tower.json"
     text = dashboard.read_text()
     json.loads(text)
-    client, _ = _client()
-    exported = {line.split("{")[0].split(" ")[0] for line in client.get("/metrics").text.splitlines() if not line.startswith("#")}
+    # Every metric of the exporter (counters get their _total suffix), every one of them in the dashboard
+    source = (Path(__file__).parents[1] / "src/kube_tower/web/metrics.py").read_text()
+    exported = set(re.findall(r'GaugeMetricFamily\(\s*"(kube_tower_[a-z_]+)"', source))
+    exported |= {f"{m}_total" for m in re.findall(r'CounterMetricFamily\(\s*"(kube_tower_[a-z_]+)"', source)}
     used = set(re.findall(r"kube_tower_[a-z_]+", text))
-    assert used and used <= exported, used - exported
+    assert used == exported, (used - exported, exported - used)
+    # and each one documented
+    docs = (Path(__file__).parents[1] / "docs/metrics.md").read_text()
+    assert not [m for m in exported if f"`{m}`" not in docs]
+    # The exporter gives the metrics found in its source
+    client, scanner = _client()
+    _with_release_dates(scanner)
+    scraped = {line.split("{")[0].split(" ")[0] for line in client.get("/metrics").text.splitlines() if not line.startswith("#")}
+    assert scraped - {"kube_tower_scans_created"} <= exported
 
 
 def test_status_reloads_page_when_scan_ends():
@@ -499,7 +549,7 @@ def test_release_dates_next_to_the_latest_versions():
     detail = client.get("/images/detail", params={"ref": str(nginx.image)}).text
     assert detail.count("2026-10-12</small>") == 2  # summary and Latest minor / patch
     charts = client.get("/charts").text
-    assert '<small class="released" title="Released 2026-09-01 00:00 UTC, ' in charts  # charts: no age color
+    assert '<small class="released age-' in charts and "2026-09-01</small>" in charts  # charts: colored by age too
 
 
 def test_latest_minor_and_major_columns():
@@ -551,6 +601,80 @@ def test_latest_minor_and_major_columns():
         assert page.index(str(first.image.name)) < page.index(str(nginx.image.name if first is app else app.image.name))
     page = client.get("/images?running=0&sort=3").text  # no major update left: the order of the list
     assert 'aria-sort="ascending"' in page
+
+
+def test_chart_minor_and_major_columns():
+    from datetime import UTC, datetime, timedelta
+
+    from kube_tower.web.ui import available, chart_updates
+
+    client, scanner = _client()
+    redis = scanner.snapshot.charts[0]
+    assert chart_updates(redis) == (("18.0.0", None), ("", None)) and available(redis) == set()
+    today = datetime.now(UTC)
+    redis.status, redis.latest_version, redis.minor_version = Status.OUTDATED, "20.1.0", "18.4.2"
+    redis.current_released = today - timedelta(days=800)
+    redis.minor_released = today - timedelta(days=200)
+    redis.latest_released = today - timedelta(days=3)
+    assert chart_updates(redis) == (("18.4.2", redis.minor_released), ("20.1.0", redis.latest_released))
+    assert available(redis) == {"minor", "major"}
+    page = client.get("/charts").text
+    for level in ("stale", "aging", "recent"):
+        assert f'<small class="released age-{level}"' in page
+    assert '<small class="show-sm version-label">latest major</small>' in page
+    detail = client.get("/charts/detail", params={"cluster": "c1", "namespace": "argocd", "app": "redis", "chart": "redis"}).text
+    assert 'class="version-label">latest major</small>' in detail and "Latest minor/patch</th><td>" in detail
+    assert "Current release</th><td>" in detail
+    # The filter chips: minor/patch and major, each with its count
+    assert "ktToggleFilter('available', 'minor')" in page and "ktToggleFilter('available', 'major')" in page
+    assert client.get("/charts?available=major").text.count('class="clickable"') == 1
+    # Already on the latest minor (or a report of an older kube-tower process): the current version stays there
+    redis.minor_version = "18.0.0"
+    assert chart_updates(redis)[0] == ("18.0.0", redis.current_released) and available(redis) == {"major"}
+    redis.minor_version = None
+    assert chart_updates(redis)[0][0] == "18.0.0"
+    assert 'class="clickable"' not in client.get("/charts?available=minor").text
+    # A minor update only
+    redis.latest_version, redis.minor_version = "18.4.2", "18.4.2"
+    assert chart_updates(redis) == (("18.4.2", redis.latest_released), ("", None)) and available(redis) == {"minor"}
+    # The minor / patch and major columns sort by release date
+    page = client.get("/charts?sort=2").text
+    assert 'aria-sort="ascending"' in page
+    # Deployed from git: no latest version
+    redis.latest_version = None
+    assert chart_updates(redis) == (("", None), ("", None)) and available(redis) == set()
+
+
+def test_images_filter_by_update_available():
+    from kube_tower.web.ui import available
+
+    client, scanner = _client()
+    nginx, app, redis = scanner.snapshot.images
+    assert available(nginx) == {"minor"} and available(app) == set() and available(redis) == set()  # redis: new digest
+    page = client.get("/images?running=0").text
+    assert "ktToggleFilter('available', 'minor')" in page and 'name="available" value=""' in page
+    page = client.get("/images?running=0&available=minor").text
+    assert "library/nginx" in page and "org/app" not in page
+    nginx.latest_tag, nginx.minor_tag = "2.0", "1.27"
+    assert available(nginx) == {"minor", "major"}
+    nginx.minor_tag = "1.25"  # on the latest minor of its major version: a major update only
+    assert available(nginx) == {"major"}
+    assert "library/nginx" not in client.get("/images?running=0&available=minor").text
+    assert "library/nginx" in client.get("/images?running=0&available=major").text
+
+
+def test_overview_counts_minor_and_major_updates():
+    client, scanner = _client()
+    redis = scanner.snapshot.charts[0]
+    redis.status, redis.latest_version, redis.minor_version = Status.OUTDATED, "20.1.0", "18.4.2"
+    page = " ".join(client.get("/").text.split())
+    assert "Minor/patch or major" in page
+    assert '<a href="images?available=minor"' in page and '<a href="charts?available=major"' in page
+    from kube_tower.web.summary import summarize
+
+    summary = summarize(scanner.snapshot)
+    assert summary.images_available == {"minor": 1, "major": 0}
+    assert summary.charts_available == {"minor": 1, "major": 1}
 
 
 def test_image_size():
@@ -1068,7 +1192,8 @@ def test_chart_row_shows_the_worst_status():
     assert re.findall(r"<th[^>]*>([^<]+)</th>", page.split("<thead>")[1].split("</thead>")[0]) == [
         "Chart",
         "Current",
-        "Latest",
+        "Latest minor/patch",
+        "Latest major",
         "Status (chart and subcharts)",
         "Repository",
         "Deployed by",

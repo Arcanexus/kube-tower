@@ -17,13 +17,13 @@
   var captions = {
     "images": "Every image with its current version, its latest minor / patch and major releases, their age colored from green to red, and its vulnerabilities; one search for names, tags and CVE IDs.",
     "image-detail": "Image details: rescans at hand, the current, latest minor / patch and latest major versions with the age of each release, the CVEs by severity at a glance, then where the image runs, its versions and digests and its CVE list, each section foldable.",
-    "charts": "Helm charts deployed by ArgoCD, with the tree of their subcharts and the latest version of each.",
+    "charts": "Helm charts deployed by ArgoCD, Flux or helm: latest minor / patch and major versions with the age of each release, and the tree of their subcharts.",
     "security": "Trivy Operator reports of every cluster: misconfigurations, exposed secrets, RBAC, infrastructure and compliance.",
     "clusters-page": "Every cluster at a glance: its nodes by Kubernetes version, the vulnerabilities of what they run, the deprecated APIs still requested, and one card per node.",
     "resources": "CPU and memory recommendations of krr: the containers furthest from their usage, totals per cluster, the block to paste.",
     "administration": "Administration: the state of every role and pod, rescans, Trivy database, connectivity and credential tests, logs.",
     "dark": "A dark theme, chosen by your system or by you.",
-    "grafana": "Prometheus metrics and a ready-made Grafana dashboard for alerts and trends."
+    "grafana": "Prometheus metrics and a ready-made Grafana dashboard: every metric, graphs first, tables in folded rows."
   };
   var img = document.getElementById("tour-img");
   var caption = document.getElementById("tour-caption");

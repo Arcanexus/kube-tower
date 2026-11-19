@@ -53,6 +53,14 @@ curl -s -u admin:$PASSWORD http://kube-tower/api/snapshot \
 ```
 
 ```sh
+# Helm charts with a newer major version, and the latest version of their own major version
+# (minor_version), with the release dates of the deployed and latest versions
+curl -s -u admin:$PASSWORD http://kube-tower/api/snapshot \
+  | jq -r '.charts[] | select(.latest_version and .minor_version and .latest_version != .minor_version)
+           | "\(.chart) \(.version) (\(.current_released // "?")) -> \(.minor_version) / \(.latest_version) (\(.latest_released // "?"))"'
+```
+
+```sh
 # Images with critical vulnerabilities, with the number of them
 curl -s -u admin:$PASSWORD http://kube-tower/api/snapshot \
   | jq -r '.images[] | {ref: .image.ref, n: ([.vulnerabilities.vulnerabilities[]? | select(.severity=="critical")] | length)}

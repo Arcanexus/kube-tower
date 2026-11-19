@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
@@ -22,6 +23,7 @@ from kube_tower import __version__
 from kube_tower.lifecycle import days_left, plain_version
 from kube_tower.models import ImageReport, Severity, Snapshot, Status
 from kube_tower.versions import update_kind
+from kube_tower.web.updates import AVAILABLE, available, chart_updates, image_updates
 
 router = APIRouter()
 
@@ -52,6 +54,7 @@ class SnapshotCollector(Collector):
     def collect(self):
         snap: Snapshot = self.backend.snapshot
         yield from self._images(snap)
+        yield from self._updates(snap)
         yield from self._vulnerabilities(snap)
         yield from self._security(snap)
         yield from self._charts(snap)
@@ -84,6 +87,67 @@ class SnapshotCollector(Collector):
             for cluster, count in sorted(Counter(u.cluster for u in r.usages if u.kind == "Node").items()):
                 nodes.add_metric([cluster, name, tag], count)
         return outdated, workload, nodes
+
+    def _updates(self, snap: Snapshot):
+        """Minor / patch and major updates told apart, and the age of the current and latest releases."""
+        now = datetime.now(UTC)
+
+        def days(when: datetime | None) -> float | None:
+            return None if when is None else round((now - when).total_seconds() / 86400, 1)
+
+        image_available = GaugeMetricFamily(
+            "kube_tower_image_update_available",
+            "1 if a newer release is published: update=minor for the same major version (minor or patch), "
+            "update=major for a newer major version; version is the latest of each",
+            labels=["image", "tag", "update", "version"],
+        )
+        image_age = GaugeMetricFamily(
+            "kube_tower_image_release_age_days",
+            "Days since the release of the current version, of the latest minor or patch release and of the "
+            "latest major release (when newer) of the image; absent when the registry gives no date",
+            labels=["image", "tag", "release", "version"],
+        )
+        for r in snap.images:
+            name, tag = r.image.name, r.image.tag or ""
+            kinds = available(r)
+            minor, major = image_updates(r)
+            versions = {"minor": minor[0] if "minor" in kinds else "", "major": major[0]}
+            for kind in AVAILABLE:
+                image_available.add_metric([name, tag, kind, versions[kind]], kind in kinds)
+            current = r.current_released if r.image.tag else None
+            for release, version, when in (
+                ("current", tag, current),
+                ("latest_minor", minor[0], minor[2]),
+                ("latest_major", major[0], major[2]),
+            ):
+                if version and (age := days(when)) is not None:
+                    image_age.add_metric([name, tag, release, version], age)
+        chart_available = GaugeMetricFamily(
+            "kube_tower_chart_update_available",
+            "1 if a newer version of the chart is published: update=minor for the same major version (minor or "
+            "patch), update=major for a newer major version; version is the latest of each",
+            labels=["cluster", "application", "chart", "version_current", "update", "version"],
+        )
+        chart_age = GaugeMetricFamily(
+            "kube_tower_chart_release_age_days",
+            "Days since the release of the deployed version, of the latest minor or patch release and of the "
+            "latest major release (when newer) of the chart; absent when the repository gives no date",
+            labels=["cluster", "application", "chart", "release", "version"],
+        )
+        for c in snap.charts:
+            kinds = available(c)
+            minor, major = chart_updates(c)
+            versions = {"minor": minor[0] if "minor" in kinds else "", "major": major[0]}
+            for kind in AVAILABLE:
+                chart_available.add_metric([c.cluster, c.application, c.chart, c.version, kind, versions[kind]], kind in kinds)
+            for release, version, when in (
+                ("current", c.version, c.current_released),
+                ("latest_minor", *minor),
+                ("latest_major", *major),
+            ):
+                if version and (age := days(when)) is not None:
+                    chart_age.add_metric([c.cluster, c.application, c.chart, release, version], age)
+        return image_available, image_age, chart_available, chart_age
 
     def _vulnerabilities(self, snap: Snapshot):
         total = GaugeMetricFamily(

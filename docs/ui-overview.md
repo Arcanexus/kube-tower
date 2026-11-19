@@ -33,5 +33,8 @@ A few of each kind are shown, so one kind does not hide the others. Click a line
 - **Images by status**: click a segment or a status for the filtered list.
 - **Pending updates by type** (major, minor, patch, newer, new digest): click a type for the Images
   page filtered on it (`images?update=major`).
+- **Minor/patch or major**: how many images and Helm charts have a newer release in their own major
+  version (*minor/patch*, the safe update) and how many a newer major version. One can count in both
+  columns. Click a number for the Images or Helm charts page filtered on it (`charts?available=major`).
 - **Security** (with Trivy Operator): findings per severity and the most exposed namespaces, see
   [Security](security.md).

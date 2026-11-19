@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from kube_tower.models import ImageReport, Severity, Snapshot, Status
 from kube_tower.versions import update_kind
 from kube_tower.web.metrics import image_update
+from kube_tower.web.updates import AVAILABLE, available
 
 UPDATE_KINDS = ["major", "minor", "patch", "newer", "digest"]
 # Worst severity buckets of the vulnerability bar, most severe first, then images without a result
@@ -99,6 +100,10 @@ class Summary:
     clusters: list[ClusterSummary]
     top_outdated: list  # outdated images used by the most workloads
     vulnerabilities: VulnerabilitySummary
+    # Images and charts with a newer minor or patch release of their major version, with a newer major version
+    # (updates.AVAILABLE): both when behind in their own major version too.
+    images_available: Counter = field(default_factory=Counter)
+    charts_available: Counter = field(default_factory=Counter)
 
     @property
     def images_total(self) -> int:
@@ -142,6 +147,8 @@ def summarize(snap: Snapshot, top: int = 5, registries: int = 6, running: bool =
         clusters=sorted(clusters.values(), key=lambda c: c.name),
         top_outdated=sorted(outdated, key=lambda r: (-len(r.usages), str(r.image)))[:top],
         vulnerabilities=summarize_vulnerabilities(images, top),
+        images_available=Counter({k: sum(1 for r in images if k in available(r)) for k in AVAILABLE}),
+        charts_available=Counter({k: sum(1 for c in charts if k in available(c)) for k in AVAILABLE}),
     )
 
 
