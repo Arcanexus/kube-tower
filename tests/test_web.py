@@ -541,8 +541,16 @@ def test_latest_minor_and_major_columns():
     assert image_updates(nginx)[0][0] == "1.25"
     detail = client.get("/images/detail", params={"ref": str(nginx.image)}).text
     assert "Upgrade to (minor/patch)" not in detail
-    # Sorted on the major column
-    assert client.get("/images?running=0&sort=3").status_code == 200
+    # The latest minor/patch and latest major columns sort by release date, the images without one last
+    app = scanner.snapshot.images[1]
+    app.latest_tag = app.minor_tag = "2.0"
+    app.latest_released = today - timedelta(days=900)
+    nginx.latest_tag, nginx.minor_tag = "1.27", "1.27"
+    for sort, first in (("sort=2", app), ("sort=2&dir=descending", nginx)):
+        page = client.get(f"/images?running=0&{sort}").text
+        assert page.index(str(first.image.name)) < page.index(str(nginx.image.name if first is app else app.image.name))
+    page = client.get("/images?running=0&sort=3").text  # no major update left: the order of the list
+    assert 'aria-sort="ascending"' in page
 
 
 def test_image_size():

@@ -38,6 +38,10 @@ next to a green *Latest major* means the major version you run gets no more fixe
 and age. Change the ages with `images.releaseAgeDays` (default `[180, 365, 730]`, see
 [configuration](configuration.md)).
 
+The *Latest minor/patch* and *Latest major* columns sort by release date: a first click lists the oldest
+releases first (the images that may no longer be maintained), a second one the newest first; the images
+without a date come last.
+
 Also shown:
 
 - `latest` (or no tag) in **red**: the running version changes on every pull, pin a version;
