@@ -290,8 +290,9 @@ def _fixable(r: ImageReport) -> int:
 IMAGE_COLUMNS = [
     Column(lambda r: str(r.image)),
     Column(lambda r: natural(r.image.tag or "")),
-    Column(lambda r: natural(image_updates(r)[0][0])),
-    Column(lambda r: natural(image_updates(r)[1][0])),
+    # Latest minor/patch and latest major: by release date, oldest first (no date: last)
+    Column(lambda r: image_updates(r)[0][2]),
+    Column(lambda r: image_updates(r)[1][2]),
     Column(lambda r: STATUS_RANK[r.status]),
     Column(lambda r: vulnerability_score(r), descending=True),
     Column(lambda r: workloads(r), descending=True),
