@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-19
+
 ### Added
 
 - Images page: the latest **minor / patch** release (same major version) and the latest **major** release are
