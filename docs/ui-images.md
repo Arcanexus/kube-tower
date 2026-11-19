@@ -16,7 +16,7 @@ checks in error, then the most vulnerable.
 | Image | Normalized name (`nginx` becomes `docker.io/library/nginx`), with an icon: green ▶ a pod runs it, grey ⏸ none does |
 | Current | Tag used by the workloads, with the start of its digest and its [release date](#release-dates-and-their-age) |
 | Minor / patch | Latest release of the same major version: highest tag of the same shape, [versioning scheme](statuses.md#versioning-schemes) and major number (`15.4` → `15.10`), with its digest (orange when it differs) and its release date. The current tag when there is no newer one. For versions without major number (calendar, date, build number, `redis:7`), the highest of all |
-| Major | Latest release when it is a newer major version (`15.4` → `17.2`), with its digest and release date; `—` when there is none |
+| Major | When a newer major version exists: the latest release of the newest major version, with its latest patch (`15.4` → `17.6`, not `16.0` or `17.0`), with its digest and release date; `—` when there is none |
 | Update | `major`, `minor`, `patch`, `newer` or `new digest`, else the [status](statuses.md) |
 | Vulnerabilities | Count by severity (C, H, M, L), `pending` while scanning, `scan failed` (reason on hover) or `not scanned` (see [troubleshooting](troubleshooting.md#vulnerabilities)) |
 | Used by | Number of workloads (or `cached on nodes`) and their clusters |

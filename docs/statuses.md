@@ -55,8 +55,8 @@ The Overview lists the major updates in its **To do** list, and the Images page 
 (`images?update=major`).
 
 The update type is the one of the latest tag. When it is `major`, kube-tower also finds the latest release
-of the major version in use (same first number, same shape and scheme: `15.4` → `15.10` while `17.2` is the
-latest): the Images page shows both, in its *Minor / patch* and *Major* columns, so the update that should
+of the major version in use (same first number, same shape and scheme: `15.4` → `15.10` while the latest is
+`17.6`, the latest patch of the newest major version): the Images page shows both, in its *Minor / patch* and *Major* columns, so the update that should
 not break anything is not hidden behind the major one.
 
 ### Floating tags

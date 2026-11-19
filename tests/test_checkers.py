@@ -104,7 +104,7 @@ async def test_image_release_dates(caplog):
 async def test_image_latest_minor_and_major():
     from datetime import UTC, datetime
 
-    released = {"15.4": 1, "15.10": 2, "17.2": 3}
+    released = {"15.4": 1, "15.10": 2, "17.10": 3}
 
     class DatedOCI(FakeOCI):
         asked: list[str] = []
@@ -114,18 +114,20 @@ async def test_image_latest_minor_and_major():
             return datetime(2026, released[tag], 1, tzinfo=UTC)
 
     oci = DatedOCI(
-        tags={"library/postgres-major": ["15.4", "15.10", "16.0", "17.2"]}, digests={"library/postgres-major": "sha256:p"}
+        tags={"library/postgres-major": ["17.10", "15.4", "16.5", "17.0", "15.10", "17.2", "16.0"]},
+        digests={"library/postgres-major": "sha256:p"},
     )
     report = _img("library/postgres-major", "15.4")
     await ImageChecker(oci, ImagesSettings()).check(report)
-    assert (report.status, report.minor_tag, report.latest_tag) == (Status.OUTDATED, "15.10", "17.2")
+    # Major: the latest patch of the newest major version, not the next major (16) nor its first release (17.0)
+    assert (report.status, report.minor_tag, report.latest_tag) == (Status.OUTDATED, "15.10", "17.10")
     assert [d.month for d in (report.current_released, report.minor_released, report.latest_released)] == [1, 2, 3]
-    assert sorted(oci.asked) == ["15.10", "15.4", "17.2"]
+    assert sorted(oci.asked) == ["15.10", "15.4", "17.10"]
     # Already on the latest of its major version: the current tag, its date read once
     oci.asked.clear()
     report = _img("library/postgres-major", "15.10")
     await ImageChecker(oci, ImagesSettings()).check(report)
-    assert (report.minor_tag, report.minor_released, report.latest_tag) == ("15.10", datetime(2026, 2, 1, tzinfo=UTC), "17.2")
+    assert (report.minor_tag, report.minor_released, report.latest_tag) == ("15.10", datetime(2026, 2, 1, tzinfo=UTC), "17.10")
 
 
 def _chart_archive(chart: dict) -> bytes:
