@@ -155,7 +155,7 @@ toolchain.
 | Choice | Why | Not chosen |
 | --- | --- | --- |
 | Read-only, never updates anything | A view of versions, lifecycle and vulnerabilities across every cluster; the updates stay in your GitOps workflow (ArgoCD, Renovate pull requests) | Automatic updates, as watchtower does |
-| Python 3.13, FastAPI, uvicorn; one multi-arch image (amd64, arm64, arm/v7) | A language the maintainer knows; asyncio fits the many HTTP requests to registries | Go |
+| Python 3.15, FastAPI, uvicorn; one multi-arch image (amd64, arm64, arm/v7) | A language the maintainer knows; asyncio fits the many HTTP requests to registries | Go |
 | Server-rendered pages: Jinja2, [htmx](https://htmx.org), one hand-written stylesheet, a few lines of plain JavaScript | A page is an HTML file with placeholders, maintainable without frontend skills; no build step, about 35 KB of compressed static files | A React or Vue single page app (a JS toolchain), Streamlit or NiceGUI (harder behind an ingress and to customize) |
 | Stateless: the inventory is rebuilt at startup and every `refreshInterval`, kept in memory | Nothing to back up or migrate; a restart costs one scan | A database |
 | Settings in a YAML file rendered by the chart into a ConfigMap, secrets only from Kubernetes Secrets | The usual Helm and ArgoCD workflow; unknown keys are refused at startup | Settings edited in the UI |
