@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The image runs on **Python 3.15** (was 3.13), and the CI tests on it. The Dockerfile reads the Python version
+  from its base image, so a later Python upgrade only changes the two `FROM` lines.
+
 ## [1.3.3] - 2026-11-19
 
 ### Added
