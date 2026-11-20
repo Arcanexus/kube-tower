@@ -2,7 +2,7 @@
 # architecture: pip only takes wheels built for it (musllinux), and the .pyc files do not depend on
 # the CPU. A dependency without such a wheel fails the build instead of being compiled under QEMU.
 # Keep both stages on the same Python version (.pyc files are per Python minor version).
-FROM --platform=$BUILDPLATFORM python:3.13-alpine AS deps
+FROM --platform=$BUILDPLATFORM python:3.15-alpine AS deps
 
 ARG TARGETARCH
 ARG TARGETVARIANT
@@ -35,7 +35,7 @@ RUN set -eu; \
     find /deps/kubernetes -depth \( -name test -o -name '*_test.py' \) -exec rm -rf {} +
 
 
-FROM python:3.13-alpine
+FROM python:3.15-alpine
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
