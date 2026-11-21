@@ -27,7 +27,7 @@ The full list with comments is the chart's
 | `registries.dockerConfigJson` | `{}` | Content of a `kubernetes.io/dockerconfigjson` Secret the chart creates |
 | `registries.ca.existingConfigMap` / `.key` / `.pem` | `""` / `ca.crt` / `""` | CA certificates of internal registries, trusted by kube-tower and Trivy, see [registries](registries.md#tls-private-cas-and-insecure-registries) |
 | `config.registries.useImagePullSecrets` | `false` | Reuse the image pull secrets of the workloads (adds `get` on secrets to the ClusterRole), see [registries](registries.md#reusing-the-image-pull-secrets) |
-| `git.existingSecret` / `git.secretKey` | `""` / `token` | Existing Secret with a token for private git repositories holding charts or Helm value files (`$values/...`) |
+| `git.existingSecret` / `git.secretKey` | `""` / `token` | Existing Secret with a token for private git repositories holding charts or Helm value files (`$values/...`). Mounted as a file re-read at each request: a short-lived token rotated in the Secret (e.g. a GitHub App installation token from the External Secrets `GithubAccessToken` generator) is used without a restart |
 | `git.token` | `""` | The same token inline, the chart creates the Secret |
 | `auth.enabled` | `true` | Login on the UI and the API, see [authentication](authentication.md) |
 | `auth.admin` / `.users` / `.anonymousRole` | `true` / `[]` / `""` | Built-in `admin` account, local accounts (`name`, `role`, `existingSecret`, `passwordKey`), role of the visitors not logged in |

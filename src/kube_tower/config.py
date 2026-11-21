@@ -268,6 +268,10 @@ class GitSettings:
     )
     # Env var holding a token for private repositories (sent as a Bearer token).
     token_env: str = "GIT_TOKEN"
+    # ...or a file holding it (mounted Secret), read at each request so a rotated short-lived token (e.g. a
+    # GitHub App installation token refreshed by External Secrets) is used without a restart. Wins over
+    # token_env when set.
+    token_file: str = ""
 
 
 # What one kube-tower process runs: any combination of the roles, `all` meaning every role (UI, API,

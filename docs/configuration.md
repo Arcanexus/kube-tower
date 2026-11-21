@@ -106,6 +106,7 @@ git:
     github.com: https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}
     gitlab.com: https://gitlab.com/{owner}/{repo}/-/raw/{ref}/{path}
   tokenEnv: GIT_TOKEN
+  tokenFile: ""               # or a file (mounted Secret) re-read at each request, wins over tokenEnv
 internal:                      # between the processes, when the roles run apart
   taskTimeout: 30m             # a task not answered by then is given to another process
   batchSize: 50                # images or charts per task: a scan is shared by the worker and trivy processes

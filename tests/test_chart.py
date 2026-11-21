@@ -177,8 +177,18 @@ def test_docker_config_existing_secret_wins(tmp_path):
 def test_git_token(tmp_path, git, secret, key):
     docs = render(tmp_path, {"git": git})
     assert (("Secret", "kt-kube-tower-git") in docs) == (secret == "kt-kube-tower-git")
-    env = {e["name"]: e for e in container(docs)["env"]}
-    assert env["GIT_TOKEN"]["valueFrom"]["secretKeyRef"] == {"name": secret, "key": key}
+    # Mounted as a file re-read at each request (a rotated token is picked up without a restart)
+    assert volumes(docs)["git"]["secret"] == {"secretName": secret, "items": [{"key": key, "path": "token"}]}
+    mounts = {m["name"]: m["mountPath"] for m in container(docs)["volumeMounts"]}
+    assert mounts["git"] == "/etc/kube-tower/git"
+    assert "GIT_TOKEN" not in {e["name"] for e in container(docs)["env"]}
+    assert app_settings(tmp_path, docs).git.token_file == "/etc/kube-tower/git/token"
+
+
+def test_no_git_token_no_volume(tmp_path):
+    docs = render(tmp_path, {})
+    assert "git" not in volumes(docs)
+    assert app_settings(tmp_path, docs).git.token_file == ""
 
 
 def test_credentials_change_restarts_pod(tmp_path):

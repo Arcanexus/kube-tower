@@ -23,6 +23,11 @@
 {{- $_ := set $registries "caFile" "/etc/kube-tower/ca/ca.crt" }}
 {{- end }}
 {{- $_ := set $config "registries" $registries }}
+{{- if include "kube-tower.gitSecretName" . }}
+{{- $git := deepCopy ($config.git | default dict) }}
+{{- $_ := set $git "tokenFile" "/etc/kube-tower/git/token" }}
+{{- $_ := set $config "git" $git }}
+{{- end }}
 {{- /* Existing cluster Secrets referenced in .Values.clusters are read by name */ -}}
 {{- $clusters := deepCopy ($config.clusters | default dict) }}
 {{- $secretNames := concat ($clusters.secretNames | default list) (include "kube-tower.clusterSecretNames" . | fromJsonArray) | uniq }}
