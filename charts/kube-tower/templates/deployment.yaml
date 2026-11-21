@@ -131,15 +131,6 @@ spec:
                   key: {{ ternary $.Values.redis.passwordKey "password" (not (empty $.Values.redis.existingSecret)) }}
             {{- end }}
             {{- end }}
-            {{- if not $uiOnly }}
-            {{- with include "kube-tower.gitSecretName" $ }}
-            - name: GIT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ . }}
-                  key: {{ ternary $.Values.git.secretKey "token" (not (empty $.Values.git.existingSecret)) }}
-            {{- end }}
-            {{- end }}
             {{- with and $.Values.auth.enabled $.Values.auth.oidc.issuer (not $.Values.dex.enabled) (include "kube-tower.oidcSecretName" $) }}
             {{- if not $.Values.auth.oidc.clientId }}
             {{- /* Every pod checks the configuration: the client id, not secret, goes to all of them */}}
@@ -220,6 +211,12 @@ spec:
               mountPath: /etc/kube-tower/ca
               readOnly: true
             {{- end }}
+            {{- if include "kube-tower.gitSecretName" $ }}
+            {{- /* A mounted file, not an env var: the kubelet refreshes it when the Secret changes (rotated tokens) */}}
+            - name: git
+              mountPath: /etc/kube-tower/git
+              readOnly: true
+            {{- end }}
             {{- end }}
             {{- if and $.Values.auth.enabled (has "ui" $roles) }}
             - name: auth
@@ -274,6 +271,14 @@ spec:
             items:
               - key: {{ if $.Values.registries.ca.existingConfigMap }}{{ $.Values.registries.ca.key | default "ca.crt" }}{{ else }}ca.crt{{ end }}
                 path: ca.crt
+        {{- end }}
+        {{- with include "kube-tower.gitSecretName" $ }}
+        - name: git
+          secret:
+            secretName: {{ . }}
+            items:
+              - key: {{ ternary $.Values.git.secretKey "token" (not (empty $.Values.git.existingSecret)) }}
+                path: token
         {{- end }}
         {{- end }}
         {{- if and $.Values.auth.enabled (has "ui" $roles) }}

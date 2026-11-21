@@ -296,6 +296,23 @@ async def test_chart_files_and_git_files():
 
 
 @respx.mock
+async def test_git_token_file_reread_at_each_request(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_TOKEN", "from-env")
+    token = tmp_path / "token"
+    token.write_text("ghs_first\n")
+    route = respx.get("https://raw.githubusercontent.com/o/r/HEAD/values.yaml").respond(200, text="a: 1\n")
+    async with httpx.AsyncClient() as http:
+        helm = HelmClient(http, OCIClient(http), GitSettings(token_file=str(token)))
+        await helm.git_file("https://github.com/o/r.git", "HEAD", "values.yaml")
+        token.write_text("ghs_rotated\n")  # the kubelet refreshed the mounted Secret
+        await helm.git_file("https://github.com/o/r.git", "HEAD", "values.yaml")
+        token.unlink()  # unreadable: no token (the file wins over the env var), no crash
+        await helm.git_file("https://github.com/o/r.git", "HEAD", "values.yaml")
+    sent = [c.request.headers.get("authorization") for c in route.calls]
+    assert sent == ["Bearer ghs_first", "Bearer ghs_rotated", None]
+
+
+@respx.mock
 async def test_release_date():
     from datetime import UTC, datetime
 

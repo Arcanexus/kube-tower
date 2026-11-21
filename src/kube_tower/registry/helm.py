@@ -11,6 +11,7 @@ import tarfile
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -291,7 +292,7 @@ class HelmClient:
         path = path.strip("/")
         url = template.format(owner=owner, repo=repo, ref=ref, path=path)
         headers = {}
-        if token := os.environ.get(self.git.token_env):
+        if token := self._git_token():
             require_https(url, f"the raw URL template of {parsed.hostname} (git.rawUrlTemplates), with a git token,")
             headers["Authorization"] = f"Bearer {token}"
         resp = await self.http.get(url, headers=headers, follow_redirects=True)
@@ -300,6 +301,16 @@ class HelmClient:
         if resp.status_code != 200:
             raise RegistryError(http_error_message(f"cannot read {path} at {ref} in {repo_url}", resp, GIT_CREDENTIALS))
         return resp.text
+
+    def _git_token(self) -> str:
+        """The git token: `token_file` (re-read each time, it may rotate), else the `token_env` env var."""
+        if self.git.token_file:
+            try:
+                return Path(self.git.token_file).read_text().strip()
+            except OSError as exc:
+                log.warning("git token not readable from %s: %s", self.git.token_file, exc)
+                return ""
+        return os.environ.get(self.git.token_env, "")
 
 
 def normalize_dependency_repository(repository: str) -> str | None:
