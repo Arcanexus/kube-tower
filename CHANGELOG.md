@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-11-22
+
 ### Added
 
 - `git.tokenFile`: the token for private git repositories can be read from a file (mounted Secret), re-read
