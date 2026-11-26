@@ -1490,7 +1490,7 @@ def test_roles_and_pods_on_the_administration_page(monkeypatch):
         ChartPod("kube-tower-worker-1", "worker", True, "ok", 2),
         ChartPod("kube-tower-dex-5d", "dex", True, "ok", 0, "v2.46.1"),
         ChartPod("kube-tower-krr-7b", "krr", True, "ok", 0, "v1.31.3"),
-        ChartPod("kube-tower-valkey-0", "valkey", False, "crashloopbackoff", 5, "9.1.3"),
+        ChartPod("kube-tower-valkey-0", "valkey", False, "crashloopbackoff", 5, "9.2.1"),
     ]
 
     async def pods():

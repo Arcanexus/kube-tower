@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Helm chart: Valkey image `9.1.3` → `9.2.1` (latest stable). kube-tower only uses streams, lists, pub/sub and
+  plain keys, none touched by the 9.2 behaviour changes; Valkey keeps nothing on disk, so the new pod starts
+  empty and the pods publish their state again.
+
 ## [1.3.4] - 2026-11-22
 
 ### Added
