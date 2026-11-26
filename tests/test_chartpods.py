@@ -10,7 +10,7 @@ from kube_tower.chartpods import ChartPod, chart_pod, chart_pods
 STARTED = datetime(2026, 11, 9, 10, 0, tzinfo=UTC)
 
 
-def _pod(name, labels, image="docker.io/valkey/valkey:9.1.3", ready=True, waiting=None, restarts=0, deleted=False):
+def _pod(name, labels, image="docker.io/valkey/valkey:9.2.1", ready=True, waiting=None, restarts=0, deleted=False):
     state = client.V1ContainerState(waiting=client.V1ContainerStateWaiting(reason=waiting)) if waiting else None
     return client.V1Pod(
         metadata=client.V1ObjectMeta(name=name, labels=labels, deletion_timestamp=STARTED if deleted else None),
@@ -29,7 +29,7 @@ def _pod(name, labels, image="docker.io/valkey/valkey:9.1.3", ready=True, waitin
 
 def test_chart_pod():
     valkey = chart_pod(_pod("kt-valkey-0", {"app.kubernetes.io/name": "kube-tower-valkey"}), "kt")
-    assert valkey == ChartPod("kt-valkey-0", "valkey", True, "ok", 0, "9.1.3", STARTED)
+    assert valkey == ChartPod("kt-valkey-0", "valkey", True, "ok", 0, "9.2.1", STARTED)
     krr = chart_pod(
         _pod("kt-krr-1", {"app.kubernetes.io/component": "krr"}, "robustadev/krr:v1.31.3", False, "CrashLoopBackOff", 4),
         "kt",
