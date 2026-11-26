@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-11-26
+
 ### Changed
 
 - Helm chart: Valkey image `9.1.3` → `9.2.1` (latest stable). kube-tower only uses streams, lists, pub/sub and
